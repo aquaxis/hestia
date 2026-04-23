@@ -1,0 +1,8 @@
+.aiprj
+.claude/commands/*ai*.md
+
+# Rust ワークスペース（.hestia/tools/）のビルド成果物
+.hestia/tools/target/
+.hestia/tools/Cargo.lock
+**/target/
+**/*.rs.bk
