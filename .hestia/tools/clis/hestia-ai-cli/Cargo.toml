@@ -1,0 +1,10 @@
+[package]
+name = "hestia-ai-cli"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+conductor-sdk.workspace = true
+clap.workspace = true
+tokio.workspace = true
+anyhow.workspace = true

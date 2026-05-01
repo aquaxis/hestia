@@ -1,0 +1,13 @@
+[package]
+name = "adapter-quartus"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+conductor-sdk = { path = "../../../../crates/conductor-sdk" }
+adapter-core = { path = "../../../../crates/adapter-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }

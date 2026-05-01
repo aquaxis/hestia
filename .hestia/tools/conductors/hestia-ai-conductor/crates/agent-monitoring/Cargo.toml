@@ -1,0 +1,11 @@
+[package]
+name = "agent-monitoring"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+conductor-sdk = { path = "../../../../crates/conductor-sdk" }
+tokio.workspace = true
+tracing = { workspace = true }
+serde = { workspace = true }
+chrono = { workspace = true }

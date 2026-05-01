@@ -1,0 +1,11 @@
+[package]
+name = "pdk-manager"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+conductor-sdk = { path = "../../../../crates/conductor-sdk" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

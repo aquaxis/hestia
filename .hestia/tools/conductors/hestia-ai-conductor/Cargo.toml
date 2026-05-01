@@ -1,0 +1,21 @@
+[package]
+name = "hestia-ai-conductor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ai-core = { path = "crates/ai-core" }
+conductor-client = { path = "crates/conductor-client" }
+upgrade-manager = { path = "crates/upgrade-manager" }
+workflow-engine = { path = "crates/workflow-engine" }
+spec-driven = { path = "crates/spec-driven" }
+skill-system = { path = "crates/skill-system" }
+multi-agent = { path = "crates/multi-agent" }
+agent-communication = { path = "crates/agent-communication" }
+agent-monitoring = { path = "crates/agent-monitoring" }
+container-manager = { path = "crates/container-manager" }
+conductor-sdk.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+clap.workspace = true

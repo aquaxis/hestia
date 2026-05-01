@@ -1,0 +1,20 @@
+[package]
+name = "hestia-debug-conductor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+debug-conductor-core = { path = "crates/conductor-core" }
+debug-project-model = { path = "crates/project-model" }
+debug-plugin-registry = { path = "crates/plugin-registry" }
+debug-adapter-jtag = { path = "crates/adapter-jtag" }
+debug-adapter-swd = { path = "crates/adapter-swd" }
+debug-adapter-ila = { path = "crates/adapter-ila" }
+debug-waveform-capture = { path = "crates/waveform-capture" }
+debug-protocol-analyzer = { path = "crates/protocol-analyzer" }
+conductor-sdk.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }

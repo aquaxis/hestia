@@ -1,0 +1,10 @@
+[package]
+name = "hestia"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+conductor-sdk.workspace = true
+clap = { workspace = true, features = ["derive"] }
+tokio.workspace = true
+anyhow.workspace = true

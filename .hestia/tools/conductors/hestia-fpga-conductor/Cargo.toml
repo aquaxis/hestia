@@ -1,0 +1,19 @@
+[package]
+name = "hestia-fpga-conductor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fpga-conductor-core = { path = "crates/conductor-core" }
+fpga-project-model = { path = "crates/project-model" }
+fpga-plugin-registry = { path = "crates/plugin-registry" }
+adapter-vivado = { path = "crates/adapter-vivado" }
+adapter-quartus = { path = "crates/adapter-quartus" }
+adapter-efinity = { path = "crates/adapter-efinity" }
+conductor-sdk.workspace = true
+adapter-core.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tracing-subscriber = { workspace = true }

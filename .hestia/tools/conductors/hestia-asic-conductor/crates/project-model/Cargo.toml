@@ -1,0 +1,10 @@
+[package]
+name = "asic-project-model"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+project-model = { path = "../../../../crates/project-model" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }

@@ -1,0 +1,17 @@
+[package]
+name = "hestia-rtl-conductor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+conductor-sdk.workspace = true
+adapter-core.workspace = true
+project-model.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+clap.workspace = true
+tracing-subscriber.workspace = true

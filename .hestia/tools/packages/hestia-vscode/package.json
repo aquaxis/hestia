@@ -1,0 +1,91 @@
+{
+  "name": "hestia-vscode",
+  "displayName": "Hestia - Hardware Engineering Stack",
+  "description": "Integrated hardware development environment for FPGA, ASIC, PCB, HAL, and embedded systems",
+  "version": "0.1.0",
+  "publisher": "aquaxis",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Programming Languages", "Debuggers", "Other"],
+  "activationEvents": [
+    "onCommand:hestia.start",
+    "onView:hestia-conductor"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "hestia.start", "title": "Hestia: Start" },
+      { "command": "hestia.stop", "title": "Hestia: Stop" },
+      { "command": "hestia.status", "title": "Hestia: Status" },
+      { "command": "hestia.ai", "title": "Hestia: AI Conductor" },
+      { "command": "hestia.rtl", "title": "Hestia: RTL" },
+      { "command": "hestia.fpga", "title": "Hestia: FPGA" },
+      { "command": "hestia.asic", "title": "Hestia: ASIC" },
+      { "command": "hestia.pcb", "title": "Hestia: PCB" },
+      { "command": "hestia.hal", "title": "Hestia: HAL" },
+      { "command": "hestia.apps", "title": "Hestia: Apps" },
+      { "command": "hestia.debug", "title": "Hestia: Debug" },
+      { "command": "hestia.rag", "title": "Hestia: RAG" },
+      { "command": "hestia.build", "title": "Hestia: Build" },
+      { "command": "hestia.simulate", "title": "Hestia: Simulate" },
+      { "command": "hestia.synthesize", "title": "Hestia: Synthesize" },
+      { "command": "hestia.program", "title": "Hestia: Program" },
+      { "command": "hestia.waveform", "title": "Hestia: Waveform Viewer" },
+      { "command": "hestia.lint", "title": "Hestia: Lint" },
+      { "command": "hestia.formal", "title": "Hestia: Formal Verification" },
+      { "command": "hestia.spec", "title": "Hestia: View Specification" },
+      { "command": "hestia.agent.list", "title": "Hestia: List Agents" },
+      { "command": "hestia.agent.start", "title": "Hestia: Start Agent" },
+      { "command": "hestia.agent.stop", "title": "Hestia: Stop Agent" },
+      { "command": "hestia.workflow.run", "title": "Hestia: Run Workflow" },
+      { "command": "hestia.container.list", "title": "Hestia: List Containers" },
+      { "command": "hestia.container.start", "title": "Hestia: Start Container" },
+      { "command": "hestia.container.stop", "title": "Hestia: Stop Container" },
+      { "command": "hestia.container.create", "title": "Hestia: Create Container" },
+      { "command": "hestia.review.start", "title": "Hestia: Start Review" },
+      { "command": "hestia.config", "title": "Hestia: Configuration" }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "hestia",
+          "title": "Hestia",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "hestia": [
+        { "id": "hestia-conductor", "name": "Conductors" },
+        { "id": "hestia-agents", "name": "Agents" },
+        { "id": "hestia-specs", "name": "Specifications" }
+      ]
+    },
+    "languages": [
+      { "id": "verilog", "extensions": [".v", ".vh"] },
+      { "id": "systemverilog", "extensions": [".sv", ".svh"] },
+      { "id": "vhdl", "extensions": [".vhd", ".vhdl"] },
+      { "id": "xdc", "extensions": [".xdc"] },
+      { "id": "pcf", "extensions": [".pcf"] },
+      { "id": "hestia-toml", "extensions": [".hestia/toml"] }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src/",
+    "test": "node ./dist/test/runTest.js"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "eslint": "^8.0.0"
+  },
+  "license": "MIT OR Apache-2.0"
+}

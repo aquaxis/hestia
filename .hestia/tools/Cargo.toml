@@ -1,0 +1,79 @@
+[workspace]
+resolver = "2"
+members = [
+    # Conductor デーモン (9)
+    "conductors/hestia-ai-conductor",
+    "conductors/hestia-rtl-conductor",
+    "conductors/hestia-fpga-conductor",
+    "conductors/hestia-asic-conductor",
+    "conductors/hestia-pcb-conductor",
+    "conductors/hestia-hal-conductor",
+    "conductors/hestia-apps-conductor",
+    "conductors/hestia-debug-conductor",
+    "conductors/hestia-rag-conductor",
+    # CLI クライアント (10)
+    "clis/hestia",
+    "clis/hestia-ai-cli",
+    "clis/hestia-rtl-cli",
+    "clis/hestia-fpga-cli",
+    "clis/hestia-asic-cli",
+    "clis/hestia-pcb-cli",
+    "clis/hestia-hal-cli",
+    "clis/hestia-apps-cli",
+    "clis/hestia-debug-cli",
+    "clis/hestia-rag-cli",
+    # 共通クレート (4)
+    "crates/conductor-sdk",
+    "crates/adapter-core",
+    "crates/project-model",
+    "crates/hestia-mcp-server",
+    # 共有サービス層 (6)
+    "crates/hdl-lsp-broker",
+    "crates/waveform-core",
+    "crates/constraint-bridge",
+    "crates/ip-manager",
+    "crates/cicd-api",
+    "crates/observability",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# 非同期ランタイム
+tokio = { version = "1", features = ["full"] }
+# シリアライゼーション
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+# エラー処理
+thiserror = "1"
+anyhow = "1"
+# CLI
+clap = { version = "4", features = ["derive"] }
+# ロギング
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+# 永続化
+sled = "0.34"
+# テンプレート
+minijinja = "2"
+# DAG
+petgraph = "0.6"
+# 非同期トレイト
+async-trait = "0.1"
+# 日時
+chrono = { version = "0.4", features = ["serde"] }
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+# 正規表現
+regex = "1"
+# プロセス管理
+command-group = "2"
+# 内部クレート
+conductor-sdk = { path = "crates/conductor-sdk" }
+adapter-core = { path = "crates/adapter-core" }
+project-model = { path = "crates/project-model" }

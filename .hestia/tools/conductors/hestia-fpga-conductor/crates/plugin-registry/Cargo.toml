@@ -1,0 +1,12 @@
+[package]
+name = "fpga-plugin-registry"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+conductor-sdk = { path = "../../../../crates/conductor-sdk" }
+adapter-core = { path = "../../../../crates/adapter-core" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,14 @@
+[package]
+name = "hdl-lsp-broker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+conductor-sdk = { path = "../../crates/conductor-sdk" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+lsp-types = "0.95"
+tower-lsp = "0.20"
+tracing = { workspace = true }
+thiserror = { workspace = true }

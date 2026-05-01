@@ -1,0 +1,13 @@
+[package]
+name = "hestia-rag-conductor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+rag-conductor-core = { path = "crates/conductor-core" }
+rag-ingest = { path = "crates/rag-ingest" }
+conductor-sdk.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true }
+anyhow.workspace = true

@@ -1,0 +1,21 @@
+[package]
+name = "hestia-pcb-conductor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pcb-conductor-core = { path = "crates/conductor-core" }
+pcb-project-model = { path = "crates/project-model" }
+pcb-plugin-registry = { path = "crates/plugin-registry" }
+adapter-kicad = { path = "crates/adapter-kicad" }
+schematic-ai = { path = "crates/schematic-ai" }
+knowledge-graph = { path = "crates/knowledge-graph" }
+constraint-verifier = { path = "crates/constraint-verifier" }
+conductor-sdk.workspace = true
+adapter-core.workspace = true
+project-model.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tracing-subscriber = { workspace = true }

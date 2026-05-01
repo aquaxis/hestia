@@ -1,0 +1,66 @@
+{
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devPath": "http://localhost:3000",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "Hestia IDE",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "bundle": {
+      "active": true,
+      "targets": ["deb", "rpm", "appimage"],
+      "identifier": "dev.hestia.ide",
+      "icon": ["icons/icon.png"],
+      "resources": [],
+      "externalBin": [],
+      "copyright": "",
+      "category": "DeveloperTool",
+      "shortDescription": "Hestia Desktop IDE for hardware development",
+      "longDescription": "Integrated hardware development environment for FPGA, ASIC, PCB, HAL, and embedded systems",
+      "deb": {
+        "depends": []
+      },
+      "rpm": {
+        "depends": []
+      }
+    },
+    "allowlist": {
+      "shell": {
+        "open": true
+      }
+    },
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: ws://localhost:*; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    },
+    "windows": [
+      {
+        "title": "Hestia IDE",
+        "label": "main",
+        "width": 1440,
+        "height": 900,
+        "resizable": true,
+        "fullscreen": false
+      },
+      {
+        "title": "Waveform Viewer",
+        "label": "waveform",
+        "width": 1200,
+        "height": 600,
+        "resizable": true,
+        "url": "waveform.html"
+      },
+      {
+        "title": "Settings",
+        "label": "settings",
+        "width": 800,
+        "height": 600,
+        "resizable": true,
+        "url": "settings.html"
+      }
+    ]
+  }
+}

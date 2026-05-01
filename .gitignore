@@ -1,6 +1,7 @@
 # AI project files
 .aiprj/
 .claude/
+.mcp.json
 
 # Rust build artifacts
 target/

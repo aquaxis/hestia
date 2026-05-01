@@ -1,0 +1,16 @@
+[package]
+name = "container-manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+conductor-sdk = { path = "../../../../crates/conductor-sdk" }
+project-model = { path = "../../../../crates/project-model" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+minijinja = { workspace = true }
+toml = { workspace = true }
+chrono = { workspace = true }
