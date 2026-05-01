@@ -158,8 +158,8 @@ make build          # Release build (all 19 binaries)
 make test           # Run all tests
 make lint           # Run clippy
 make fmt            # Check formatting
-make install        # Install to /usr/local/bin
-make install PREFIX=~/.local/bin  # Custom prefix
+make install        # Install to ~/.local/bin (default)
+make install PREFIX=/usr/local/bin  # System-wide install
 make clean          # Clean build artifacts
 ```
 

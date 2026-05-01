@@ -158,8 +158,8 @@ make build          # リリースビルド（全19バイナリ）
 make test           # テスト実行
 make lint           # clippy 実行
 make fmt            # フォーマットチェック
-make install        # /usr/local/bin にインストール
-make install PREFIX=~/.local/bin  # カスタムプレフィックス
+make install        # ~/.local/bin にインストール（デフォルト）
+make install PREFIX=/usr/local/bin  # システム全体にインストール
 make clean          # ビルド成果物を削除
 ```
 

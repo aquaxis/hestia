@@ -6,7 +6,7 @@ set -eu
 
 REPO_URL="https://github.com/AQUAXIS/hestia.git"
 REPO_DIR="${HESTIA_REPO_DIR:-${HOME}/.hestia/src/hestia}"
-PREFIX="${HESTIA_PREFIX:-/usr/local/bin}"
+PREFIX="${HESTIA_PREFIX:-${HOME}/.local/bin}"
 BRANCH="${HESTIA_BRANCH:-main}"
 MSRV="1.75.0"
 
@@ -137,7 +137,7 @@ usage() {
     echo "Usage: install.sh [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --prefix DIR     Install binaries to DIR (default: /usr/local/bin)"
+    echo "  --prefix DIR     Install binaries to DIR (default: ~/.local/bin)"
     echo "  --branch BRANCH  Git branch to checkout (default: main)"
     echo "  --repo-dir DIR   Directory to clone the repository (default: ~/.hestia/src/hestia)"
     echo "  --skip-build     Skip the build step (use existing binaries)"
@@ -145,7 +145,7 @@ usage() {
     echo "  -h, --help       Show this help message"
     echo ""
     echo "Environment variables:"
-    echo "  HESTIA_PREFIX     Install prefix (default: /usr/local/bin)"
+    echo "  HESTIA_PREFIX     Install prefix (default: ~/.local/bin)"
     echo "  HESTIA_BRANCH     Git branch (default: main)"
     echo "  HESTIA_REPO_DIR   Repository directory (default: ~/.hestia/src/hestia)"
     echo ""

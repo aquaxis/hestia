@@ -1,4 +1,4 @@
-PREFIX ?= /usr/local/bin
+PREFIX ?= $(HOME)/.local/bin
 CARGO := cargo
 TOOLS_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 RELEASE_DIR := $(TOOLS_DIR)/target/release
@@ -75,8 +75,8 @@ help:
 	@echo "  help         Show this help"
 	@echo ""
 	@echo "Variables:"
-	@echo "  PREFIX       Installation prefix (default: /usr/local/bin)"
+	@echo "  PREFIX       Installation prefix (default: ~/.local/bin)"
 	@echo ""
 	@echo "Examples:"
-	@echo "  make install PREFIX=~/.local/bin"
+	@echo "  make install PREFIX=/usr/local/bin"
 	@echo "  make build && make test"
