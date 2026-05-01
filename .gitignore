@@ -1,0 +1,32 @@
+# AI project files
+.aiprj/
+.claude/
+
+# Rust build artifacts
+target/
+**/target/
+
+# Cargo lock (workspace-level lock is kept, per-package locks ignored)
+**/Cargo.lock
+
+# Node.js / frontend
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
