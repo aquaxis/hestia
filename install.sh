@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 # Hestia — Hardware Engineering Stack for Tool Integration and Automation
 # One-line installer: curl -fsSL https://raw.githubusercontent.com/AQUAXIS/hestia/main/install.sh | sh
@@ -10,27 +10,26 @@ PREFIX="${HESTIA_PREFIX:-/usr/local/bin}"
 BRANCH="${HESTIA_BRANCH:-main}"
 MSRV="1.75.0"
 
-BOLD='\033[1m'
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-NC='\033[0m'
+info()  { printf "\033[0;32m[hestia]\033[0m %s\n" "$1"; }
+warn()  { printf "\033[0;33m[hestia]\033[0m %s\n" "$1"; }
+error() { printf "\033[0;31m[hestia]\033[0m %s\n" "$1" >&2; exit 1; }
 
-info()  { printf "${GREEN}[hestia]${NC} %s\n" "$1"; }
-warn()  { printf "${YELLOW}[hestia]${NC} %s\n" "$1"; }
-error() { printf "${RED}[hestia]${NC} %s\n" "$1" >&2; exit 1; }
+version_gte() {
+    # $1 = installed, $2 = minimum (x.y.z format)
+    _v1_major="${1%%.*}"; _rest="${1#*.}"; _v1_minor="${_rest%%.*}"; _v1_patch="${_rest#*.}"
+    _v2_major="${2%%.*}"; _rest="${2#*.}"; _v2_minor="${_rest%%.*}"; _v2_patch="${_rest#*.}"
+    [ "$_v1_major" -gt "$_v2_major" ] && return 0
+    [ "$_v1_major" -lt "$_v2_major" ] && return 1
+    [ "$_v1_minor" -gt "$_v2_minor" ] && return 0
+    [ "$_v1_minor" -lt "$_v2_minor" ] && return 1
+    [ "$_v1_patch" -ge "$_v2_patch" ] && return 0
+    return 1
+}
 
 check_rust() {
-    if command -v rustc &>/dev/null; then
-        local version
+    if command -v rustc >/dev/null 2>&1; then
         version=$(rustc --version | awk '{print $2}' | tr -d 'v')
-        local major minor patch
-        IFS='.' read -r major minor patch <<< "$version"
-        local min_major min_minor min_patch
-        IFS='.' read -r min_major min_minor min_patch <<< "$MSRV"
-        if (( major > min_major )) || \
-           (( major == min_major && minor > min_minor )) || \
-           (( major == min_major && minor == min_minor && patch >= min_patch )); then
+        if version_gte "$version" "$MSRV"; then
             info "Rust $version detected (MSRV: $MSRV)"
             return 0
         fi
@@ -39,10 +38,9 @@ check_rust() {
 
     info "Installing Rust toolchain via rustup..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-    # shellcheck source=/dev/null
-    source "${HOME}/.cargo/env" 2>/dev/null || true
+    . "${HOME}/.cargo/env" 2>/dev/null || true
 
-    if ! command -v rustc &>/dev/null; then
+    if ! command -v rustc >/dev/null 2>&1; then
         error "rustc not found after rustup install. Please add ~/.cargo/bin to your PATH and retry."
     fi
     info "Rust $(rustc --version | awk '{print $2}') installed."
@@ -59,7 +57,7 @@ clone_repo() {
 }
 
 build_release() {
-    local tools_dir="${REPO_DIR}/.hestia/tools"
+    tools_dir="${REPO_DIR}/.hestia/tools"
     if [ ! -f "${tools_dir}/Cargo.toml" ]; then
         error "Cargo.toml not found at ${tools_dir}. Repository may be corrupted."
     fi
@@ -70,29 +68,23 @@ build_release() {
 }
 
 install_binaries() {
-    local src="${REPO_DIR}/.hestia/tools/target/release"
+    src="${REPO_DIR}/.hestia/tools/target/release"
     if [ ! -d "${src}" ]; then
         error "Release binaries not found at ${src}. Did the build succeed?"
     fi
 
-    # Ensure prefix directory exists
     if [ ! -d "${PREFIX}" ]; then
         info "Creating install directory ${PREFIX}..."
-        sudo mkdir -p "${PREFIX}" 2>/dev/null || mkdir -p "${PREFIX}"
+        mkdir -p "${PREFIX}" 2>/dev/null || sudo mkdir -p "${PREFIX}"
     fi
 
-    local binaries=()
+    count=0
     for bin in "${src}"/hestia*; do
-        # Skip .d dependency files
         [ -f "${bin}" ] || continue
-        [[ "${bin}" == *.d ]] && continue
-        # Only install actual executables (skip libraries)
+        case "${bin}" in *.d) continue ;; esac
         [ -x "${bin}" ] || continue
-        binaries+=("$(basename "${bin}")")
-    done
 
-    info "Installing ${#binaries[@]} binaries to ${PREFIX}..."
-    for name in "${binaries[@]}"; do
+        name=$(basename "${bin}")
         if [ -w "${PREFIX}" ]; then
             cp "${src}/${name}" "${PREFIX}/${name}"
             chmod 755 "${PREFIX}/${name}"
@@ -100,16 +92,14 @@ install_binaries() {
             sudo cp "${src}/${name}" "${PREFIX}/${name}"
             sudo chmod 755 "${PREFIX}/${name}"
         fi
+        printf "  - %s\n" "${name}"
+        count=$((count + 1))
     done
 
-    info "Installed ${#binaries[@]} binaries:"
-    for name in "${binaries[@]}"; do
-        printf "  - %s\n" "${name}"
-    done
+    info "Installed ${count} binaries to ${PREFIX}"
 }
 
 check_path() {
-    local prefix_dir
     prefix_dir=$(dirname "${PREFIX}/hestia")
     case ":${PATH}:" in
         *":${prefix_dir}:"*) return 0 ;;
@@ -133,13 +123,13 @@ check_path() {
 
 print_banner() {
     echo ""
-    printf "${BOLD}${GREEN}"
+    printf "\033[1m\033[0;32m"
     echo "  _   _           _       "
     echo " | |_| |_  ___ __| | _____"
     echo " |  _| ' \\/ -_) _' |/ / -_)"
     echo "  \\__|_||_\\___\\__,_|_\\_\\___|"
     echo "  Hardware Engineering Stack"
-    printf "${NC}"
+    printf "\033[0m"
     echo ""
 }
 
@@ -147,12 +137,12 @@ usage() {
     echo "Usage: install.sh [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --prefix DIR    Install binaries to DIR (default: /usr/local/bin)"
+    echo "  --prefix DIR     Install binaries to DIR (default: /usr/local/bin)"
     echo "  --branch BRANCH  Git branch to checkout (default: main)"
-    echo "  --repo-dir DIR  Directory to clone the repository (default: ~/.hestia/src/hestia)"
-    echo "  --skip-build    Skip the build step (use existing binaries)"
-    echo "  --skip-clone    Skip the git clone step (use existing repo)"
-    echo "  -h, --help      Show this help message"
+    echo "  --repo-dir DIR   Directory to clone the repository (default: ~/.hestia/src/hestia)"
+    echo "  --skip-build     Skip the build step (use existing binaries)"
+    echo "  --skip-clone     Skip the git clone step (use existing repo)"
+    echo "  -h, --help       Show this help message"
     echo ""
     echo "Environment variables:"
     echo "  HESTIA_PREFIX     Install prefix (default: /usr/local/bin)"
@@ -167,38 +157,34 @@ usage() {
 SKIP_BUILD=false
 SKIP_CLONE=false
 
-while [[ $# -gt 0 ]]; do
+while [ $# -gt 0 ]; do
     case "$1" in
-        --prefix)   PREFIX="$2"; shift 2 ;;
-        --branch)   BRANCH="$2"; shift 2 ;;
-        --repo-dir)  REPO_DIR="$2"; shift 2 ;;
+        --prefix)     PREFIX="$2"; shift 2 ;;
+        --branch)     BRANCH="$2"; shift 2 ;;
+        --repo-dir)   REPO_DIR="$2"; shift 2 ;;
         --skip-build) SKIP_BUILD=true; shift ;;
         --skip-clone) SKIP_CLONE=true; shift ;;
-        -h|--help)   usage; exit 0 ;;
+        -h|--help)     usage; exit 0 ;;
         *) error "Unknown option: $1. Use --help for usage." ;;
     esac
 done
 
-main() {
-    print_banner
-    check_rust
+print_banner
+check_rust
 
-    if [ "$SKIP_CLONE" = false ]; then
-        clone_repo
-    fi
+if [ "$SKIP_CLONE" = false ]; then
+    clone_repo
+fi
 
-    if [ "$SKIP_BUILD" = false ]; then
-        build_release
-    fi
+if [ "$SKIP_BUILD" = false ]; then
+    build_release
+fi
 
-    install_binaries
-    check_path
+install_binaries
+check_path
 
-    echo ""
-    info "${BOLD}Hestia installed successfully!${NC}"
-    echo "  Run 'hestia init' to initialize a project."
-    echo "  Run 'hestia --help' for available commands."
-    echo ""
-}
-
-main "$@"
+echo ""
+info "Hestia installed successfully!"
+echo "  Run 'hestia init' to initialize a project."
+echo "  Run 'hestia --help' for available commands."
+echo ""
