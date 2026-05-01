@@ -2,6 +2,7 @@
 .aiprj/
 .claude/
 .mcp.json
+.hestia/design/hestia_design.md
 
 # Rust build artifacts
 target/
