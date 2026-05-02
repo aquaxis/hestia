@@ -204,13 +204,19 @@ async fn wait_for_ai_readiness() -> Result<()> {
 
         if let Ok(out) = output {
             let stdout = String::from_utf8_lossy(&out.stdout);
-            // Check if "ai" appears in the agent list as a registered peer
-            if stdout.lines().any(|line| {
+            // agent-cli list output format: ID  NAME  PROVIDER  MODEL  ...
+            // Check if any data row contains "ai" as a NAME column value
+            for line in stdout.lines() {
                 let trimmed = line.trim();
-                trimmed.starts_with("ai ") || trimmed.starts_with("ai\t") || trimmed == "ai"
-            }) {
-                println!("ai-conductor is online");
-                return Ok(());
+                if trimmed.is_empty() || trimmed.starts_with("ID") || trimmed.starts_with('-') {
+                    continue; // skip header and separator lines
+                }
+                // Split by whitespace and check if NAME column is "ai"
+                let fields: Vec<&str> = trimmed.split_whitespace().collect();
+                if fields.len() >= 2 && fields[1] == "ai" {
+                    println!("ai-conductor is online");
+                    return Ok(());
+                }
             }
         }
 
