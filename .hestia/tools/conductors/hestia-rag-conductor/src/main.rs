@@ -1,8 +1,9 @@
-use anyhow::Result;
-use tracing::info;
+use conductor_sdk::agent::ConductorId;
+use conductor_sdk::server::ConductorServer;
+use hestia_rag_conductor::handler::RagHandler;
 
-fn main() -> Result<()> {
-    // Initialize tracing
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -10,11 +11,12 @@ fn main() -> Result<()> {
         )
         .init();
 
-    info!("hestia-rag-conductor starting...");
+    tracing::info!("hestia-rag-conductor starting...");
 
-    // Create the RAG conductor
     let _conductor = rag_conductor_core::RagConductor::new();
 
-    info!("hestia-rag-conductor ready");
+    let handler = RagHandler;
+    let server = ConductorServer::new(ConductorId::Rag, Box::new(handler))?;
+    server.run().await?;
     Ok(())
 }

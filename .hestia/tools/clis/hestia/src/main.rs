@@ -100,22 +100,22 @@ fn dispatch_cli(domain: &str, args: &[String]) -> Result<()> {
 async fn start_conductor(domain: &str) -> Result<()> {
     let bin = format!("hestia-{domain}-conductor");
     println!("Starting {bin} ...");
-    let mut child = Command::new(&bin)
+    let _child = Command::new(&bin)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
         .map_err(|e| anyhow::anyhow!("failed to spawn {bin}: {e}"))?;
-    let status = child.wait().await?;
-    if !status.success() {
-        bail!("{bin} exited with {}", status);
-    }
+    // バックグラウンドで起動し、wait しない（デーモンは常駐する）
     Ok(())
 }
 
 async fn start_all_conductors() -> Result<()> {
     for domain in DOMAINS {
         start_conductor(domain).await?;
+        // conductor 間の起動タイミングをずらす
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
+    println!("All conductors started (running in background)");
     Ok(())
 }
 

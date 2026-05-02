@@ -3,6 +3,7 @@
 pub mod adapter;
 pub mod fsm_states;
 pub mod formal;
+pub mod handler;
 pub mod handoff;
 pub mod language;
 pub mod lint;

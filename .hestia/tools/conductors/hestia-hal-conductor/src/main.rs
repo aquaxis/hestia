@@ -1,8 +1,9 @@
-use anyhow::Result;
-use clap::Parser;
+use conductor_sdk::agent::ConductorId;
+use conductor_sdk::server::ConductorServer;
 use conductor_sdk::config::CommonOpts;
+use clap::Parser;
+use hestia_hal_conductor::handler::HalHandler;
 
-/// Hestia HAL Conductor daemon
 #[derive(Debug, Parser)]
 #[command(name = "hestia-hal-conductor", version)]
 struct Opts {
@@ -11,7 +12,7 @@ struct Opts {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
     let _opts = Opts::parse();
 
     tracing_subscriber::fmt()
@@ -24,6 +25,8 @@ async fn main() -> Result<()> {
     tracing::info!("hestia-hal-conductor starting");
     tracing::info!("conductor_id = hal");
 
-    // TODO: initialize transport, register adapters, serve RPC
+    let handler = HalHandler;
+    let server = ConductorServer::new(ConductorId::Hal, Box::new(handler))?;
+    server.run().await?;
     Ok(())
 }
