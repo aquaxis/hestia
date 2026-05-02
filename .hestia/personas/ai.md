@@ -70,21 +70,39 @@ INSTRUCTION:
 
 各ステップは `shell` ツールで対応する `hestia-{domain}-cli` を起動します。**全 CLI は in-process Handler 呼び出しで動作するため、stdout には構造化 JSON が出力されます**。
 
-実行例：
+### 重要: `--output json` フラグの位置
+
+`--output json` フラグは `subcommand` の **前でも後でも** 動作します（`global = true` 設定）:
+
+- `hestia-rtl-cli --output json lint`  ← 推奨形（subcommand の前）
+- `hestia-rtl-cli lint --output json`  ← 動作する（subcommand の後）
+
+**必ず `--output json` を付けてください**。付けないと human 形式 `[method] {...JSON...}` で先頭にラベルが付き、JSON parse がしにくくなります。
+
+実行例（推奨形：subcommand の前にフラグを置く）:
 
 | ステップ | shell コマンド |
 |---------|---------------|
-| HAL parse | `hestia-hal-cli parse --output json` |
-| RTL lint | `hestia-rtl-cli lint --output json` |
-| RTL simulate | `hestia-rtl-cli simulate --output json` |
-| FPGA build | `hestia-fpga-cli build artix7 --output json` |
-| ASIC synthesize | `hestia-asic-cli build --output json` |
-| PCB DRC | `hestia-pcb-cli drc --output json` |
-| Apps build | `hestia-apps-cli build --output json` |
-| Debug connect | `hestia-debug-cli connect --output json` |
-| RAG search | `hestia-rag-cli search "<keyword>" --output json` |
+| HAL parse | `hestia-hal-cli --output json parse` |
+| RTL lint | `hestia-rtl-cli --output json lint` |
+| RTL simulate | `hestia-rtl-cli --output json simulate` |
+| FPGA build | `hestia-fpga-cli --output json build artix7` |
+| ASIC synthesize | `hestia-asic-cli --output json build` |
+| PCB DRC | `hestia-pcb-cli --output json drc` |
+| Apps build | `hestia-apps-cli --output json build` |
+| Debug connect | `hestia-debug-cli --output json connect` |
+| RAG search | `hestia-rag-cli --output json search "<keyword>"` |
 
 shell ツールの戻り値は `{"ok": bool, "content": "{\"exit_code\":N,\"stdout\":\"...\",\"stderr\":\"...\"}"}` の二重 JSON 構造です。`content` を parse して `exit_code` と `stdout` を取得し、`stdout` をさらに JSON parse して構造化結果を取得します。
+
+### 実行経路の重要事項
+
+各 `hestia-{domain}-cli` は **CLI バイナリ内で対応する domain conductor の Handler を in-process 実行** します。これは設計上の重要な特性です:
+
+- `hestia-hal-cli` を shell 経由で呼び出すと、`hal-conductor` の **Rust ハンドラが CLI プロセス内で直接実行** されます
+- そのため `hal-conductor`（agent-cli プロセス）の `agent.log` には記録が残りません（**これは設計通り**）
+- 同様に他の `hestia-{domain}-cli` も対応する conductor の agent.log を経由しません
+- 各 conductor の agent.log に記録されるのは、そこに `agent-cli send <conductor> <text>` で直接送信された prompt のみです
 
 ### halt-on-error ポリシー
 

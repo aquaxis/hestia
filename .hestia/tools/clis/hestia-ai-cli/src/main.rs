@@ -13,6 +13,7 @@ use conductor_sdk::message::{MessageId, Request, Response};
 use conductor_sdk::server::MessageHandler;
 use hestia_ai_conductor::handler::AiHandler;
 use rand::Rng;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -162,9 +163,11 @@ async fn run_with_orchestrator(
         eprintln!("[ai.run] result_path={result_path_str}");
     }
 
-    let status = std::process::Command::new("agent-cli")
+    // tokio::process::Command で非同期実行し、async ランタイムをブロックしない
+    let status = tokio::process::Command::new("agent-cli")
         .args(["send", "ai", &prompt])
         .status()
+        .await
         .map_err(|e| anyhow!("failed to invoke agent-cli send: {e}"))?;
     if !status.success() {
         return Err(anyhow!(
@@ -183,17 +186,46 @@ async fn run_with_orchestrator(
         tokio::time::sleep(interval).await;
     }
 
-    let content = std::fs::read_to_string(&result_path)
-        .map_err(|e| anyhow!("failed to read result file {}: {e}", result_path.display()))?;
-    let value: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| anyhow!("failed to parse result JSON {}: {e}", result_path.display()))?;
+    // ファイル書き込みのレースコンディション回避: 一度安定した内容を取得できるまで再試行
+    // 末尾が `}` で終わり、JSON parse が成功するまで最大 5 回（合計 1 秒）リトライ
+    let value = read_result_with_retry(&result_path).await?;
 
-    let status_field = value.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let status_field = value
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     emit(common, "ai.run", &value, status_field == "error")?;
+    // stdout を確実に flush してから exit する（パイプ／リダイレクト経路での信頼性確保）
+    std::io::stdout().flush().ok();
+    std::io::stderr().flush().ok();
     if status_field == "error" {
         std::process::exit(1);
     }
     Ok(())
+}
+
+/// fs_write の途中で読み込まれることによる JSON parse 失敗を回避するため、
+/// 安定した完全 JSON が読めるまで最大 5 回リトライする。
+async fn read_result_with_retry(path: &Path) -> Result<serde_json::Value> {
+    let mut last_err: Option<String> = None;
+    for _ in 0..5 {
+        match std::fs::read_to_string(path) {
+            Ok(content) if !content.trim().is_empty() => {
+                match serde_json::from_str::<serde_json::Value>(&content) {
+                    Ok(v) => return Ok(v),
+                    Err(e) => last_err = Some(format!("parse error: {e}")),
+                }
+            }
+            Ok(_) => last_err = Some("file empty".to_string()),
+            Err(e) => last_err = Some(format!("read error: {e}")),
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    Err(anyhow!(
+        "failed to read stable result JSON {} after retries: {}",
+        path.display(),
+        last_err.unwrap_or_else(|| "unknown".to_string())
+    ))
 }
 
 /// in-process 経路: AiHandler を直接呼び出して即時応答

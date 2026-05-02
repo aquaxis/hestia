@@ -163,26 +163,30 @@ fn default_max_tokens() -> u32 {
 }
 
 /// 共通 CLI オプション
+///
+/// 全フラグを `global = true` にしているため、subcommand の前後どちらでも指定可能:
+/// - `hestia-rtl-cli --output json lint`  ← 従来形（subcommand の前）
+/// - `hestia-rtl-cli lint --output json`  ← LLM が好む形（subcommand の後）
 #[derive(Debug, Clone, clap::Parser)]
 pub struct CommonOpts {
     /// 出力フォーマット: human | json
-    #[arg(long, default_value = "human")]
+    #[arg(long, global = true, default_value = "human")]
     pub output: String,
 
     /// RPC タイムアウト（秒）
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub timeout: Option<u64>,
 
     /// agent-cli レジストリパス
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub registry: Option<String>,
 
     /// 設定ファイルパス
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub config: Option<String>,
 
     /// 詳細ログ出力
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub verbose: bool,
 }
 
