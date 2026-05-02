@@ -140,8 +140,15 @@ async fn start_conductor(domain: &str) -> Result<()> {
         std::fs::create_dir_all(&workdir)?;
     }
 
+    // Redirect stdout/stderr to log file for background operation
+    let log_path = workdir.join("agent.log");
+    let log_file = std::fs::File::create(&log_path)
+        .map_err(|e| anyhow::anyhow!("failed to create log file {}: {e}", log_path.display()))?;
+    let log_file_stderr = log_file.try_clone()
+        .map_err(|e| anyhow::anyhow!("failed to dup log file: {e}"))?;
+
     println!("Starting agent-cli --name {} --persona {} ...", domain, persona.display());
-    let _child = Command::new("agent-cli")
+    let mut child = Command::new("agent-cli")
         .arg("run")
         .arg("--persona")
         .arg(&persona)
@@ -150,10 +157,12 @@ async fn start_conductor(domain: &str) -> Result<()> {
         .arg("--auto-approve-tools")
         .current_dir(&workdir)
         .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stdout(Stdio::from(log_file))
+        .stderr(Stdio::from(log_file_stderr))
         .spawn()
         .map_err(|e| anyhow::anyhow!("failed to spawn agent-cli for {domain}: {e}"))?;
+
+    // Child process runs in background — do not await or kill on drop
 
     Ok(())
 }
@@ -165,9 +174,7 @@ async fn wait_for_ai_readiness() -> Result<()> {
 
     while start.elapsed() < timeout {
         let output = Command::new("agent-cli")
-            .arg("send")
-            .arg("ai")
-            .arg("{\"method\":\"system.health.v1\",\"id\":\"readiness-check\"}")
+            .arg("list")
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .output()
@@ -175,7 +182,11 @@ async fn wait_for_ai_readiness() -> Result<()> {
 
         if let Ok(out) = output {
             let stdout = String::from_utf8_lossy(&out.stdout);
-            if stdout.contains("\"online\"") || stdout.contains("\"status\":\"online\"") {
+            // Check if "ai" appears in the agent list as a registered peer
+            if stdout.lines().any(|line| {
+                let trimmed = line.trim();
+                trimmed.starts_with("ai ") || trimmed.starts_with("ai\t") || trimmed == "ai"
+            }) {
                 println!("ai-conductor is online");
                 return Ok(());
             }
