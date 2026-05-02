@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 conductor-sdk.workspace = true
+hestia-rag-conductor = { path = "../../conductors/hestia-rag-conductor" }
 clap = { workspace = true, features = ["derive"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -1,14 +1,14 @@
-//! hestia-fpga-cli -- FPGA conductor CLI client
+//! hestia-fpga-cli -- FPGA conductor CLI client (in-process Handler invocation)
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use conductor_sdk::agent::ConductorId;
-use conductor_sdk::config::{CommonOpts, HestiaClientConfig};
-use conductor_sdk::message::{MessageId, Payload, Request};
-use conductor_sdk::transport::AgentCliClient;
+use conductor_sdk::config::CommonOpts;
+use conductor_sdk::message::{MessageId, Request, Response};
+use conductor_sdk::server::MessageHandler;
+use hestia_fpga_conductor::handler::FpgaHandler;
 
 #[derive(Parser)]
-#[command(name = "hestia-fpga-cli", version, about = "FPGA domain CLI")]
+#[command(name = "hestia-fpga-cli", version, about = "FPGA domain CLI (in-process)")]
 struct Cli {
     #[command(flatten)]
     common: CommonOpts,
@@ -56,38 +56,35 @@ fn build_request(method: &str, params: serde_json::Value) -> Request {
     }
 }
 
-fn output_result(common: &CommonOpts, label: &str, response: &str) {
+fn emit(common: &CommonOpts, label: &str, value: &serde_json::Value, is_error: bool) -> Result<()> {
+    let json = serde_json::to_string(value)?;
     if common.output == "json" {
-        println!("{}", response);
+        if is_error {
+            eprintln!("{}", json);
+        } else {
+            println!("{}", json);
+        }
+    } else if is_error {
+        eprintln!("[{label}] error: {json}");
     } else {
-        println!("[{label}] {response}");
+        println!("[{label}] {json}");
     }
+    Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-
-    let mut config = HestiaClientConfig::default();
-    if let Some(timeout) = common_timeout_seconds(&cli.common) {
-        config.request_timeout = timeout * 1000;
-    }
-    if let Some(ref registry) = cli.common.registry {
-        config.agent_cli_registry_dir = registry.clone();
-    }
-    if let Some(ref config_path) = cli.common.config {
-        let text = std::fs::read_to_string(config_path)?;
-        config = toml::from_str(&text).unwrap_or(config);
-    }
     if cli.common.verbose {
-        tracing_subscriber::fmt::init();
+        let _ = tracing_subscriber::fmt::try_init();
     }
-
-    let client = AgentCliClient::new(config)?;
 
     let (method, params) = match &cli.command {
         Commands::Init => ("fpga.init", serde_json::json!({})),
-        Commands::Build { target } => ("fpga.build.v1.start", serde_json::json!({ "target": target })),
+        Commands::Build { target } => (
+            "fpga.build.v1.start",
+            serde_json::json!({ "target": target }),
+        ),
         Commands::Synthesize => ("fpga.synthesize", serde_json::json!({})),
         Commands::Implement => ("fpga.implement", serde_json::json!({})),
         Commands::Bitstream => ("fpga.bitstream", serde_json::json!({})),
@@ -105,13 +102,16 @@ async fn main() -> Result<()> {
     };
 
     let request = build_request(method, params);
-    let payload = Payload::Structured(serde_json::to_value(&request)?);
-    let response = client.send_to_conductor(ConductorId::Fpga, &payload).await?;
-
-    output_result(&cli.common, method, &response);
-    Ok(())
-}
-
-fn common_timeout_seconds(opts: &CommonOpts) -> Option<u64> {
-    opts.timeout
+    let handler = FpgaHandler;
+    match handler.handle_request(request).await {
+        Response::Success(s) => {
+            emit(&cli.common, method, &s.result, false)?;
+            Ok(())
+        }
+        Response::Error(e) => {
+            let err_value = serde_json::to_value(&e.error)?;
+            emit(&cli.common, method, &err_value, true)?;
+            std::process::exit(1);
+        }
+    }
 }

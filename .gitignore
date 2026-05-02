@@ -32,3 +32,8 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# Hestia runtime
+.hestia/run_log/*.json
+.hestia/workspaces/*/agent.log
+.hestia/workspaces/*/stdin.pipe
