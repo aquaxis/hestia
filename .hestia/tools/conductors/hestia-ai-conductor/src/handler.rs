@@ -37,7 +37,7 @@ impl MessageHandler for AiHandler {
             "meta.dualBuild" => Self::handle_dual_build(params).await,
             "meta.boardWithFpga" => Self::handle_board_with_fpga(params).await,
             // System
-            "system.health" => Self::handle_health().await,
+            "system.health.v1" => Self::handle_health().await,
             "system.readiness" => Self::handle_readiness().await,
             "system.shutdown" => Self::handle_shutdown().await,
             _ => {

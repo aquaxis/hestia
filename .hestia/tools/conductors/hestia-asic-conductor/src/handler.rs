@@ -33,6 +33,7 @@ impl MessageHandler for AsicHandler {
             "asic.ai.drc_fix" => Self::handle_ai_drc_fix(params).await,
             "asic.ai.floorplan_optimize" => Self::handle_ai_floorplan_optimize(params).await,
             "asic.ai.pdk_migrate" => Self::handle_ai_pdk_migrate(params).await,
+            "asic.status" => Self::handle_status().await,
             "system.health.v1" => Self::handle_health().await,
             "system.readiness" => Self::handle_readiness().await,
             _ => {
@@ -191,6 +192,13 @@ impl AsicHandler {
             "status": "ok",
             "method": "asic.ai.pdk_migrate",
             "changes": [],
+        }))
+    }
+
+    async fn handle_status() -> Result<serde_json::Value, String> {
+        Ok(serde_json::json!({
+            "status": "online",
+            "method": "asic.status",
         }))
     }
 

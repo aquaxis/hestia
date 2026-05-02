@@ -134,9 +134,8 @@ impl PcbHandler {
 
     async fn handle_status() -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
-            "status": "ok",
+            "status": "online",
             "method": "pcb.status",
-            "state": "idle",
         }))
     }
 

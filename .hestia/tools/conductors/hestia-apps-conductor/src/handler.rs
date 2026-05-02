@@ -21,6 +21,7 @@ impl MessageHandler for AppsHandler {
             "apps.test.v1" => Self::handle_test(params).await,
             "apps.size.v1" => Self::handle_size(params).await,
             "apps.debug.v1" => Self::handle_debug(params).await,
+            "apps.status" => Self::handle_status().await,
             "system.health.v1" => Self::handle_health().await,
             "system.readiness" => Self::handle_readiness().await,
             _ => {
@@ -112,6 +113,13 @@ impl AppsHandler {
             "method": "apps.debug.v1",
             "target": target,
             "session_id": format!("dbg_{}", uuid::Uuid::new_v4().simple()),
+        }))
+    }
+
+    async fn handle_status() -> Result<serde_json::Value, String> {
+        Ok(serde_json::json!({
+            "status": "online",
+            "method": "apps.status",
         }))
     }
 

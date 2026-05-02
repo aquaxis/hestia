@@ -96,11 +96,8 @@ impl RagHandler {
 
     async fn handle_status() -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
-            "status": "ok",
+            "status": "online",
             "method": "rag.status",
-            "index_size": 0,
-            "total_documents": 0,
-            "total_chunks": 0,
         }))
     }
 

@@ -31,6 +31,7 @@ impl MessageHandler for RtlHandler {
             "rtl.formal.v1" => Self::handle_formal(params).await,
             "rtl.transpile.v1" => Self::handle_transpile(params).await,
             "rtl.handoff.v1" => Self::handle_handoff(params).await,
+            "rtl.status" => Self::handle_status().await,
             "system.health.v1" => Self::handle_health().await,
             "system.readiness" => Self::handle_readiness().await,
             _ => {
@@ -207,6 +208,13 @@ impl RtlHandler {
             }
             _ => Err(format!("Unknown handoff target: {target}")),
         }
+    }
+
+    async fn handle_status() -> Result<serde_json::Value, String> {
+        Ok(serde_json::json!({
+            "status": "online",
+            "method": "rtl.status",
+        }))
     }
 
     async fn handle_health() -> Result<serde_json::Value, String> {

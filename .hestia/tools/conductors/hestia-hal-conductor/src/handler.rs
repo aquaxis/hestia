@@ -25,6 +25,7 @@ impl MessageHandler for HalHandler {
             "hal.generate.v1" => Self::handle_generate(params).await,
             "hal.export.v1" => Self::handle_export(params).await,
             "hal.diff.v1" => Self::handle_diff(params).await,
+            "hal.status" => Self::handle_status().await,
             "system.health.v1" => Self::handle_health().await,
             "system.readiness" => Self::handle_readiness().await,
             _ => {
@@ -117,6 +118,13 @@ impl HalHandler {
             "added": 0,
             "removed": 0,
             "modified": 0,
+        }))
+    }
+
+    async fn handle_status() -> Result<serde_json::Value, String> {
+        Ok(serde_json::json!({
+            "status": "online",
+            "method": "hal.status",
         }))
     }
 

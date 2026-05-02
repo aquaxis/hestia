@@ -26,6 +26,7 @@ impl MessageHandler for FpgaHandler {
             "fpga.build.v1.start" => Self::handle_build_start(params).await,
             "fpga.build.v1.cancel" => Self::handle_build_cancel(params).await,
             "fpga.build.v1.status" => Self::handle_build_status(params).await,
+            "fpga.status" => Self::handle_status().await,
             "system.health.v1" => Self::handle_health().await,
             "system.readiness" => Self::handle_readiness().await,
             "project_open" => Self::handle_project_open(params).await,
@@ -148,6 +149,13 @@ impl FpgaHandler {
             "status": "idle",
             "method": "fpga.build.v1.status",
             "state": "Idle",
+        }))
+    }
+
+    async fn handle_status() -> Result<serde_json::Value, String> {
+        Ok(serde_json::json!({
+            "status": "online",
+            "method": "fpga.status",
         }))
     }
 
