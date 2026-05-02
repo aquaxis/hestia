@@ -118,7 +118,7 @@ pub struct Request {
 }
 
 fn default_kind() -> String {
-    "request".to_string()
+    "prompt".to_string()
 }
 
 /// 成功応答

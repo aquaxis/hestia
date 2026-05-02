@@ -244,7 +244,7 @@ impl AiHandler {
             .map_err(|e| format!("failed to create client: {e}"))?;
 
         let request = Request {
-            kind: "request".to_string(),
+            kind: "prompt".to_string(),
             method: method.to_string(),
             params,
             id: MessageId::new(),

@@ -52,7 +52,7 @@ enum CaptureCommands {
 
 fn build_request(method: &str, params: serde_json::Value) -> Request {
     Request {
-        kind: "request".to_string(),
+        kind: "prompt".to_string(),
         method: method.to_string(),
         params,
         id: MessageId::new(),
