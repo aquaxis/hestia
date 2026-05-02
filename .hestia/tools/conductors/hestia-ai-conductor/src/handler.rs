@@ -16,11 +16,13 @@ use ai_core::conductor_manager::ConductorManager;
 use spec_driven::parser::SpecParser;
 use multi_agent::agent_manager::AgentManager;
 
-/// 指示テキストからconductorとメソッドを推測するためのルーティングルール
-struct RouteRule {
-    keywords: &'static [&'static str],
+/// ワークフローステップ: 実行順序付きのconductor呼び出し
+struct WorkflowStep {
+    step: usize,
     conductor: ConductorId,
-    method: &'static str,
+    method: String,
+    params: serde_json::Value,
+    label: String,
 }
 
 /// AI Conductor メッセージハンドラ
@@ -39,60 +41,196 @@ impl AiHandler {
         }
     }
 
-    /// 指示テキストからターゲットconductorとメソッドを推測するルーティングテーブル
-    fn routing_rules() -> Vec<RouteRule> {
-        vec![
-            // RTL
-            RouteRule { keywords: &["rtl", "verilog", "systemverilog", "lint", "simulate", "formal", "transpile", "hdl", "rtl"], conductor: ConductorId::Rtl, method: "rtl.lint.v1" },
-            // FPGA
-            RouteRule { keywords: &["fpga", "vivado", "quartus", "efinity", "synthesize", "implement", "bitstream", "artix", "kintex", "zynq", "arty", "fpga"], conductor: ConductorId::Fpga, method: "fpga.build.v1.start" },
-            // ASIC
-            RouteRule { keywords: &["asic", "pdk", "openlane", "yosys", "gdsii", "tapeout", "sky130", "gf180mcu", "asic"], conductor: ConductorId::Asic, method: "asic.synthesize" },
-            // PCB
-            RouteRule { keywords: &["pcb", "kicad", "schematic", "drc", "erc", "routing", "gerber", "pcb"], conductor: ConductorId::Pcb, method: "pcb.run_drc" },
-            // HAL
-            RouteRule { keywords: &["hal", "register", "memory map", "bus", "peripheral", "mmio", "hal"], conductor: ConductorId::Hal, method: "hal.parse.v1" },
-            // Apps
-            RouteRule { keywords: &["firmware", "embedded", "rtos", "flash", "cross-compile", "apps"], conductor: ConductorId::Apps, method: "apps.build.v1" },
-            // Debug
-            RouteRule { keywords: &["jtag", "swd", "ila", "waveform", "probe", "debug"], conductor: ConductorId::Debug, method: "debug.connect" },
-            // RAG
-            RouteRule { keywords: &["rag", "document", "ingest", "search document"], conductor: ConductorId::Rag, method: "rag.search" },
-        ]
-    }
-
-    /// 指示テキストを解析し、ターゲットconductorとメソッドを決定する
-    fn classify_instruction(instruction: &str) -> Vec<(ConductorId, String, serde_json::Value)> {
+    /// 指示テキストを解析し、ワークフローステップを構築する
+    ///
+    /// キーワードマッチングに基づいて、どのconductorにどのメソッドでディスパッチするかを決定する。
+    /// 日本語・英語キーワードの両方に対応。コンテキストに応じて適切なメソッドを選択する。
+    fn build_workflow(instruction: &str) -> Vec<WorkflowStep> {
         let lower = instruction.to_lowercase();
-        let rules = Self::routing_rules();
-        let mut matched = Vec::new();
-        let mut seen_conductors = std::collections::HashSet::new();
+        let mut steps = Vec::new();
+        let mut step_num = 0;
 
-        for rule in &rules {
-            for keyword in rule.keywords {
-                if lower.contains(keyword) {
-                    if seen_conductors.insert(format!("{:?}", rule.conductor)) {
-                        matched.push((
-                            rule.conductor,
-                            rule.method.to_string(),
-                            serde_json::json!({ "instruction": instruction }),
-                        ));
-                    }
-                    break;
-                }
-            }
+        // RTL設計・検証
+        let rtl_keywords = ["rtl", "verilog", "systemverilog", "hdl", "lint", "シミュレーション", "simulation",
+            "formal", "transpile", "設計", "回路を作成", "回路を作る", "rtlを"];
+        let has_rtl = rtl_keywords.iter().any(|k| lower.contains(k));
+
+        // FPGA関連
+        let fpga_keywords = ["fpga", "vivado", "quartus", "efinity", "bitstream", "プログラム",
+            "artix", "kintex", "zynq", "arty", "実機", "fpga", "ボード"];
+        let has_fpga = fpga_keywords.iter().any(|k| lower.contains(k));
+
+        // ASIC関連
+        let asic_keywords = ["asic", "pdk", "openlane", "yosys", "gdsii", "tapeout", "sky130", "gf180mcu", "asic"];
+        let has_asic = asic_keywords.iter().any(|k| lower.contains(k));
+
+        // PCB関連
+        let pcb_keywords = ["pcb", "kicad", "schematic", "基板", "配線", "gerber", "pcb"];
+        let has_pcb = pcb_keywords.iter().any(|k| lower.contains(k));
+
+        // HAL関連
+        let hal_keywords = ["hal", "register", "memory map", "レジスタ", "ペリフェラル", "mmio", "hal"];
+        let has_hal = hal_keywords.iter().any(|k| lower.contains(k));
+
+        // アプリ・ファームウェア
+        let apps_keywords = ["firmware", "embedded", "rtos", "flash", "ファームウェア", "組込", "apps"];
+        let has_apps = apps_keywords.iter().any(|k| lower.contains(k));
+
+        // デバッグ・検証
+        let debug_keywords = ["jtag", "swd", "ila", "waveform", "probe", "検証", "デバッグ", "debug"];
+        let has_debug = debug_keywords.iter().any(|k| lower.contains(k));
+
+        // RAG・ドキュメント検索
+        let rag_keywords = ["rag", "document", "ingest", "ドキュメント", "search document"];
+        let has_rag = rag_keywords.iter().any(|k| lower.contains(k));
+
+        // UART/LEDなどの周辺機能 → HAL + Apps + RTL
+        let has_peripheral = lower.contains("uart") || lower.contains("led") || lower.contains("gpio")
+            || lower.contains("spi") || lower.contains("i2c") || lower.contains("usart");
+
+        // 合成・ビルド関連
+        let has_synthesize = lower.contains("synthesize") || lower.contains("合成") || lower.contains("ビルド") || lower.contains("build");
+        let has_simulate = lower.contains("simulate") || lower.contains("シミュレーション") || lower.contains("simulation");
+        let has_lint = lower.contains("lint") || lower.contains("静的解析");
+
+        // --- ワークフロー構築 ---
+
+        // 周辺機能（UART/LED等）が含まれる場合、HAL設計 → RTL設計 の順
+        if has_peripheral {
+            step_num += 1;
+            steps.push(WorkflowStep {
+                step: step_num,
+                conductor: ConductorId::Hal,
+                method: "hal.parse.v1".to_string(),
+                params: serde_json::json!({ "instruction": instruction }),
+                label: "HAL設計（周辺機能定義）".to_string(),
+            });
+            step_num += 1;
+            steps.push(WorkflowStep {
+                step: step_num,
+                conductor: ConductorId::Rtl,
+                method: "rtl.lint.v1".to_string(),
+                params: serde_json::json!({ "instruction": instruction }),
+                label: "RTL設計・Lint".to_string(),
+            });
+        } else if has_rtl || has_lint {
+            step_num += 1;
+            steps.push(WorkflowStep {
+                step: step_num,
+                conductor: ConductorId::Rtl,
+                method: if has_lint { "rtl.lint.v1".to_string() } else { "rtl.lint.v1".to_string() },
+                params: serde_json::json!({ "instruction": instruction }),
+                label: "RTL Lint".to_string(),
+            });
         }
 
-        // マッチするルールがない場合はAI conductor自身で処理
-        if matched.is_empty() {
-            matched.push((
-                ConductorId::Ai,
-                "ai.exec".to_string(),
-                serde_json::json!({ "instruction": instruction }),
-            ));
+        // シミュレーション
+        if has_simulate && !steps.iter().any(|s| s.conductor == ConductorId::Rtl) {
+            step_num += 1;
+            steps.push(WorkflowStep {
+                step: step_num,
+                conductor: ConductorId::Rtl,
+                method: "rtl.simulate.v1".to_string(),
+                params: serde_json::json!({ "instruction": instruction }),
+                label: "RTLシミュレーション".to_string(),
+            });
+        } else if has_simulate {
+            // 既にRTLステップがある場合はシミュレーションを追加
+            step_num += 1;
+            steps.push(WorkflowStep {
+                step: step_num,
+                conductor: ConductorId::Rtl,
+                method: "rtl.simulate.v1".to_string(),
+                params: serde_json::json!({ "instruction": instruction }),
+                label: "RTLシミュレーション".to_string(),
+            });
         }
 
-        matched
+        // FPGAビルド
+        if has_fpga || has_synthesize {
+            step_num += 1;
+            steps.push(WorkflowStep {
+                step: step_num,
+                conductor: ConductorId::Fpga,
+                method: "fpga.build.v1.start".to_string(),
+                params: serde_json::json!({ "instruction": instruction, "target": if lower.contains("arty") || lower.contains("artix") { "artix7" } else { "xilinx" } }),
+                label: "FPGAビルド".to_string(),
+            });
+        }
+
+        // ASIC合成
+        if has_asic {
+            step_num += 1;
+            steps.push(WorkflowStep {
+                step: step_num,
+                conductor: ConductorId::Asic,
+                method: "asic.synthesize".to_string(),
+                params: serde_json::json!({ "instruction": instruction }),
+                label: "ASIC合成".to_string(),
+            });
+        }
+
+        // PCB設計
+        if has_pcb {
+            step_num += 1;
+            steps.push(WorkflowStep {
+                step: step_num,
+                conductor: ConductorId::Pcb,
+                method: "pcb.run_drc".to_string(),
+                params: serde_json::json!({ "instruction": instruction }),
+                label: "PCB DRC".to_string(),
+            });
+        }
+
+        // アプリ・ファームウェア
+        if has_apps {
+            step_num += 1;
+            steps.push(WorkflowStep {
+                step: step_num,
+                conductor: ConductorId::Apps,
+                method: "apps.build.v1".to_string(),
+                params: serde_json::json!({ "instruction": instruction }),
+                label: "ファームウェアビルド".to_string(),
+            });
+        }
+
+        // デバッグ・実機検証
+        if has_debug || lower.contains("検証") || lower.contains("実機") {
+            step_num += 1;
+            steps.push(WorkflowStep {
+                step: step_num,
+                conductor: ConductorId::Debug,
+                method: "debug.connect".to_string(),
+                params: serde_json::json!({ "instruction": instruction }),
+                label: "デバッグ・検証".to_string(),
+            });
+        }
+
+        // RAG検索
+        if has_rag {
+            step_num += 1;
+            steps.push(WorkflowStep {
+                step: step_num,
+                conductor: ConductorId::Rag,
+                method: "rag.search".to_string(),
+                params: serde_json::json!({ "instruction": instruction }),
+                label: "ドキュメント検索".to_string(),
+            });
+        }
+
+        // 何もマッチしなかった場合のフォールバック
+        if steps.is_empty() {
+            step_num += 1;
+            steps.push(WorkflowStep {
+                step: step_num,
+                conductor: ConductorId::Ai,
+                method: "ai.exec".to_string(),
+                params: serde_json::json!({ "instruction": instruction }),
+                label: "AI処理".to_string(),
+            });
+        }
+
+        steps
     }
 
     /// conductorにメッセージを送信してレスポンスを取得する
@@ -189,7 +327,7 @@ impl MessageHandler for AiHandler {
 }
 
 impl AiHandler {
-    /// ai.exec — 指示を解析し、該当conductorにディスパッチして結果を集約する
+    /// ai.exec — 指示を解析し、ワークフローを構築して順次実行し、結果を集約する
     async fn handle_exec(&self, params: serde_json::Value) -> Result<serde_json::Value, String> {
         let instruction = params.get("instruction")
             .and_then(|v| v.as_str())
@@ -203,38 +341,45 @@ impl AiHandler {
             return Err("instruction is empty".to_string());
         }
 
-        tracing::info!(instruction = %instruction, "ai.exec: classifying instruction");
+        tracing::info!(instruction = %instruction, "ai.exec: building workflow from instruction");
 
-        // 指示を解析してターゲットconductorを決定
-        let targets = Self::classify_instruction(&instruction);
+        // 指示からワークフローを構築
+        let workflow = Self::build_workflow(&instruction);
+
+        tracing::info!(steps = workflow.len(), "ai.exec: workflow has {} steps", workflow.len());
 
         let mut results = Vec::new();
+        let total_steps = workflow.len();
 
-        for (conductor, method, mut dispatch_params) in targets {
+        for step in workflow {
             tracing::info!(
-                conductor = ?conductor,
-                method = %method,
-                "ai.exec: dispatching to conductor"
+                step = step.step,
+                total = total_steps,
+                conductor = ?step.conductor,
+                method = %step.method,
+                label = %step.label,
+                "ai.exec: executing workflow step"
             );
 
-            // パラメータに指示テキストを含める
-            if let Some(obj) = dispatch_params.as_object_mut() {
-                obj.insert("instruction".to_string(), serde_json::Value::String(instruction.clone()));
-            }
-
-            match Self::dispatch_to_conductor(&self.config, conductor, &method, dispatch_params).await {
+            match Self::dispatch_to_conductor(&self.config, step.conductor, &step.method, step.params).await {
                 Ok(response) => {
                     results.push(serde_json::json!({
-                        "conductor": format!("{:?}", conductor),
-                        "method": method,
+                        "step": step.step,
+                        "label": step.label,
+                        "conductor": format!("{:?}", step.conductor),
+                        "method": step.method,
+                        "status": "ok",
                         "response": response,
                     }));
                 }
                 Err(e) => {
-                    tracing::warn!(conductor = ?conductor, error = %e, "ai.exec: dispatch failed");
+                    tracing::warn!(step = step.step, conductor = ?step.conductor, error = %e, "ai.exec: step failed");
                     results.push(serde_json::json!({
-                        "conductor": format!("{:?}", conductor),
-                        "method": method,
+                        "step": step.step,
+                        "label": step.label,
+                        "conductor": format!("{:?}", step.conductor),
+                        "method": step.method,
+                        "status": "error",
                         "error": e,
                     }));
                 }
@@ -246,7 +391,7 @@ impl AiHandler {
             "method": "ai.exec",
             "instruction": instruction,
             "source_file": source_file,
-            "dispatched": results.len(),
+            "workflow_steps": total_steps,
             "results": results,
         }))
     }
