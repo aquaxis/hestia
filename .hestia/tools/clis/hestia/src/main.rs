@@ -268,8 +268,55 @@ fn init_hestia_dir() -> Result<()> {
     let config_path = base.join("config.toml");
     std::fs::write(&config_path, DEFAULT_CONFIG)?;
 
+    // Copy persona files from share directory or repo directory
+    let personas_dir = base.join("personas");
+    let share_dir = home_share_dir();
+    let src_dirs = [
+        share_dir.join("personas"),
+        dirs::home_dir()
+            .map(|h| PathBuf::from(h).join(".hestia/src/hestia/.hestia/personas"))
+            .unwrap_or_default(),
+    ];
+
+    let mut copied = 0u32;
+    for src in &src_dirs {
+        if src.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(src) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().is_some_and(|e| e == "md") {
+                        let name = path.file_name().unwrap();
+                        let dest = personas_dir.join(name);
+                        if !dest.exists() {
+                            std::fs::copy(&path, &dest)?;
+                            copied += 1;
+                        }
+                    }
+                }
+            }
+            break; // Use first found source directory
+        }
+    }
+
     println!("Initialized .hestia/ directory");
+    if copied > 0 {
+        println!("Copied {copied} persona files from share directory");
+    } else {
+        eprintln!(
+            "Warning: No persona files found. Run install.sh first or set HESTIA_SHARE_DIR."
+        );
+    }
     Ok(())
+}
+
+fn home_share_dir() -> PathBuf {
+    std::env::var("HESTIA_SHARE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            dirs::home_dir()
+                .map(|h| h.join(".hestia/share"))
+                .unwrap_or_else(|| PathBuf::from(".hestia/share"))
+        })
 }
 
 async fn show_status() -> Result<()> {

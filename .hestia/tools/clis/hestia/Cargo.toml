@@ -8,3 +8,4 @@ conductor-sdk.workspace = true
 clap = { workspace = true, features = ["derive"] }
 tokio.workspace = true
 anyhow.workspace = true
+dirs.workspace = true

@@ -7,6 +7,7 @@ set -eu
 REPO_URL="https://github.com/AQUAXIS/hestia.git"
 REPO_DIR="${HESTIA_REPO_DIR:-${HOME}/.hestia/src/hestia}"
 PREFIX="${HESTIA_PREFIX:-${HOME}/.local/bin}"
+SHARE_DIR="${HESTIA_SHARE_DIR:-${HOME}/.hestia/share}"
 BRANCH="${HESTIA_BRANCH:-main}"
 MSRV="1.75.0"
 
@@ -99,6 +100,26 @@ install_binaries() {
     info "Installed ${count} binaries to ${PREFIX}"
 }
 
+install_data() {
+    personas_src="${REPO_DIR}/.hestia/personas"
+    if [ ! -d "${personas_src}" ]; then
+        warn "Persona files not found at ${personas_src}. Skipping data installation."
+        return
+    fi
+
+    info "Installing persona files to ${SHARE_DIR}/personas/..."
+    mkdir -p "${SHARE_DIR}/personas"
+
+    count=0
+    for file in "${personas_src}"/*.md; do
+        [ -f "${file}" ] || continue
+        cp "${file}" "${SHARE_DIR}/personas/$(basename "${file}")"
+        count=$((count + 1))
+    done
+
+    info "Installed ${count} persona files to ${SHARE_DIR}/personas/"
+}
+
 check_path() {
     prefix_dir=$(dirname "${PREFIX}/hestia")
     case ":${PATH}:" in
@@ -140,6 +161,7 @@ usage() {
     echo "  HESTIA_PREFIX     Install prefix (default: ~/.local/bin)"
     echo "  HESTIA_BRANCH     Git branch (default: main)"
     echo "  HESTIA_REPO_DIR   Repository directory (default: ~/.hestia/src/hestia)"
+    echo "  HESTIA_SHARE_DIR  Data directory (default: ~/.hestia/share)"
     echo ""
     echo "One-liner:"
     echo "  curl -fsSL https://raw.githubusercontent.com/AQUAXIS/hestia/main/install.sh | sh"
@@ -173,6 +195,7 @@ if [ "$SKIP_BUILD" = false ]; then
 fi
 
 install_binaries
+install_data
 check_path
 
 echo ""

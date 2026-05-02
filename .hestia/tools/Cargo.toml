@@ -74,6 +74,8 @@ uuid = { version = "1", features = ["v4", "serde"] }
 regex = "1"
 # プロセス管理
 command-group = "2"
+# ホームディレクトリ
+dirs = "5"
 # 内部クレート
 conductor-sdk = { path = "crates/conductor-sdk" }
 adapter-core = { path = "crates/adapter-core" }
