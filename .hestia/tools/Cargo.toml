@@ -76,6 +76,8 @@ regex = "1"
 command-group = "2"
 # ホームディレクトリ
 dirs = "5"
+# POSIX API (FIFO)
+libc = "0.2"
 # 内部クレート
 conductor-sdk = { path = "crates/conductor-sdk" }
 adapter-core = { path = "crates/adapter-core" }

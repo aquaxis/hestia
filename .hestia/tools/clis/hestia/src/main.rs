@@ -1,5 +1,7 @@
 use anyhow::{bail, Result};
 use clap::Parser;
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::io::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command;
@@ -140,7 +142,29 @@ async fn start_conductor(domain: &str) -> Result<()> {
         std::fs::create_dir_all(&workdir)?;
     }
 
-    // Redirect stdout/stderr to log file for background operation
+    // Create a FIFO for stdin so agent-cli doesn't exit on EOF.
+    // Opening with O_RDWR means the child is both reader and writer,
+    // so stdin never gets EOF and the process stays alive.
+    let fifo_path = workdir.join("stdin.pipe");
+    let _ = std::fs::remove_file(&fifo_path);
+    let c_path = std::ffi::CString::new(fifo_path.as_os_str().as_bytes())
+        .map_err(|e| anyhow::anyhow!("invalid fifo path: {e}"))?;
+    let mkfifo_result = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
+    if mkfifo_result != 0 {
+        bail!("failed to create FIFO {}: {}", fifo_path.display(), std::io::Error::last_os_error());
+    }
+
+    // Open FIFO with O_RDWR — this does NOT block on FIFOs and ensures
+    // the read end never gets EOF (the child itself is the writer).
+    let fd = unsafe {
+        libc::open(c_path.as_ptr(), libc::O_RDWR)
+    };
+    if fd < 0 {
+        bail!("failed to open FIFO {}: {}", fifo_path.display(), std::io::Error::last_os_error());
+    }
+    let fifo_stdin = unsafe { std::fs::File::from_raw_fd(fd) };
+
+    // Redirect stdout/stderr to log file
     let log_path = workdir.join("agent.log");
     let log_file = std::fs::File::create(&log_path)
         .map_err(|e| anyhow::anyhow!("failed to create log file {}: {e}", log_path.display()))?;
@@ -148,7 +172,7 @@ async fn start_conductor(domain: &str) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("failed to dup log file: {e}"))?;
 
     println!("Starting agent-cli --name {} --persona {} ...", domain, persona.display());
-    let mut child = Command::new("agent-cli")
+    let _child = Command::new("agent-cli")
         .arg("run")
         .arg("--persona")
         .arg(&persona)
@@ -156,13 +180,11 @@ async fn start_conductor(domain: &str) -> Result<()> {
         .arg(domain)
         .arg("--auto-approve-tools")
         .current_dir(&workdir)
-        .stdin(Stdio::null())
+        .stdin(Stdio::from(fifo_stdin))
         .stdout(Stdio::from(log_file))
         .stderr(Stdio::from(log_file_stderr))
         .spawn()
         .map_err(|e| anyhow::anyhow!("failed to spawn agent-cli for {domain}: {e}"))?;
-
-    // Child process runs in background — do not await or kill on drop
 
     Ok(())
 }
