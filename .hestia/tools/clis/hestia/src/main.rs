@@ -116,11 +116,17 @@ fn dispatch_cli(domain: &str, args: &[String]) -> Result<()> {
 }
 
 fn persona_path(domain: &str) -> PathBuf {
-    Path::new(".hestia/personas").join(format!("{domain}.md"))
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(".hestia/personas")
+        .join(format!("{domain}.md"))
 }
 
 fn workspace_path(domain: &str) -> PathBuf {
-    Path::new(".hestia/workspaces").join(domain)
+    std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(".hestia/workspaces")
+        .join(domain)
 }
 
 async fn start_conductor(domain: &str) -> Result<()> {

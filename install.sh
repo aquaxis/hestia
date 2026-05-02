@@ -122,15 +122,7 @@ check_path() {
 }
 
 print_banner() {
-    echo ""
-    printf "\033[1m\033[0;32m"
-    echo "  _   _           _       "
-    echo " | |_| |_  ___ __| | _____"
-    echo " |  _| ' \\/ -_) _' |/ / -_)"
-    echo "  \\__|_||_\\___\\__,_|_\\_\\___|"
-    echo "  Hardware Engineering Stack"
-    printf "\033[0m"
-    echo ""
+    printf "\033[1m\033[0;32m[hestia]\033[0m Hardware Engineering Stack for Tool Integration and Automation\n"
 }
 
 usage() {
