@@ -16,6 +16,7 @@ impl MessageHandler for AppsHandler {
         let params = request.params;
 
         let result = match method.as_str() {
+            "apps.init" => Self::handle_init(params).await,
             "apps.build.v1" => Self::handle_build(params).await,
             "apps.flash.v1" => Self::handle_flash(params).await,
             "apps.test.v1" => Self::handle_test(params).await,
@@ -57,6 +58,15 @@ impl MessageHandler for AppsHandler {
 }
 
 impl AppsHandler {
+    async fn handle_init(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let project = params.get("project").and_then(|v| v.as_str()).unwrap_or(".");
+        Ok(serde_json::json!({
+            "status": "ok",
+            "method": "apps.init",
+            "project": project,
+        }))
+    }
+
     async fn handle_build(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let project = params.get("project").and_then(|v| v.as_str()).unwrap_or(".");
         let target = params.get("target").and_then(|v| v.as_str()).unwrap_or("thumbv7em-none-eabihf");

@@ -20,6 +20,7 @@ impl MessageHandler for HalHandler {
         let params = request.params;
 
         let result = match method.as_str() {
+            "hal.init" => Self::handle_init(params).await,
             "hal.parse.v1" => Self::handle_parse(params).await,
             "hal.validate.v1" => Self::handle_validate(params).await,
             "hal.generate.v1" => Self::handle_generate(params).await,
@@ -61,6 +62,15 @@ impl MessageHandler for HalHandler {
 }
 
 impl HalHandler {
+    async fn handle_init(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let project = params.get("project").and_then(|v| v.as_str()).unwrap_or(".");
+        Ok(serde_json::json!({
+            "status": "ok",
+            "method": "hal.init",
+            "project": project,
+        }))
+    }
+
     async fn handle_parse(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let input_format = params.get("input_format").and_then(|v| v.as_str()).unwrap_or("systemrdl");
         let sources = params

@@ -91,12 +91,12 @@ async fn main() -> Result<()> {
         Commands::Build => ("pcb.build", serde_json::json!({})),
         Commands::AiSynthesize => ("pcb.ai_synthesize", serde_json::json!({})),
         Commands::Output { output_command } => match output_command {
-            OutputCommands::Kicad => ("pcb.output.kicad", serde_json::json!({})),
-            OutputCommands::Gerber => ("pcb.output.gerber", serde_json::json!({})),
-            OutputCommands::Bom => ("pcb.output.bom", serde_json::json!({})),
+            OutputCommands::Kicad => ("pcb.generate_output", serde_json::json!({ "format": "kicad" })),
+            OutputCommands::Gerber => ("pcb.generate_output", serde_json::json!({ "format": "gerber" })),
+            OutputCommands::Bom => ("pcb.generate_bom", serde_json::json!({})),
         },
-        Commands::Drc => ("pcb.drc", serde_json::json!({})),
-        Commands::Erc => ("pcb.erc", serde_json::json!({})),
+        Commands::Drc => ("pcb.run_drc", serde_json::json!({})),
+        Commands::Erc => ("pcb.run_erc", serde_json::json!({})),
         Commands::Status => ("pcb.status", serde_json::json!({})),
     };
 

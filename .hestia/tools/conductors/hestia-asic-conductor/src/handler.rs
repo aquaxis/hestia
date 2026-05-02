@@ -18,6 +18,9 @@ impl MessageHandler for AsicHandler {
         let params = request.params;
 
         let result = match method.as_str() {
+            "asic.init" => Self::handle_init(params).await,
+            "asic.build" => Self::handle_build(params).await,
+            "asic.advance" => Self::handle_advance(params).await,
             "asic.synthesize" => Self::handle_synthesize(params).await,
             "asic.floorplan" => Self::handle_floorplan(params).await,
             "asic.place" => Self::handle_place(params).await,
@@ -69,6 +72,33 @@ impl MessageHandler for AsicHandler {
 }
 
 impl AsicHandler {
+    async fn handle_init(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let project = params.get("project").and_then(|v| v.as_str()).unwrap_or(".");
+        Ok(serde_json::json!({
+            "status": "ok",
+            "method": "asic.init",
+            "project": project,
+        }))
+    }
+
+    async fn handle_build(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let pdk = params.get("pdk").and_then(|v| v.as_str()).unwrap_or("sky130");
+        Ok(serde_json::json!({
+            "status": "ok",
+            "method": "asic.build",
+            "pdk": pdk,
+        }))
+    }
+
+    async fn handle_advance(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let stage = params.get("stage").and_then(|v| v.as_str()).unwrap_or("synthesis");
+        Ok(serde_json::json!({
+            "status": "ok",
+            "method": "asic.advance",
+            "stage": stage,
+        }))
+    }
+
     async fn handle_synthesize(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let pdk = params.get("pdk").and_then(|v| v.as_str()).unwrap_or("sky130");
         let strategy = params.get("strategy").and_then(|v| v.as_str()).unwrap_or("area");

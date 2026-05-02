@@ -78,13 +78,13 @@ async fn main() -> Result<()> {
 
     let (method, params) = match &cli.command {
         Commands::Init => ("hal.init", serde_json::json!({})),
-        Commands::Parse => ("hal.parse", serde_json::json!({})),
-        Commands::Validate => ("hal.validate", serde_json::json!({})),
+        Commands::Parse => ("hal.parse.v1", serde_json::json!({})),
+        Commands::Validate => ("hal.validate.v1", serde_json::json!({})),
         Commands::Generate { language } => {
-            ("hal.generate", serde_json::json!({ "language": language }))
+            ("hal.generate.v1", serde_json::json!({ "language": language }))
         }
-        Commands::ExportRtl => ("hal.export_rtl", serde_json::json!({})),
-        Commands::Diff => ("hal.diff", serde_json::json!({})),
+        Commands::ExportRtl => ("hal.export.v1", serde_json::json!({})),
+        Commands::Diff => ("hal.diff.v1", serde_json::json!({})),
         Commands::Status => ("hal.status", serde_json::json!({})),
     };
 

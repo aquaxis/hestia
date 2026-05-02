@@ -16,6 +16,8 @@ impl MessageHandler for PcbHandler {
         let params = request.params;
 
         let result = match method.as_str() {
+            "pcb.init" => Self::handle_init(params).await,
+            "pcb.build" => Self::handle_build(params).await,
             "pcb.generate_schematic" => Self::handle_generate_schematic(params).await,
             "pcb.ai_synthesize" => Self::handle_ai_synthesize(params).await,
             "pcb.run_drc" => Self::handle_run_drc(params).await,
@@ -60,6 +62,24 @@ impl MessageHandler for PcbHandler {
 }
 
 impl PcbHandler {
+    async fn handle_init(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let project = params.get("project").and_then(|v| v.as_str()).unwrap_or(".");
+        Ok(serde_json::json!({
+            "status": "ok",
+            "method": "pcb.init",
+            "project": project,
+        }))
+    }
+
+    async fn handle_build(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let project = params.get("project").and_then(|v| v.as_str()).unwrap_or(".");
+        Ok(serde_json::json!({
+            "status": "ok",
+            "method": "pcb.build",
+            "project": project,
+        }))
+    }
+
     async fn handle_generate_schematic(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let project = params.get("project").and_then(|v| v.as_str()).unwrap_or(".");
         Ok(serde_json::json!({

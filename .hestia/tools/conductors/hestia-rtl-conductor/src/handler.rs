@@ -25,6 +25,7 @@ impl MessageHandler for RtlHandler {
         let params = request.params;
 
         let result = match method.as_str() {
+            "rtl.init" => Self::handle_init(params).await,
             "rtl.lint.v1" => Self::handle_lint(params).await,
             "rtl.lint.v1.format" => Self::handle_lint_format(params).await,
             "rtl.simulate.v1" => Self::handle_simulate(params).await,
@@ -67,6 +68,15 @@ impl MessageHandler for RtlHandler {
 }
 
 impl RtlHandler {
+    async fn handle_init(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let project = params.get("project").and_then(|v| v.as_str()).unwrap_or(".");
+        Ok(serde_json::json!({
+            "status": "ok",
+            "method": "rtl.init",
+            "project": project,
+        }))
+    }
+
     async fn handle_lint(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let project = params.get("project").and_then(|v| v.as_str()).unwrap_or(".");
         let adapter = params.get("adapter").and_then(|v| v.as_str()).unwrap_or("verilator");

@@ -78,11 +78,11 @@ async fn main() -> Result<()> {
 
     let (method, params) = match &cli.command {
         Commands::Init => ("apps.init", serde_json::json!({})),
-        Commands::Build => ("apps.build", serde_json::json!({})),
-        Commands::Flash => ("apps.flash", serde_json::json!({})),
-        Commands::Test { level } => ("apps.test", serde_json::json!({ "level": level })),
-        Commands::Size => ("apps.size", serde_json::json!({})),
-        Commands::Debug => ("apps.debug", serde_json::json!({})),
+        Commands::Build => ("apps.build.v1", serde_json::json!({})),
+        Commands::Flash => ("apps.flash.v1", serde_json::json!({})),
+        Commands::Test { level } => ("apps.test.v1", serde_json::json!({ "level": level })),
+        Commands::Size => ("apps.size.v1", serde_json::json!({})),
+        Commands::Debug => ("apps.debug.v1", serde_json::json!({})),
         Commands::Status => ("apps.status", serde_json::json!({})),
     };
 

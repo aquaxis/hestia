@@ -16,6 +16,7 @@ impl MessageHandler for DebugHandler {
         let params = request.params;
 
         let result = match method.as_str() {
+            "debug.create" => Self::handle_create(params).await,
             "debug.connect" => Self::handle_connect(params).await,
             "debug.disconnect" => Self::handle_disconnect(params).await,
             "debug.reset" => Self::handle_reset(params).await,
@@ -68,6 +69,16 @@ impl MessageHandler for DebugHandler {
 }
 
 impl DebugHandler {
+    async fn handle_create(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let protocol = params.get("protocol").and_then(|v| v.as_str()).unwrap_or("jtag");
+        Ok(serde_json::json!({
+            "status": "ok",
+            "method": "debug.create",
+            "protocol": protocol,
+            "session_id": format!("dbg_{}", uuid::Uuid::new_v4().simple()),
+        }))
+    }
+
     async fn handle_connect(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let protocol = params.get("protocol").and_then(|v| v.as_str()).unwrap_or("jtag");
         let device = params.get("device").and_then(|v| v.as_str()).unwrap_or("");

@@ -75,11 +75,11 @@ async fn main() -> Result<()> {
 
     let method = match &cli.command {
         Commands::Init => "rtl.init",
-        Commands::Lint => "rtl.lint",
-        Commands::Simulate => "rtl.simulate",
-        Commands::Formal => "rtl.formal",
-        Commands::Transpile => "rtl.transpile",
-        Commands::Handoff => "rtl.handoff",
+        Commands::Lint => "rtl.lint.v1",
+        Commands::Simulate => "rtl.simulate.v1",
+        Commands::Formal => "rtl.formal.v1",
+        Commands::Transpile => "rtl.transpile.v1",
+        Commands::Handoff => "rtl.handoff.v1",
         Commands::Status => "rtl.status",
     };
 

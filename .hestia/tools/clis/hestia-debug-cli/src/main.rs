@@ -94,11 +94,11 @@ async fn main() -> Result<()> {
         Commands::Disconnect => ("debug.disconnect", serde_json::json!({})),
         Commands::Program => ("debug.program", serde_json::json!({})),
         Commands::Capture { capture_command } => match capture_command {
-            CaptureCommands::Start => ("debug.capture.start", serde_json::json!({})),
-            CaptureCommands::Stop => ("debug.capture.stop", serde_json::json!({})),
+            CaptureCommands::Start => ("debug.startCapture", serde_json::json!({})),
+            CaptureCommands::Stop => ("debug.stopCapture", serde_json::json!({})),
         },
-        Commands::Signals => ("debug.signals", serde_json::json!({})),
-        Commands::Trigger => ("debug.trigger", serde_json::json!({})),
+        Commands::Signals => ("debug.read_signals", serde_json::json!({})),
+        Commands::Trigger => ("debug.set_trigger", serde_json::json!({})),
         Commands::Reset => ("debug.reset", serde_json::json!({})),
         Commands::Status => ("debug.status", serde_json::json!({})),
     };

@@ -85,14 +85,18 @@ async fn main() -> Result<()> {
 
     let (method, params) = match &cli.command {
         Commands::Init => ("fpga.init", serde_json::json!({})),
-        Commands::Build { target } => ("fpga.build", serde_json::json!({ "target": target })),
+        Commands::Build { target } => ("fpga.build.v1.start", serde_json::json!({ "target": target })),
         Commands::Synthesize => ("fpga.synthesize", serde_json::json!({})),
         Commands::Implement => ("fpga.implement", serde_json::json!({})),
         Commands::Bitstream => ("fpga.bitstream", serde_json::json!({})),
         Commands::Simulate => ("fpga.simulate", serde_json::json!({})),
         Commands::Program => ("fpga.program", serde_json::json!({})),
         Commands::Report { report_type } => (
-            "fpga.report",
+            match report_type.as_str() {
+                "timing" => "report_timing",
+                "resource" => "report_resource",
+                _ => "report_messages",
+            },
             serde_json::json!({ "report_type": report_type }),
         ),
         Commands::Status => ("fpga.status", serde_json::json!({})),

@@ -18,6 +18,7 @@ impl MessageHandler for FpgaHandler {
         let params = request.params;
 
         let result = match method.as_str() {
+            "fpga.init" => Self::handle_init(params).await,
             "fpga.synthesize" => Self::handle_synthesize(params).await,
             "fpga.implement" => Self::handle_implement(params).await,
             "fpga.bitstream" => Self::handle_bitstream(params).await,
@@ -67,6 +68,15 @@ impl MessageHandler for FpgaHandler {
 }
 
 impl FpgaHandler {
+    async fn handle_init(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let project = params.get("project").and_then(|v| v.as_str()).unwrap_or(".");
+        Ok(serde_json::json!({
+            "status": "ok",
+            "method": "fpga.init",
+            "project": project,
+        }))
+    }
+
     async fn handle_synthesize(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let target = params.get("target").and_then(|v| v.as_str()).unwrap_or("xilinx");
         tracing::info!(target = %target, "fpga.synthesize");
