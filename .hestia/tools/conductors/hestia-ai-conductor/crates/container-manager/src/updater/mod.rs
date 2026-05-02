@@ -1,7 +1,9 @@
 //! Container updater — check for and apply diff-based container updates
 
+use std::process::Command;
+
 use thiserror::Error;
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Debug, Error)]
 pub enum UpdaterError {
@@ -27,18 +29,92 @@ impl ContainerUpdater {
     }
 
     /// Check whether a newer image digest is available for the given image reference.
+    ///
+    /// Uses `skopeo inspect` to compare local and remote digests.
+    /// Returns `Ok(None)` if no update is available or if skopeo is not installed.
     pub fn check_update(&self, image: &str) -> Result<Option<ContainerUpdate>, UpdaterError> {
         info!("checking for updates to image={image}");
-        todo!("implement remote digest comparison via skopeo inspect")
+
+        // Get local digest
+        let local_output = Command::new("skopeo")
+            .args(["inspect", &format!("containers-storage:{image}")])
+            .output();
+
+        let local_digest = match local_output {
+            Ok(output) if output.status.success() => {
+                let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+                    .map_err(|e| UpdaterError::CheckFailed(format!("failed to parse local inspect: {e}")))?;
+                json.get("Digest")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string()
+            }
+            _ => {
+                warn!("skopeo inspect failed for local image={image}, no update check possible");
+                return Ok(None);
+            }
+        };
+
+        // Get remote digest
+        let remote_output = Command::new("skopeo")
+            .args(["inspect", &format!("docker://{image}")])
+            .output();
+
+        let new_digest = match remote_output {
+            Ok(output) if output.status.success() => {
+                let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+                    .map_err(|e| UpdaterError::CheckFailed(format!("failed to parse remote inspect: {e}")))?;
+                json.get("Digest")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string()
+            }
+            _ => {
+                warn!("skopeo inspect failed for remote image={image}");
+                return Ok(None);
+            }
+        };
+
+        if local_digest == new_digest {
+            info!("image={image} is up to date");
+            Ok(None)
+        } else {
+            info!("update available for image={image}: {local_digest} -> {new_digest}");
+            Ok(Some(ContainerUpdate {
+                image: image.to_string(),
+                current_digest: local_digest,
+                new_digest,
+            }))
+        }
     }
 
     /// Apply a diff-based update by pulling only the changed layers.
+    ///
+    /// Uses `skopeo copy` to pull the new image layers and re-tag.
     pub fn apply_update(&self, update: &ContainerUpdate) -> Result<(), UpdaterError> {
         info!(
             "applying update for image={} old={} new={}",
             update.image, update.current_digest, update.new_digest
         );
-        todo!("implement layer-diff pull and re-tag")
+
+        let status = Command::new("skopeo")
+            .args([
+                "copy",
+                &format!("docker://{}", update.image),
+                &format!("containers-storage:{}", update.image),
+            ])
+            .status()
+            .map_err(|e| UpdaterError::ApplyFailed(format!("failed to run skopeo: {e}")))?;
+
+        if status.success() {
+            info!("update applied for image={}", update.image);
+            Ok(())
+        } else {
+            Err(UpdaterError::ApplyFailed(format!(
+                "skopeo copy exited with code {:?}",
+                status.code()
+            )))
+        }
     }
 }
 

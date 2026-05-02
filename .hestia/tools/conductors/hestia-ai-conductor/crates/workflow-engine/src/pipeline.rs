@@ -32,8 +32,18 @@ impl Pipeline {
     }
 
     /// Run the pipeline sequentially, executing each step in order.
-    /// Returns an error if any step fails.
-    pub async fn run(&self) -> Result<Vec<serde_json::Value>, WorkflowError> {
+    ///
+    /// Each step is dispatched to the specified conductor via the provided
+    /// closure. The closure receives `(conductor_name, method, params)` and
+    /// returns the response from the conductor.
+    pub async fn run<F, Fut>(
+        &self,
+        dispatch_fn: F,
+    ) -> Result<Vec<serde_json::Value>, WorkflowError>
+    where
+        F: Fn(String, String, serde_json::Value) -> Fut,
+        Fut: std::future::Future<Output = Result<serde_json::Value, String>>,
+    {
         let mut results = Vec::with_capacity(self.steps.len());
 
         for (i, step) in self.steps.iter().enumerate() {
@@ -47,16 +57,42 @@ impl Pipeline {
                 self.steps.len()
             );
 
-            // TODO: Dispatch to conductor-sdk for actual execution.
-            // For now we record a placeholder result.
-            let result = serde_json::json!({
-                "step": step.name,
-                "conductor": step.conductor,
-                "method": step.method,
-                "status": "ok"
-            });
-
-            results.push(result);
+            match dispatch_fn(
+                step.conductor.clone(),
+                step.method.clone(),
+                step.params.clone(),
+            )
+            .await
+            {
+                Ok(response) => {
+                    results.push(serde_json::json!({
+                        "step": step.name,
+                        "conductor": step.conductor,
+                        "method": step.method,
+                        "status": "ok",
+                        "response": response,
+                    }));
+                }
+                Err(e) => {
+                    tracing::error!(
+                        pipeline = %self.name,
+                        step = %step.name,
+                        error = %e,
+                        "pipeline step failed"
+                    );
+                    results.push(serde_json::json!({
+                        "step": step.name,
+                        "conductor": step.conductor,
+                        "method": step.method,
+                        "status": "error",
+                        "error": e,
+                    }));
+                    return Err(WorkflowError::PipelineFailed(format!(
+                        "step '{}' on conductor '{}' failed: {}",
+                        step.name, step.conductor, e
+                    )));
+                }
+            }
         }
 
         Ok(results)

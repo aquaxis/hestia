@@ -1,6 +1,6 @@
 use conductor_sdk::agent::ConductorId;
+use conductor_sdk::config::{CommonOpts, HestiaClientConfig};
 use conductor_sdk::server::ConductorServer;
-use conductor_sdk::config::CommonOpts;
 use clap::Parser;
 use hestia_ai_conductor::handler::AiHandler;
 
@@ -24,7 +24,8 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("hestia-ai-conductor starting...");
 
-    let handler = AiHandler;
+    let config = HestiaClientConfig::default();
+    let handler = AiHandler::new(config);
     let server = ConductorServer::new(ConductorId::Ai, Box::new(handler))?;
     server.run().await?;
     Ok(())
