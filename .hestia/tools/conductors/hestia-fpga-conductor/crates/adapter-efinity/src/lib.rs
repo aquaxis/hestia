@@ -97,8 +97,39 @@ impl VendorAdapter for EfinityAdapter {
         })
     }
 
-    async fn program_device(&self, _ctx: &ProgramContext) -> Result<(), AdapterError> {
-        tracing::info!("Efinity: program device via SPI (stub)");
+    async fn program_device(&self, ctx: &ProgramContext) -> Result<(), AdapterError> {
+        tracing::info!(
+            device = %ctx.device,
+            bitstream = %ctx.bitstream.display(),
+            "Efinity: programming device via SPI"
+        );
+
+        let output = std::process::Command::new("efx_pgm")
+            .arg("-c")
+            .arg("spi")
+            .arg("--bitstream")
+            .arg(&ctx.bitstream)
+            .arg("--device")
+            .arg(&ctx.device)
+            .output()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    AdapterError::ToolNotFound("efx_pgm".to_string())
+                } else {
+                    AdapterError::Io(e)
+                }
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::error!(%stderr, "Efinity programming failed");
+            return Err(AdapterError::BuildFailed {
+                exit_code: output.status.code().unwrap_or(-1),
+            });
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        tracing::info!(%stdout, "Efinity: device programmed successfully");
         Ok(())
     }
 }

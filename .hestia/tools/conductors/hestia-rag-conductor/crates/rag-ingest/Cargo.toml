@@ -12,3 +12,4 @@ tracing.workspace = true
 thiserror.workspace = true
 async-trait = { workspace = true }
 uuid = { workspace = true }
+sled.workspace = true

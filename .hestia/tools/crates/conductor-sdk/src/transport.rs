@@ -37,33 +37,55 @@ impl AgentCliClient {
         &self.registry_dir
     }
 
-    /// 稼働中の peer 一覧を取得
+    /// 稼働中の peer 一覧を取得（agent-cli list を使用、フォールバックでレジストリ直読み）
     pub async fn list_peers(&self) -> Result<Vec<String>, HestiaError> {
         let output = Command::new("agent-cli")
             .arg("list")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
-            .await
-            .map_err(|e| HestiaError::Transport(format!("agent-cli list failed: {e}")))?;
+            .await;
 
-        if !output.status.success() {
-            return Err(HestiaError::Transport(format!(
-                "agent-cli list exited with {}",
-                output.status
-            )));
+        match output {
+            Ok(out) if out.status.success() => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                Ok(stdout.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+            }
+            _ => {
+                // agent-cli が利用できない場合、レジストリディレクトリから直読み
+                self.list_peers_from_registry()
+            }
+        }
+    }
+
+    /// レジストリディレクトリから peer 一覧を直読み（フォールバック）
+    fn list_peers_from_registry(&self) -> Result<Vec<String>, HestiaError> {
+        let entries = std::fs::read_dir(&self.registry_dir)
+            .map_err(|e| HestiaError::Transport(format!("failed to read registry dir: {e}")))?;
+
+        let mut peers = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(|e| HestiaError::Transport(format!("registry entry error: {e}")))?;
+            let path = entry.path();
+
+            if path.extension().map_or(false, |ext| ext == "json") {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                        if let Some(name) = json.get("name").and_then(|v| v.as_str()) {
+                            peers.push(name.to_string());
+                        }
+                    }
+                }
+            }
         }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(stdout.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        Ok(peers)
     }
 
     /// 指定 peer へペイロード送信（直接ソケット通信）
     pub async fn send(&self, peer: &str, payload: &Payload) -> Result<String, HestiaError> {
-        // レジストリから peer のソケットパスを検索
         let socket_path = self.find_peer_socket(peer).await?;
 
-        // 直接ソケット通信でメッセージを送信
         let mut stream = UnixStream::connect(&socket_path).await
             .map_err(|e| HestiaError::Transport(format!("failed to connect to {peer} socket: {e}")))?;
 
@@ -79,7 +101,6 @@ impl AgentCliClient {
         stream.shutdown().await
             .map_err(|e| HestiaError::Transport(format!("failed to shutdown write half: {e}")))?;
 
-        // レスポンスを読み取り
         let mut buf = vec![0u8; 16 * 1024 * 1024]; // 16 MiB max
         let n = stream.read(&mut buf).await
             .map_err(|e| HestiaError::Transport(format!("failed to read response from {peer}: {e}")))?;
@@ -89,6 +110,34 @@ impl AgentCliClient {
         }
 
         Ok(String::from_utf8_lossy(&buf[..n]).to_string())
+    }
+
+    /// 指定 peer へペイロード送信（agent-cli send コマンド経由）
+    pub async fn send_via_cli(&self, peer: &str, payload: &Payload) -> Result<String, HestiaError> {
+        let payload_str = match payload {
+            Payload::Structured(v) => v.to_string(),
+            Payload::NaturalLanguage(t) => t.clone(),
+        };
+
+        let output = Command::new("agent-cli")
+            .arg("send")
+            .arg(peer)
+            .arg(&payload_str)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| HestiaError::Transport(format!("agent-cli send failed: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(HestiaError::Transport(format!(
+                "agent-cli send to {peer} exited with {}: {stderr}",
+                output.status
+            )));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
     /// レジストリから peer のソケットパスを検索
@@ -104,10 +153,8 @@ impl AgentCliClient {
                 let content = std::fs::read_to_string(&path)
                     .map_err(|e| HestiaError::Transport(format!("failed to read {}: {e}", path.display())))?;
 
-                // JSON から name フィールドを検索
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
                     if json.get("name").and_then(|v| v.as_str()) == Some(peer) {
-                        // 対応するソケットパスを返す
                         if let Some(socket) = json.get("socket").and_then(|v| v.as_str()) {
                             return Ok(PathBuf::from(socket));
                         }

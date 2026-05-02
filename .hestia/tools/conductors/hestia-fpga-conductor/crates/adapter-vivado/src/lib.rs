@@ -97,8 +97,61 @@ impl VendorAdapter for VivadoAdapter {
         })
     }
 
-    async fn program_device(&self, _ctx: &ProgramContext) -> Result<(), AdapterError> {
-        tracing::info!("Vivado: program device (stub)");
+    async fn program_device(&self, ctx: &ProgramContext) -> Result<(), AdapterError> {
+        tracing::info!(
+            device = %ctx.device,
+            bitstream = %ctx.bitstream.display(),
+            "Vivado: programming device via JTAG"
+        );
+
+        // Build a TCL script that opens the hardware manager and programs the device.
+        let probe_cmd = match &ctx.probe {
+            Some(probe) => format!("set_hw_device -part {} -probe {}", ctx.device, probe),
+            None => format!("set_hw_device -part {}", ctx.device),
+        };
+        let tcl = format!(
+            "open_hw_manager\n\
+             connect_hw_server\n\
+             open_hw_target\n\
+             {probe_cmd}\n\
+             set_property PROGRAM.FILE {{ {} }} [current_hw_device]\n\
+             program_hw_devices [current_hw_device]\n\
+             close_hw_target\n\
+             disconnect_hw_server\n",
+            ctx.bitstream.display()
+        );
+
+        let tcl_path = ctx.bitstream.parent().unwrap_or(std::path::Path::new(".")).join("program.tcl");
+        std::fs::write(&tcl_path, &tcl).map_err(AdapterError::Io)?;
+
+        let output = std::process::Command::new("vivado")
+            .arg("-mode")
+            .arg("batch")
+            .arg("-source")
+            .arg(&tcl_path)
+            .arg("-nojournal")
+            .arg("-nolog")
+            .output()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    AdapterError::ToolNotFound("vivado".to_string())
+                } else {
+                    AdapterError::Io(e)
+                }
+            })?;
+
+        let _ = std::fs::remove_file(&tcl_path);
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::error!(%stderr, "Vivado programming failed");
+            return Err(AdapterError::BuildFailed {
+                exit_code: output.status.code().unwrap_or(-1),
+            });
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        tracing::info!(%stdout, "Vivado: device programmed successfully");
         Ok(())
     }
 

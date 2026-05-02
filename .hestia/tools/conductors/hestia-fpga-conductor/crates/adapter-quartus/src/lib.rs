@@ -97,8 +97,40 @@ impl VendorAdapter for QuartusAdapter {
         })
     }
 
-    async fn program_device(&self, _ctx: &ProgramContext) -> Result<(), AdapterError> {
-        tracing::info!("Quartus: program device via JTAG (stub)");
+    async fn program_device(&self, ctx: &ProgramContext) -> Result<(), AdapterError> {
+        tracing::info!(
+            device = %ctx.device,
+            bitstream = %ctx.bitstream.display(),
+            "Quartus: programming device via JTAG"
+        );
+
+        // Build the programming descriptor: p;<bitstream>@<device_index>
+        let program_desc = format!("p;{}@1", ctx.bitstream.display());
+
+        let output = std::process::Command::new("quartus_pgm")
+            .arg("--mode")
+            .arg("jtag")
+            .arg("-o")
+            .arg(&program_desc)
+            .output()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    AdapterError::ToolNotFound("quartus_pgm".to_string())
+                } else {
+                    AdapterError::Io(e)
+                }
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::error!(%stderr, "Quartus programming failed");
+            return Err(AdapterError::BuildFailed {
+                exit_code: output.status.code().unwrap_or(-1),
+            });
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        tracing::info!(%stdout, "Quartus: device programmed successfully");
         Ok(())
     }
 

@@ -453,14 +453,14 @@ impl AiHandler {
         }))
     }
 
-    /// agent_spawn — AgentManagerを使用してエージェントを生成する
+    /// agent_spawn — AgentManagerを使用してエージェントを生成する（agent-cli run 経由）
     async fn handle_agent_spawn(&self, params: serde_json::Value) -> Result<serde_json::Value, String> {
         let role = params.get("role").and_then(|v| v.as_str()).unwrap_or("planner");
         let conductor_id = params.get("conductor_id").and_then(|v| v.as_str()).unwrap_or("ai");
-        let agent_id = format!("agent_{}", uuid::Uuid::new_v4().simple());
+        let agent_id = format!("{}_{}", conductor_id, role);
 
         let mut mgr = self.agent_mgr.lock().await;
-        mgr.spawn(agent_id.clone(), conductor_id.to_string())
+        mgr.spawn(agent_id.clone(), conductor_id.to_string()).await
             .map_err(|e| format!("failed to spawn agent: {e}"))?;
 
         Ok(serde_json::json!({

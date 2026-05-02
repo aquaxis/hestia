@@ -13,3 +13,4 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
+serde_yaml = { workspace = true }

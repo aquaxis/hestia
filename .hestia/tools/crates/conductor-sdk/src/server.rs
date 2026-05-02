@@ -41,6 +41,34 @@ pub struct PersonaInfo {
     pub source_path: Option<String>,
 }
 
+/// ペルソナファイルの YAML frontmatter
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct PersonaFrontmatter {
+    name: Option<String>,
+    role: String,
+    #[serde(default)]
+    skills: Vec<String>,
+    #[serde(default)]
+    description: Option<String>,
+}
+
+/// ペルソナファイルを読み込む
+fn load_persona(domain: &str) -> Option<(PersonaFrontmatter, PathBuf)> {
+    let persona_path = PathBuf::from(format!(".hestia/personas/{domain}.md"));
+    if !persona_path.exists() {
+        return None;
+    }
+    let content = std::fs::read_to_string(&persona_path).ok()?;
+    let content = content.trim_start();
+    if !content.starts_with("---") {
+        return None;
+    }
+    let end = content[3..].find("---")?;
+    let frontmatter_str = &content[3..3 + end];
+    let frontmatter: PersonaFrontmatter = serde_yaml::from_str(frontmatter_str).ok()?;
+    Some((frontmatter, persona_path))
+}
+
 /// Conductor サーバー
 ///
 /// agent-cli レジストリに自身を登録し、Unix ソケットでメッセージを待ち受ける。
@@ -49,6 +77,8 @@ pub struct ConductorServer {
     registry_dir: PathBuf,
     agent_id: String,
     handler: Box<dyn MessageHandler>,
+    provider: String,
+    model: String,
 }
 
 impl ConductorServer {
@@ -65,12 +95,21 @@ impl ConductorServer {
             registry_dir,
             agent_id,
             handler,
+            provider: "ollama".to_string(),
+            model: "glm-5.1:cloud".to_string(),
         })
     }
 
     /// レジストリディレクトリをカスタマイズ
     pub fn with_registry_dir(mut self, dir: PathBuf) -> Self {
         self.registry_dir = dir;
+        self
+    }
+
+    /// プロバイダーとモデルを設定
+    pub fn with_provider(mut self, provider: &str, model: &str) -> Self {
+        self.provider = provider.to_string();
+        self.model = model.to_string();
         self
     }
 
@@ -101,24 +140,42 @@ impl ConductorServer {
             std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))?;
         }
 
+        // ペルソナファイルから情報を読み込み
+        let domain = self.conductor_id.peer_name();
+        let (persona_info, _persona_source_path) = match load_persona(domain) {
+            Some((fm, path)) => {
+                tracing::info!("loaded persona from {}", path.display());
+                (
+                    PersonaInfo {
+                        role: fm.role,
+                        skills: fm.skills,
+                        description: fm.description.unwrap_or_default(),
+                        source_path: Some(path.to_string_lossy().to_string()),
+                    },
+                    Some(path),
+                )
+            }
+            None => (
+                PersonaInfo {
+                    role: format!("{domain} conductor"),
+                    skills: vec!["tool execution".to_string()],
+                    description: format!("Hestia {domain} conductor daemon"),
+                    source_path: None,
+                },
+                None,
+            ),
+        };
+
         // レジストリエントリを書き込み
         let entry = RegistryEntry {
             id: self.agent_id.clone(),
-            name: self.conductor_id.peer_name().to_string(),
+            name: domain.to_string(),
             pid: std::process::id(),
             started_at: chrono::Utc::now().to_rfc3339(),
-            provider: "hestia".to_string(),
-            model: "native".to_string(),
+            provider: self.provider.clone(),
+            model: self.model.clone(),
             socket: socket_path.to_string_lossy().to_string(),
-            persona: PersonaInfo {
-                role: format!("{} conductor", self.conductor_id.peer_name()),
-                skills: vec!["tool execution".to_string()],
-                description: format!(
-                    "Hestia {} conductor daemon",
-                    self.conductor_id.peer_name()
-                ),
-                source_path: None,
-            },
+            persona: persona_info,
         };
 
         let json_content = serde_json::to_string_pretty(&entry)
@@ -127,7 +184,7 @@ impl ConductorServer {
 
         tracing::info!(
             "conductor {} registered at {} (socket: {})",
-            self.conductor_id.peer_name(),
+            domain,
             json_path.display(),
             socket_path.display()
         );
@@ -143,9 +200,9 @@ impl ConductorServer {
         };
 
         // メッセージ受信ループ
-        tracing::info!("{} conductor ready, listening for messages", self.conductor_id.peer_name());
+        tracing::info!("{} conductor ready, listening for messages", domain);
 
-        let conductor_name = self.conductor_id.peer_name().to_string();
+        let conductor_name = domain.to_string();
 
         loop {
             tokio::select! {
@@ -153,7 +210,8 @@ impl ConductorServer {
                     match accept_result {
                         Ok((stream, _addr)) => {
                             let handler = &self.handler;
-                            Self::handle_connection(stream, handler).await;
+                            let name = conductor_name.clone();
+                            Self::handle_connection(stream, handler, &name).await;
                         }
                         Err(e) => {
                             tracing::error!("failed to accept connection: {e}");
@@ -173,6 +231,7 @@ impl ConductorServer {
     async fn handle_connection(
         mut stream: tokio::net::UnixStream,
         handler: &Box<dyn MessageHandler>,
+        conductor_name: &str,
     ) {
         let mut buf = vec![0u8; 16 * 1024 * 1024]; // 16 MiB max
         match stream.read(&mut buf).await {
@@ -209,11 +268,18 @@ impl ConductorServer {
                         }
                     }
                 } else {
-                    // 自然言語メッセージ — 汎用応答を返す
-                    let response = serde_json::json!({
-                        "result": {"status": "acknowledged", "message": format!("{} conductor received natural language input", "conductor")},
-                        "id": format!("msg_{}", uuid::Uuid::new_v4())
-                    });
+                    // 自然言語メッセージ — agent-cli send で LLM にルーティング
+                    let llm_response = Self::forward_to_llm(conductor_name, raw_str).await;
+                    let response = match llm_response {
+                        Some(resp) => serde_json::json!({
+                            "result": {"status": "processed", "response": resp},
+                            "id": format!("msg_{}", uuid::Uuid::new_v4())
+                        }),
+                        None => serde_json::json!({
+                            "result": {"status": "acknowledged", "message": format!("{conductor_name} conductor received natural language input")},
+                            "id": format!("msg_{}", uuid::Uuid::new_v4())
+                        }),
+                    };
                     let _ = stream.write_all(response.to_string().as_bytes()).await;
                     let _ = stream.write_all(b"\n").await;
                 }
@@ -223,6 +289,28 @@ impl ConductorServer {
                 tracing::warn!("failed to read from connection: {e}");
             }
         }
+    }
+
+    /// 自然言語メッセージを agent-cli 経由で LLM に転送する
+    async fn forward_to_llm(conductor_name: &str, text: &str) -> Option<String> {
+        let output = tokio::process::Command::new("agent-cli")
+            .arg("send")
+            .arg(conductor_name)
+            .arg(text)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .await
+            .ok()?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let trimmed = stdout.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+        None
     }
 }
 
