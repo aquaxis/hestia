@@ -228,6 +228,11 @@ impl ConductorServer {
     }
 
     /// 個別の接続を処理する
+    ///
+    /// 受信メッセージは agent-cli の `IpcMessage::Prompt` 互換ラッパー
+    /// `{"kind":"prompt","from":"...","text":"..."}` を期待する。`text` の中身が
+    /// JSON オブジェクトであれば hestia の `Request` としてデコードしハンドラへ、
+    /// それ以外なら自然言語として LLM 経路に流す。
     async fn handle_connection(
         mut stream: tokio::net::UnixStream,
         handler: &Box<dyn MessageHandler>,
@@ -239,9 +244,12 @@ impl ConductorServer {
                 let raw = String::from_utf8_lossy(&buf[..n]);
                 let raw_str = raw.trim();
 
-                // ペイロードをパース
-                if raw_str.starts_with('{') {
-                    match serde_json::from_str::<Request>(raw_str) {
+                // agent-cli wire format から `text` を抽出。失敗時は raw を text とみなす。
+                let inner = Self::extract_text(raw_str);
+                let inner_trim = inner.trim();
+
+                if inner_trim.starts_with('{') {
+                    match serde_json::from_str::<Request>(inner_trim) {
                         Ok(request) => {
                             let method = request.method.clone();
                             let id = request.id.clone();
@@ -269,7 +277,7 @@ impl ConductorServer {
                     }
                 } else {
                     // 自然言語メッセージ — agent-cli send で LLM にルーティング
-                    let llm_response = Self::forward_to_llm(conductor_name, raw_str).await;
+                    let llm_response = Self::forward_to_llm(conductor_name, inner_trim).await;
                     let response = match llm_response {
                         Some(resp) => serde_json::json!({
                             "result": {"status": "processed", "response": resp},
@@ -288,6 +296,28 @@ impl ConductorServer {
             Err(e) => {
                 tracing::warn!("failed to read from connection: {e}");
             }
+        }
+    }
+
+    /// agent-cli wire format から `text` フィールドを取り出す。
+    ///
+    /// 入力が `{"kind":"prompt","from":"...","text":"..."}` 形式なら `text` を返し、
+    /// それ以外（旧フォーマット、純粋な自然言語、JSON 直接送信）なら入力をそのまま返す。
+    fn extract_text(raw: &str) -> String {
+        if !raw.trim_start().starts_with('{') {
+            return raw.to_string();
+        }
+        match serde_json::from_str::<serde_json::Value>(raw) {
+            Ok(v) => {
+                let kind = v.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+                if kind == "prompt" {
+                    if let Some(t) = v.get("text").and_then(|t| t.as_str()) {
+                        return t.to_string();
+                    }
+                }
+                raw.to_string()
+            }
+            Err(_) => raw.to_string(),
         }
     }
 

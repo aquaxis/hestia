@@ -3,12 +3,19 @@
 use crate::agent::ConductorId;
 use crate::config::HestiaClientConfig;
 use crate::error::HestiaError;
-use crate::message::Payload;
+use crate::message::{AgentCliPrompt, Payload};
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::process::Command;
+
+/// CLI 短命プロセス用のデフォルト agent-id。
+///
+/// agent-cli の `AgentId(pub String)` は非空文字列のみ要求し、レジストリ照合は
+/// 受信側 conductor の判断に委ねられる。CLI はレジストリ登録されないため、
+/// 識別子としては固定文字列で十分。
+const DEFAULT_FROM_ID: &str = "agent-hestia-cli";
 
 /// agent-cli IPC クライアント
 pub struct AgentCliClient {
@@ -83,18 +90,26 @@ impl AgentCliClient {
     }
 
     /// 指定 peer へペイロード送信（直接ソケット通信）
+    ///
+    /// agent-cli の `IpcMessage::Prompt` ワイヤフォーマット
+    /// `{"kind":"prompt","from":"<agent-id>","text":"..."}` でラップして送る。
+    /// ドメインペイロード（`Payload::Structured`）は JSON 文字列として `text` に詰める。
     pub async fn send(&self, peer: &str, payload: &Payload) -> Result<String, HestiaError> {
         let socket_path = self.find_peer_socket(peer).await?;
 
         let mut stream = UnixStream::connect(&socket_path).await
             .map_err(|e| HestiaError::Transport(format!("failed to connect to {peer} socket: {e}")))?;
 
-        let payload_str = match payload {
+        // ペイロードを agent-cli wire format の `text` フィールドに詰める
+        let text = match payload {
             Payload::Structured(v) => v.to_string(),
             Payload::NaturalLanguage(t) => t.clone(),
         };
+        let wire = AgentCliPrompt::new(self.from_id(), text);
+        let line = serde_json::to_string(&wire)
+            .map_err(|e| HestiaError::Transport(format!("failed to serialize prompt: {e}")))?;
 
-        stream.write_all(payload_str.as_bytes()).await
+        stream.write_all(line.as_bytes()).await
             .map_err(|e| HestiaError::Transport(format!("failed to send to {peer}: {e}")))?;
         stream.write_all(b"\n").await
             .map_err(|e| HestiaError::Transport(format!("failed to send newline to {peer}: {e}")))?;
@@ -110,6 +125,19 @@ impl AgentCliClient {
         }
 
         Ok(String::from_utf8_lossy(&buf[..n]).to_string())
+    }
+
+    /// 送信時の `from` agent-id を解決する。
+    ///
+    /// 設定で `agent_cli_from_id` が指定されていればそれを使い、未指定なら
+    /// `DEFAULT_FROM_ID` を返す。
+    fn from_id(&self) -> String {
+        let id = self.config.agent_cli_from_id.trim();
+        if id.is_empty() {
+            DEFAULT_FROM_ID.to_string()
+        } else {
+            id.to_string()
+        }
     }
 
     /// 指定 peer へペイロード送信（agent-cli send コマンド経由）

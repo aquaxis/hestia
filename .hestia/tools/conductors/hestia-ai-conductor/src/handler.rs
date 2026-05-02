@@ -245,6 +245,7 @@ impl AiHandler {
 
         let request = Request {
             kind: "prompt".to_string(),
+        from: "cli".to_string(),
             method: method.to_string(),
             params,
             id: MessageId::new(),

@@ -51,6 +51,7 @@ enum OutputCommands {
 fn build_request(method: &str, params: serde_json::Value) -> Request {
     Request {
         kind: "prompt".to_string(),
+        from: "cli".to_string(),
         method: method.to_string(),
         params,
         id: MessageId::new(),

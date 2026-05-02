@@ -33,6 +33,10 @@ pub struct HestiaClientConfig {
     /// 最大フレーム長（バイト）
     #[serde(default = "default_max_frame_length")]
     pub max_frame_length: u64,
+
+    /// agent-cli IPC 送信時に使う `from` agent-id（空 = 既定 "agent-hestia-cli"）
+    #[serde(default)]
+    pub agent_cli_from_id: String,
 }
 
 impl Default for HestiaClientConfig {
@@ -45,6 +49,7 @@ impl Default for HestiaClientConfig {
             log_level: default_log_level(),
             retry_policy: RetryPolicy::default(),
             max_frame_length: default_max_frame_length(),
+            agent_cli_from_id: String::new(),
         }
     }
 }

@@ -103,12 +103,20 @@ pub struct DeprecationNotice {
     pub replacement: String,
 }
 
-/// 構造化リクエスト
+/// 構造化リクエスト（hestia 内部のドメイン要求表現）
+///
+/// agent-cli の IPC ワイヤ表現（`AgentCliPrompt`）の `text` に JSON シリアライズして埋め込む。
+/// `kind`/`from` フィールドはレガシー互換のため温存しているが、agent-cli 経由での送信時は
+/// 外側の `AgentCliPrompt` が wire レベルの `kind`/`from` を担う。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
-    /// メッセージ種別（agent-cli IPC で必須）
+    /// メッセージ種別（レガシー互換）: prompt | ack | error | ping | pong
     #[serde(default = "default_kind")]
     pub kind: String,
+    /// 送信元 ID（レガシー互換）
+    #[serde(default = "default_from")]
+    pub from: String,
+    /// メソッド名（hestia ドメイン要求のディスパッチキー）
     pub method: String,
     #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
     pub params: serde_json::Value,
@@ -119,6 +127,52 @@ pub struct Request {
 
 fn default_kind() -> String {
     "prompt".to_string()
+}
+
+fn default_from() -> String {
+    "cli".to_string()
+}
+
+/// agent-cli IPC ワイヤフォーマット（`IpcMessage::Prompt` 互換）
+///
+/// 出典: `agent-cli/src/ipc/mod.rs` の `IpcMessage::Prompt`。
+/// `serde(tag = "kind", rename_all = "snake_case")` による外部タグ enum なので、
+/// `kind = "prompt"` を必ず先頭フィールドとして含めれば agent-cli 側の
+/// `serde_json::from_str::<IpcMessage>` で `Prompt { from, from_name, text }` に
+/// デシリアライズされる。
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentCliPrompt {
+    /// 必ず "prompt"
+    pub kind: &'static str,
+    /// 送信元 agent-id（agent-cli の `AgentId(pub String)` に直接マップ。非空文字列のみ要求）
+    pub from: String,
+    /// 表示名（任意）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_name: Option<String>,
+    /// 本文（自然言語または JSON シリアライズ済みドメインメッセージ）
+    pub text: String,
+}
+
+impl AgentCliPrompt {
+    /// 新しい `AgentCliPrompt` を構築する
+    pub fn new(from: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            kind: "prompt",
+            from: from.into(),
+            from_name: None,
+            text: text.into(),
+        }
+    }
+
+    /// 表示名付きで構築する
+    pub fn with_name(from: impl Into<String>, from_name: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            kind: "prompt",
+            from: from.into(),
+            from_name: Some(from_name.into()),
+            text: text.into(),
+        }
+    }
 }
 
 /// 成功応答
