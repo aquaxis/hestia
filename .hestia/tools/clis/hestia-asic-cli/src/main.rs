@@ -51,6 +51,7 @@ enum PdkCommands {
 
 fn build_request(method: &str, params: serde_json::Value) -> Request {
     Request {
+        kind: "request".to_string(),
         method: method.to_string(),
         params,
         id: MessageId::new(),

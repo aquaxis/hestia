@@ -106,12 +106,19 @@ pub struct DeprecationNotice {
 /// 構造化リクエスト
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
+    /// メッセージ種別（agent-cli IPC で必須）
+    #[serde(default = "default_kind")]
+    pub kind: String,
     pub method: String,
     #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
     pub params: serde_json::Value,
     pub id: MessageId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trace_id: Option<TraceId>,
+}
+
+fn default_kind() -> String {
+    "request".to_string()
 }
 
 /// 成功応答
