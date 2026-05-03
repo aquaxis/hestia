@@ -113,7 +113,7 @@ impl PcbHandler {
         }))
     }
 
-    async fn handle_run_erc(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_run_erc(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "pcb.run_erc",
@@ -121,7 +121,7 @@ impl PcbHandler {
         }))
     }
 
-    async fn handle_generate_bom(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_generate_bom(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "pcb.generate_bom",
@@ -129,14 +129,14 @@ impl PcbHandler {
         }))
     }
 
-    async fn handle_place_components(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_place_components(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "pcb.place_components",
         }))
     }
 
-    async fn handle_route_traces(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_route_traces(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "pcb.route_traces",

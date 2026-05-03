@@ -70,7 +70,7 @@ impl AiHandler {
 
         // HAL関連
         let hal_keywords = ["hal", "register", "memory map", "レジスタ", "ペリフェラル", "mmio", "hal"];
-        let has_hal = hal_keywords.iter().any(|k| lower.contains(k));
+        let _has_hal = hal_keywords.iter().any(|k| lower.contains(k));
 
         // アプリ・ファームウェア
         let apps_keywords = ["firmware", "embedded", "rtos", "flash", "ファームウェア", "組込", "apps"];

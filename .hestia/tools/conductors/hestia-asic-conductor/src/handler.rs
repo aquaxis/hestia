@@ -120,28 +120,28 @@ impl AsicHandler {
         }))
     }
 
-    async fn handle_place(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_place(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "asic.place",
         }))
     }
 
-    async fn handle_cts(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_cts(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "asic.cts",
         }))
     }
 
-    async fn handle_route(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_route(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "asic.route",
         }))
     }
 
-    async fn handle_gdsii(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_gdsii(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "asic.gdsii",
@@ -160,7 +160,7 @@ impl AsicHandler {
         }))
     }
 
-    async fn handle_lvs(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_lvs(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "asic.lvs",
@@ -168,7 +168,7 @@ impl AsicHandler {
         }))
     }
 
-    async fn handle_timing_signoff(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_timing_signoff(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "asic.timing_signoff",
@@ -193,7 +193,7 @@ impl AsicHandler {
         }))
     }
 
-    async fn handle_ai_timing_fix(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_ai_timing_fix(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "asic.ai.timing_fix",
@@ -201,7 +201,7 @@ impl AsicHandler {
         }))
     }
 
-    async fn handle_ai_drc_fix(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_ai_drc_fix(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "asic.ai.drc_fix",
@@ -209,7 +209,7 @@ impl AsicHandler {
         }))
     }
 
-    async fn handle_ai_floorplan_optimize(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_ai_floorplan_optimize(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "asic.ai.floorplan_optimize",
@@ -217,7 +217,7 @@ impl AsicHandler {
         }))
     }
 
-    async fn handle_ai_pdk_migrate(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_ai_pdk_migrate(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "asic.ai.pdk_migrate",

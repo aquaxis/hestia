@@ -38,6 +38,27 @@ enum Commands {
     Trigger,
     /// Reset the target
     Reset,
+    /// UART loopback / send-and-receive test
+    UartLoopback {
+        /// Serial device path (default: /dev/ttyUSB1)
+        #[arg(long, default_value = "/dev/ttyUSB1")]
+        device: String,
+        /// Baud rate
+        #[arg(long, default_value_t = 115200)]
+        baud: u32,
+        /// Pattern to send (UTF-8 string; use --pattern-hex for binary)
+        #[arg(long, default_value = "ABCD")]
+        pattern: String,
+        /// Read back bytes for true loopback verification
+        #[arg(long)]
+        read_back: bool,
+        /// Per-read timeout in ms
+        #[arg(long, default_value_t = 500)]
+        read_timeout_ms: u64,
+        /// Skip actual execution; emit plan only
+        #[arg(long)]
+        no_execute: bool,
+    },
     /// Show Debug conductor status
     Status,
 }
@@ -96,6 +117,17 @@ async fn main() -> Result<()> {
         Commands::Signals => ("debug.read_signals", serde_json::json!({})),
         Commands::Trigger => ("debug.set_trigger", serde_json::json!({})),
         Commands::Reset => ("debug.reset", serde_json::json!({})),
+        Commands::UartLoopback { device, baud, pattern, read_back, read_timeout_ms, no_execute } => (
+            "debug.uart_loopback",
+            serde_json::json!({
+                "device": device,
+                "baud": baud,
+                "pattern": pattern,
+                "read_back": read_back,
+                "read_timeout_ms": read_timeout_ms,
+                "execute": !no_execute,
+            }),
+        ),
         Commands::Status => ("debug.status", serde_json::json!({})),
     };
 

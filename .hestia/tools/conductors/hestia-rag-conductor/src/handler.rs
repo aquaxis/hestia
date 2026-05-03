@@ -74,7 +74,7 @@ impl RagHandler {
 
     async fn handle_search(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let query = params.get("query").and_then(|v| v.as_str()).unwrap_or("");
-        let top_k = params.get("top_k").and_then(|v| v.as_u64()).unwrap_or(10);
+        let _top_k = params.get("top_k").and_then(|v| v.as_u64()).unwrap_or(10);
         Ok(serde_json::json!({
             "status": "ok",
             "method": "rag.search",
@@ -86,7 +86,7 @@ impl RagHandler {
         }))
     }
 
-    async fn handle_cleanup(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_cleanup(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "rag.cleanup",
@@ -112,7 +112,7 @@ impl RagHandler {
         }))
     }
 
-    async fn handle_search_similar(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_search_similar(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "rag.search_similar.v1",
@@ -120,7 +120,7 @@ impl RagHandler {
         }))
     }
 
-    async fn handle_search_bugfix(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_search_bugfix(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "rag.search_bugfix.v1",
@@ -128,7 +128,7 @@ impl RagHandler {
         }))
     }
 
-    async fn handle_search_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_search_design(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "rag.search_design.v1",

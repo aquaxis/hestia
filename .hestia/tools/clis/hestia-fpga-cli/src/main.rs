@@ -23,8 +23,20 @@ enum Commands {
     Init,
     /// Build FPGA design for a target device
     Build {
-        /// Target device (e.g. xilinx, intel, lattice)
+        /// Target device (e.g. xilinx, intel, lattice, artix7)
         target: String,
+        /// Top module name (overrides auto-detection)
+        #[arg(long)]
+        top: Option<String>,
+        /// Part number (overrides project template)
+        #[arg(long)]
+        part: Option<String>,
+        /// Constraints file (overrides project template)
+        #[arg(long)]
+        constraints: Option<String>,
+        /// Actually invoke Vivado batch (long-running). Without this, only emits TCL/manifest.
+        #[arg(long)]
+        execute: bool,
     },
     /// Run logic synthesis
     Synthesize,
@@ -34,8 +46,18 @@ enum Commands {
     Bitstream,
     /// Run FPGA simulation
     Simulate,
-    /// Program target device
-    Program,
+    /// Program target device with a bitstream
+    Program {
+        /// Bitstream path (default: first .bit in <root>/fpga/output/)
+        #[arg(long)]
+        bitstream: Option<String>,
+        /// Target device hint (passed to template)
+        #[arg(long, default_value = "")]
+        device: String,
+        /// Actually invoke Vivado JTAG programming
+        #[arg(long)]
+        execute: bool,
+    },
     /// Show reports
     Report {
         /// Report type: timing | resource
@@ -81,15 +103,22 @@ async fn main() -> Result<()> {
 
     let (method, params) = match &cli.command {
         Commands::Init => ("fpga.init", serde_json::json!({})),
-        Commands::Build { target } => (
-            "fpga.build.v1.start",
-            serde_json::json!({ "target": target }),
-        ),
+        Commands::Build { target, top, part, constraints, execute } => {
+            let mut p = serde_json::json!({ "target": target, "execute": execute });
+            if let Some(v) = top { p["top"] = serde_json::json!(v); }
+            if let Some(v) = part { p["part"] = serde_json::json!(v); }
+            if let Some(v) = constraints { p["constraints"] = serde_json::json!(v); }
+            ("fpga.build.v1.start", p)
+        }
         Commands::Synthesize => ("fpga.synthesize", serde_json::json!({})),
         Commands::Implement => ("fpga.implement", serde_json::json!({})),
         Commands::Bitstream => ("fpga.bitstream", serde_json::json!({})),
         Commands::Simulate => ("fpga.simulate", serde_json::json!({})),
-        Commands::Program => ("fpga.program", serde_json::json!({})),
+        Commands::Program { bitstream, device, execute } => {
+            let mut p = serde_json::json!({ "device": device, "execute": execute });
+            if let Some(v) = bitstream { p["bitstream"] = serde_json::json!(v); }
+            ("fpga.program", p)
+        }
         Commands::Report { report_type } => (
             match report_type.as_str() {
                 "timing" => "report_timing",

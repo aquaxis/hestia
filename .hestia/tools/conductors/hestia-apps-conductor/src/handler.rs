@@ -104,7 +104,7 @@ impl AppsHandler {
         }))
     }
 
-    async fn handle_size(params: serde_json::Value) -> Result<serde_json::Value, String> {
+    async fn handle_size(_params: serde_json::Value) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "status": "ok",
             "method": "apps.size.v1",

@@ -1,4 +1,3 @@
-use crate::error::McpError;
 use crate::tools::ToolDefinition;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
