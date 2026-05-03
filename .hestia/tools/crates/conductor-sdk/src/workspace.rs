@@ -116,27 +116,20 @@ pub fn find_in_path(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Resolve a project-side template path (Phase 21 — keep Hestia core generic).
-///
-/// Templates live under `<project-root>/.hestia/<category>/templates/<name>` so
-/// that app- and board-specific data (UART/LED register maps, ARTY-A7-100T
-/// constraints, vendor-specific build TCL etc.) stay with the project rather
-/// than being baked into the Hestia source tree.
-///
-/// Returns `Some(path)` if the template exists, `None` otherwise.
-pub fn find_project_template(category: &str, name: &str) -> Option<PathBuf> {
-    let path = resolve_project_root()
-        .join(".hestia")
-        .join(category)
-        .join("templates")
-        .join(name);
-    if path.is_file() { Some(path) } else { None }
-}
+// Phase 42: `find_project_template` was removed. Hestia is an agent-driven
+// hardware development environment — artifacts (RTL, register maps, XDC,
+// TCL, etc.) must be designed and emitted by the AI orchestrator via
+// `fs_write` to the project root, not loaded from pre-placed templates.
+// Allowing a template fallback degraded the system into a template-substitution
+// engine and caused the AI persona to tell users to "go place a template
+// then re-run", which is exactly the opposite of an AI-driven workflow.
+// Handlers now resolve inputs only via params and existing project files.
 
 /// First existing project file under `<project-root>/<category>/[subpath]/<name>`.
 ///
-/// Used by handlers to prefer user-edited project files (e.g. `<root>/rtl/uart_led.sv`)
-/// over project-side templates.
+/// Used by handlers to consume artifacts that the AI orchestrator generated
+/// for this run (e.g. `<root>/rtl/uart_led.sv` written by `fs_write` before
+/// the lint step).
 pub fn find_project_file(category: &str, subpath: Option<&str>, name: &str) -> Option<PathBuf> {
     let mut path = resolve_project_root().join(category);
     if let Some(sp) = subpath {

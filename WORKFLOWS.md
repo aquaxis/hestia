@@ -2,6 +2,24 @@
 
 `hestia ai run --file <instructions.md>` で AI Workflow Orchestrator を起動した際の振る舞い、各ステップの返却 status、診断情報の読み方をまとめます。
 
+## 設計原則: Hestia は AI 駆動システム（テンプレート埋め込み禁止）
+
+**Hestia は AI 駆動のハードウェア開発環境です。LLM である AI orchestrator が指示を解析して必要な成果物（HDL / 制約 / TCL / レジスタマップ等）を `fs_write` で生成し、それを handler が処理します。**
+
+以下は **明確に禁止**されています:
+
+- ❌ Hestia core（`.hestia/tools/`）への特定アプリ・特定ボード固有データの埋め込み（Phase 21 で除去済）
+- ❌ プロジェクト側 `<root>/.hestia/<domain>/templates/` ディレクトリへのテンプレート配置（Phase 42 で完全廃止）
+- ❌ AI が「テンプレートを配置してから再実行してください」とユーザーに指示すること（AI 駆動の根本理念に反する）
+
+**正しいフロー**:
+
+1. AI orchestrator が指示を LLM 推論で解析
+2. 必要な成果物を `fs_write` で project root（`<root>/hal/`, `<root>/rtl/`, `<root>/fpga/{constraints,scripts}/` 等）に書き出し
+3. `hestia-{domain}-cli` を invoke、handler は project root の既存ファイルを読んで処理
+
+handler が `status: "input_required"` を返した場合、それは「**AI が事前に成果物を fs_write しなかった**」シグナル。テンプレート不在を意味するのではない。
+
 ## ワークフロー実行フロー
 
 ```
@@ -86,26 +104,15 @@ hestia ai run --file instructions.md
     └── personas/<conductor>.md
 ```
 
-## プロジェクト側テンプレート
+## 成果物の解決順序（Phase 42 — テンプレートなし）
 
-特定アプリ（UART/LED 等）・特定ボード（ARTY-A7-100T 等）固有のデータは **プロジェクト側** に配置します（Hestia core は完全 generic、Phase 21 規約）:
+handler は以下の順序で入力を解決します:
 
-```
-<root>/.hestia/
-├── hal/templates/register_map.json     ← UART/LED skeleton
-├── rtl/templates/uart_led.sv           ← UART RTL モジュール
-├── rtl/templates/tb_uart_led.sv        ← testbench
-├── fpga/templates/<target>.xdc         ← ARTY-A7-100T 制約
-├── fpga/templates/<target>.tcl         ← Vivado batch TCL
-└── fpga/templates/<target>.part        ← part number (xc7a100tcsg324-1 等)
-```
+1. params で明示指定（`{"sources": [...]}`, `{"constraints": "..."}`, `{"part": "..."}` 等）
+2. プロジェクトルート直下の既存ファイル（`<root>/rtl/<top>.sv`, `<root>/fpga/constraints/*.xdc` 等 — **AI orchestrator が `fs_write` で書いた成果物**）
+3. 解決不可 → status: `input_required`（hal.parse 等）または `skipped`（fpga.build dry-run 等）
 
-handler は以下の解決順序で入力を取得:
-
-1. params で明示指定
-2. プロジェクトルート直下の既存ファイル（`<root>/rtl/<top>.sv` 等）
-3. プロジェクト側テンプレート（`<root>/.hestia/<domain>/templates/...`）
-4. 解決不可 → status: `skipped`
+**Phase 42 で `<root>/.hestia/<domain>/templates/` のテンプレートディレクトリは完全廃止**。Hestia は AI 駆動システムであり、設計の生成責任は常に AI orchestrator にあります。テンプレートに頼らず、LLM 推論で成果物を生成してください。
 
 ## エラー診断
 

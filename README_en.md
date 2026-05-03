@@ -8,6 +8,8 @@
 
 Hestia is an integrated hardware development environment that orchestrates FPGA, ASIC, PCB, HAL, and embedded software development tools through a unified AI-powered architecture.
 
+> **Hestia design principle**: Hestia is an AI-driven system. The LLM orchestrator interprets natural-language instructions and **dynamically generates HDL / constraints / TCL / register maps** via `fs_write` before handlers process them. Embedding application- or board-specific templates inside Hestia (whether in `.hestia/tools/` source or as `<root>/.hestia/<domain>/templates/` fallbacks) is forbidden — see [WORKFLOWS.md](./WORKFLOWS.md).
+
 ## Features
 
 - **9 Conductor Architecture** — Domain-specific AI agents for RTL, FPGA, ASIC, PCB, HAL, Apps, Debug, and RAG

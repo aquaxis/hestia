@@ -152,24 +152,28 @@ impl FpgaHandler {
         let vivado_bin = vivado_root.as_ref().map(|root| root.join("bin/vivado"));
         let vivado_present = vivado_bin.as_ref().map(|p| p.is_file()).unwrap_or(false);
 
-        // Resolve programming TCL: params.tcl > project template > generic generator.
+        // Phase 42: programming TCL comes from params.tcl or an existing
+        // <root>/fpga/scripts/program.tcl that the AI orchestrator wrote.
+        // Template fallback was removed.
         let provided_tcl = params.get("tcl").and_then(|v| v.as_str()).map(std::path::PathBuf::from)
             .filter(|p| p.is_file())
-            .or_else(|| conductor_sdk::workspace::find_project_template("fpga", "program.tcl"));
+            .or_else(|| conductor_sdk::workspace::find_project_file("fpga", Some("scripts"), "program.tcl"));
 
         let tcl_path = scripts_dir.join("program.tcl");
         if let Some(tpl) = &provided_tcl {
-            // Render template with placeholders.
-            let raw = std::fs::read_to_string(tpl).map_err(|e| format!("read tcl template {}: {e}", tpl.display()))?;
+            // Use provided / pre-written TCL with simple placeholder substitution.
+            let raw = std::fs::read_to_string(tpl).map_err(|e| format!("read tcl {}: {e}", tpl.display()))?;
             let mut out = raw;
             out = out.replace("{{BITSTREAM}}", &bit_path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default());
             out = out.replace("{{DEVICE}}", device);
             std::fs::write(&tcl_path, out).map_err(|e| format!("write program.tcl: {e}"))?;
         } else {
-            // Generic Vivado hw_server programming flow.
+            // Generic Vivado hw_server programming flow when neither params nor
+            // an agent-written script is available. This stays generic — no
+            // app/board specifics.
             let bit_str = bit_path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
             let body = format!(r#"# program.tcl — generic Vivado JTAG programming flow.
-# Override by placing a custom script at <root>/.hestia/fpga/templates/program.tcl.
+# The AI orchestrator may emit a custom <root>/fpga/scripts/program.tcl to override.
 open_hw_manager
 connect_hw_server -allow_non_jtag
 open_hw_target
@@ -249,10 +253,10 @@ close_hw_manager
         tracing::info!(target = %target, steps = ?steps, "fpga.build.v1.start");
 
         // Phase 20: split FPGA artifacts into <root>/fpga/{constraints,scripts,reports,output}/
-        // Phase 21: keep this handler generic. Constraints/TCL/part/top come from
+        // Phase 42: agent-driven generation. Constraints / TCL / part / top come from
         //   1) params, or
-        //   2) existing <root>/fpga/{constraints,scripts}/, or
-        //   3) project-side templates in <root>/.hestia/fpga/templates/.
+        //   2) existing <root>/fpga/{constraints,scripts}/ that the AI orchestrator wrote.
+        // Template fallback was removed.
         let constraints_dir = conductor_sdk::workspace::ensure_artifact_dir("fpga", Some("constraints"))?;
         let scripts_dir = conductor_sdk::workspace::ensure_artifact_dir("fpga", Some("scripts"))?;
         let reports_dir = conductor_sdk::workspace::ensure_artifact_dir("fpga", Some("reports"))?;
@@ -273,16 +277,15 @@ close_hw_manager
         let vivado_bin = vivado_root.as_ref().map(|root| root.join("bin/vivado"));
         let vivado_present = vivado_bin.as_ref().map(|p| p.is_file()).unwrap_or(false);
 
-        // Resolve constraints (XDC). Project side > template; no hardcoded board data.
+        // Phase 42: Resolve constraints (XDC) from params or pre-written
+        // <root>/fpga/constraints/*.xdc. Template fallback was removed.
         let xdc_path: Option<std::path::PathBuf> = params.get("constraints").and_then(|v| v.as_str()).map(std::path::PathBuf::from)
             .filter(|p| p.is_file())
             .or_else(|| {
                 std::fs::read_dir(&constraints_dir).ok().and_then(|mut d| {
                     d.find_map(|e| e.ok().map(|e| e.path()).filter(|p| p.extension().map(|e| e.to_string_lossy().to_string() == "xdc").unwrap_or(false)))
                 })
-            })
-            .or_else(|| conductor_sdk::workspace::find_project_template("fpga", &format!("{target}.xdc")))
-            .or_else(|| conductor_sdk::workspace::find_project_template("fpga", "constraints.xdc"));
+            });
         let xdc_in_constraints: Option<std::path::PathBuf> = xdc_path.as_ref().map(|src| {
             let name = src.file_name().map(std::ffi::OsString::from).unwrap_or_else(|| std::ffi::OsString::from("constraints.xdc"));
             let dst = constraints_dir.join(&name);
@@ -290,11 +293,14 @@ close_hw_manager
             dst
         });
 
-        // Resolve build TCL template (project-side only; no hardcoded vendor TCL).
+        // Phase 42: Resolve build TCL from params or pre-written
+        // <root>/fpga/scripts/build.tcl. Template fallback was removed.
         let tcl_template: Option<std::path::PathBuf> = params.get("tcl_template").and_then(|v| v.as_str()).map(std::path::PathBuf::from)
             .filter(|p| p.is_file())
-            .or_else(|| conductor_sdk::workspace::find_project_template("fpga", &format!("{target}.tcl")))
-            .or_else(|| conductor_sdk::workspace::find_project_template("fpga", "build.tcl"));
+            .or_else(|| {
+                let p = scripts_dir.join("build.tcl");
+                if p.is_file() { Some(p) } else { None }
+            });
 
         // Discover RTL sources from <root>/rtl/.
         let mut rtl_sources: Vec<std::path::PathBuf> = Vec::new();
@@ -312,12 +318,14 @@ close_hw_manager
             .or_else(|| rtl_sources.first().and_then(|p| p.file_stem()).map(|s| s.to_string_lossy().into_owned()))
             .unwrap_or_else(|| "top".to_string());
 
-        // Part number resolution: params.part > project template/manifest > common map > unknown.
+        // Phase 42: Part number from params or pre-written
+        // <root>/fpga/<target>.part. Template fallback was removed —
+        // the AI orchestrator must supply or generate the board part.
         let part = params.get("part").and_then(|v| v.as_str()).map(|s| s.to_string())
             .or_else(|| {
-                conductor_sdk::workspace::find_project_template("fpga", &format!("{target}.part"))
-                    .and_then(|p| std::fs::read_to_string(p).ok())
-                    .map(|s| s.trim().to_string())
+                let p = conductor_sdk::workspace::resolve_project_root()
+                    .join("fpga").join(format!("{target}.part"));
+                std::fs::read_to_string(p).ok().map(|s| s.trim().to_string())
             });
 
         // Build TCL: render template if available, otherwise emit a minimal generic skeleton.
@@ -352,7 +360,7 @@ close_hw_manager
             } else {
                 rtl_sources.iter().map(|p| format!("add_files -norecurse {}", p.display())).collect::<Vec<_>>().join("\n")
             };
-            format!(r#"# build.tcl — generic skeleton (Phase 21). Provide <root>/.hestia/fpga/templates/<target>.tcl for vendor-specific flow.
+            format!(r#"# build.tcl — generic skeleton. The AI orchestrator may emit a richer <root>/fpga/scripts/build.tcl to override.
 create_project -force {top} {work} -part {part}
 {rtl}
 {xdc}

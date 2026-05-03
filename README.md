@@ -12,10 +12,12 @@ Hestia（ヘスティア）は、FPGA・ASIC・PCB・HAL・組込みソフトウ
 
 - **9 Conductor アーキテクチャ** — RTL・FPGA・ASIC・PCB・HAL・Apps・Debug・RAG のドメイン特化 AI エージェント
 - **統一 IPC** — 全 Conductor 間通信を agent-cli ネイティブ IPC で統一（`agent-cli send <peer> <payload>`）
-- **仕様書駆動開発** — 自然言語仕様書から HDL コード・制約ファイル・テストベンチを自動生成
+- **仕様書駆動開発** — 自然言語仕様書から HDL コード・制約ファイル・テストベンチを **LLM が動的生成**（テンプレート埋め込み禁止、Phase 42）
 - **ベンダー非依存の抽象化** — `ToolAdapter`/`VendorAdapter` トレイトによる統一インターフェース。`adapter.toml` を書くだけでツール追加可能
 - **コンテナ & ローカル実行** — Podman rootless コンテナまたはローカル実行を選択可能。lock ファイルによるビルド再現性
 - **AI エージェントパイプライン** — WatcherAgent → ProbeAgent → PatcherAgent → ValidatorAgent によるツールバージョンアップ自動追従
+
+> **Hestia 設計原則**: Hestia は AI 駆動システムです。LLM が指示を解析して **HDL / 制約 / TCL を動的に生成** し、handler が処理します。テンプレートを並べて handler に渡すアーキテクチャは禁止です（[WORKFLOWS.md](./WORKFLOWS.md) 参照）。
 
 ## アーキテクチャ
 

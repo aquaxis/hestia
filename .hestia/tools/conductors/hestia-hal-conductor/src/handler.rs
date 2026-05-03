@@ -79,10 +79,12 @@ impl HalHandler {
         let artifact_dir = conductor_sdk::workspace::ensure_artifact_dir("hal", None)?;
         let run_id = conductor_sdk::workspace::resolve_run_id();
 
-        // Phase 21: Hestia core stays generic. App-specific register maps live
-        // either in params.sources or under <root>/.hestia/hal/templates/.
-        // Resolution order: params.sources > existing <root>/hal/*.json >
-        // project template > empty skeleton.
+        // Phase 42: agent-driven generation. Hestia core never falls back to a
+        // template. The AI orchestrator must fs_write the register map (or
+        // pass it via params.sources) before invoking this handler. If
+        // neither input is available, the handler reports `input_required`
+        // so the operator knows the orchestrator skipped the design step.
+        // Resolution order: params.sources > existing <root>/hal/*.json > input_required
         let artifact_path = artifact_dir.join("register_map.json");
         let mut source_kind = "empty";
         let mut source_path: Option<String> = None;
@@ -103,15 +105,10 @@ impl HalHandler {
             source_path = Some(existing.to_string_lossy().into_owned());
             let text = std::fs::read_to_string(&existing).map_err(|e| format!("read {}: {e}", existing.display()))?;
             serde_json::from_str(&text).unwrap_or(serde_json::json!({"raw": text}))
-        } else if let Some(tmpl) = conductor_sdk::workspace::find_project_template("hal", "register_map.json") {
-            source_kind = "project_template";
-            source_path = Some(tmpl.to_string_lossy().into_owned());
-            let text = std::fs::read_to_string(&tmpl).map_err(|e| format!("read template {}: {e}", tmpl.display()))?;
-            serde_json::from_str(&text).unwrap_or(serde_json::json!({"raw": text}))
         } else {
             serde_json::json!({
                 "registers": [],
-                "note": "No sources, no <root>/hal/register_map.json, no <root>/.hestia/hal/templates/register_map.json. Empty register map emitted."
+                "note": "No params.sources and no <root>/hal/register_map.json. The AI orchestrator must design and fs_write the register map before invoking hal.parse — Hestia does not load templates."
             })
         };
 
@@ -119,7 +116,9 @@ impl HalHandler {
             .map_err(|e| format!("write register_map.json failed: {e}"))?;
 
         let registers_count = payload["registers"].as_array().map(|a| a.len()).unwrap_or(0);
-        let status = if source_kind == "empty" { "skipped" } else { "ok" };
+        // Phase 42: distinguish "agent did not generate" from generic skip.
+        // input_required signals the AI should design and fs_write first.
+        let status = if source_kind == "empty" { "input_required" } else { "ok" };
         Ok(serde_json::json!({
             "status": status,
             "method": "hal.parse.v1",

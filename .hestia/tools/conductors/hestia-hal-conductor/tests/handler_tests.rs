@@ -1,7 +1,7 @@
-//! Unit tests for HAL handler — Phase 21 template resolution semantics.
+//! Unit tests for HAL handler — Phase 42 agent-driven generation semantics.
 //!
-//! Verifies the documented resolution order:
-//!   params.sources > <root>/hal/register_map.json > template > empty.
+//! Verifies the documented resolution order (no templates):
+//!   params.sources > <root>/hal/register_map.json > input_required.
 
 use conductor_sdk::message::{MessageId, Request, Response};
 use conductor_sdk::server::MessageHandler;
@@ -40,11 +40,13 @@ async fn invoke_in(tmp: &std::path::Path, method: &str, params: serde_json::Valu
 }
 
 #[tokio::test]
-async fn parse_no_inputs_returns_skipped_with_empty_source_kind() {
+async fn parse_no_inputs_returns_input_required() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let result = invoke_in(tmp.path(), "hal.parse.v1", json!({})).await;
-    assert_eq!(result["status"], "skipped",
-        "no source should yield `skipped`, got {result:?}");
+    // Phase 42: missing inputs surface as `input_required` so the AI
+    // orchestrator knows it must fs_write the register map first.
+    assert_eq!(result["status"], "input_required",
+        "no source should yield `input_required` (Phase 42), got {result:?}");
     assert_eq!(result["source_kind"], "empty");
     assert_eq!(result["registers_parsed"], 0);
 }
@@ -72,40 +74,24 @@ async fn parse_resolves_project_existing_when_root_file_present() {
 }
 
 #[tokio::test]
-async fn parse_resolves_project_template_when_only_template_present() {
+async fn parse_ignores_template_directory_phase_42() {
+    // Phase 42 regression guard: even if a template exists at the legacy
+    // location <root>/.hestia/hal/templates/register_map.json, the handler
+    // must IGNORE it. Hestia is an AI-driven system — the orchestrator must
+    // fs_write the register map directly to <root>/hal/register_map.json,
+    // not rely on pre-placed templates.
     let tmp = tempfile::tempdir().expect("tempdir");
-    // Place a template at <root>/.hestia/hal/templates/.
     let tpl_dir = tmp.path().join(".hestia/hal/templates");
     std::fs::create_dir_all(&tpl_dir).expect("mkdir tpl");
     let payload = json!({"registers": [{"name": "TEMPLATE_REG"}]});
     std::fs::write(tpl_dir.join("register_map.json"),
                    serde_json::to_string_pretty(&payload).unwrap())
-        .expect("seed template");
+        .expect("seed legacy template");
 
     let result = invoke_in(tmp.path(), "hal.parse.v1", json!({})).await;
-    assert_eq!(result["status"], "ok");
-    assert_eq!(result["source_kind"], "project_template");
-    assert_eq!(result["registers_parsed"], 1);
-}
-
-#[tokio::test]
-async fn parse_prefers_existing_over_template() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    // Both exist — existing must win per Phase 21 resolution order.
-    let hal_dir = tmp.path().join("hal");
-    std::fs::create_dir_all(&hal_dir).expect("mkdir hal");
-    std::fs::write(hal_dir.join("register_map.json"),
-                   r#"{"registers":[{"name":"FROM_EXISTING"}]}"#)
-        .expect("seed existing");
-
-    let tpl_dir = tmp.path().join(".hestia/hal/templates");
-    std::fs::create_dir_all(&tpl_dir).expect("mkdir tpl");
-    std::fs::write(tpl_dir.join("register_map.json"),
-                   r#"{"registers":[{"name":"FROM_TPL_A"},{"name":"FROM_TPL_B"}]}"#)
-        .expect("seed template");
-
-    let result = invoke_in(tmp.path(), "hal.parse.v1", json!({})).await;
-    assert_eq!(result["source_kind"], "project_existing",
-        "existing file must override template per Phase 21 resolution order");
-    assert_eq!(result["registers_parsed"], 1);
+    // The legacy template must NOT be consumed — handler returns input_required
+    // because no orchestrator-written register_map.json exists at <root>/hal/.
+    assert_eq!(result["status"], "input_required",
+        "legacy template path must be ignored, got {result:?}");
+    assert_eq!(result["source_kind"], "empty");
 }

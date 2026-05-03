@@ -68,9 +68,37 @@ INSTRUCTION:
 
 何もマッチしない場合は `ai.exec` フォールバック（指示本文をそのまま `hestia-ai-cli exec` に渡す）。
 
-### ステップ 2.5：テンプレート確認（Phase 21）
+### ステップ 2.5：成果物の設計と fs_write（Phase 42 — 最重要）
 
-各ステップは `<root>/.hestia/<domain>/templates/` のプロジェクト側テンプレートを参照します。テンプレート不在時、handler は `status: "skipped"` を返します（エラーではない、generic な動作）。テンプレートが必要な場合、ユーザーまたは事前セットアップで配置します。LLM 自身がテンプレートを動的生成することは行いません（ペイロードサイズの制約のため）。
+**Hestia は AI 駆動のハードウェア開発環境です。テンプレートを並べて handler に渡すのではなく、LLM であるあなたが指示を解析して、必要な成果物を `fs_write` で project root に書き出してから handler を呼び出します。**
+
+handler 起動 **前** に、指示内容に応じて以下の成果物を `fs_write` で生成してください。Hestia core はテンプレートを持たないため、これは省略不可:
+
+| ステップ | 設計すべき成果物 | 出力先 |
+|---------|----------------|-------|
+| `hal.parse` | レジスタマップ JSON（registers 配列、各 register に name / offset / fields）| `<root>/hal/register_map.json` |
+| `rtl.lint.v1` | RTL モジュール（SystemVerilog / Verilog / VHDL）| `<root>/rtl/<top>.sv` |
+| `rtl.simulate.v1` | テストベンチ（`tb_<top>.sv`）+ 必要なら DUT モジュール | `<root>/rtl/tb_<top>.sv` |
+| `fpga.build artix7` | XDC 制約 + part 番号（`<target>.part`）+ 必要なら build TCL | `<root>/fpga/constraints/<top>.xdc` / `<root>/fpga/<target>.part` / `<root>/fpga/scripts/build.tcl` |
+| `fpga.program` | program TCL（任意、なければ generic flow）| `<root>/fpga/scripts/program.tcl` |
+
+**設計プロセス**:
+1. INSTRUCTION を読み、指示された機能・ボード・周辺機能を理解
+2. 標準的なハードウェア設計手法に基づき、各成果物の内容を構築（例: ARTY-A7-100T で UART 受信 → LED 点灯 → 8bit UART RX FSM + LED ラッチ + クロック分周器）
+3. `fs_write` で各成果物を出力先に書き込む
+4. その後 handler を起動して lint / simulate / build / program を順次実行
+
+**iteration budget の節約**: agent-cli max_iterations=8 制約のため、複数の `fs_write` は **同一 assistant turn で並列に発行**してください（多くのプロバイダがツール並列実行をサポート）。例えば step 1-3（hal/rtl/fpga）に必要な成果物群（register_map.json + uart_led.sv + tb_uart_led.sv + uart_led.xdc + artix7.part）は **1 iteration で全て書き込む**のが理想。
+
+**禁止事項**:
+- ❌ `<root>/.hestia/<domain>/templates/` の参照（Phase 42 で削除済、handler はそこを読まない）
+- ❌ "テンプレートを配置してください" などのユーザーへの指示（あなたが LLM として設計を生成するのが Hestia の根幹）
+- ❌ 設計をスキップして handler だけ呼ぶ（handler は `input_required` を返し、aggregate status は ok にならない）
+
+handler が返す status の意味:
+- `status: "ok"` → 設計が読まれて lint/sim/build が成功
+- `status: "input_required"` → 該当する成果物が `<root>/<domain>/` に書き出されていない（**あなたが fs_write を忘れた**）
+- `status: "tool_unavailable"` → verilator/vivado/probe-rs が環境にない（環境問題、設計の問題ではない）
 
 ## ステップ 3：各ドメイン conductor への通知 + shell 起動
 
@@ -158,16 +186,15 @@ response JSON の `artifact` フィールドが正確な絶対パスを示しま
 - `.hestia/run_log/<run-id>.json`（集約 JSON、run-id 付き履歴）
 - `.hestia/<conductor>/templates/`（後述「テンプレート生成」で配置されるアプリ・ボード固有テンプレート）
 
-### テンプレートとアプリ固有データ（Phase 21）
+### Hestia 内のテンプレート埋め込み禁止（Phase 21 + 42）
 
-Hestia 本体（`.hestia/tools/` の Rust ソース）は **完全に汎用** で、特定アプリ・特定ボードのデータを含みません。各 handler は以下の順で入力を解決します:
+Hestia 本体（`.hestia/tools/` の Rust ソース）は **完全に汎用** で、特定アプリ・特定ボードのデータを含みません。**テンプレートディレクトリ（`<root>/.hestia/<domain>/templates/`）も Phase 42 で廃止**。各 handler は以下の順で入力を解決します:
 
 1. params で明示指定
-2. プロジェクト直下に既存ファイル（`<root>/rtl/<top>.sv` 等）
-3. プロジェクト側テンプレート（`<root>/.hestia/<domain>/templates/<file>`）
-4. 解決不可 → `status: "skipped"`
+2. プロジェクト直下の既存ファイル（`<root>/rtl/<top>.sv` 等）— **AI orchestrator が `fs_write` で書いた成果物**
+3. 解決不可 → `status: "input_required"`（AI が設計を skip した警告）
 
-テンプレートは **プロジェクトオーナーが事前配置** します。LLM が動的生成しなくても skipped で完走するため、テンプレート不在は normal な動作経路です。
+つまり Hestia は AI 駆動システムであり、設計の生成責任は **常に AI orchestrator（あなた）にある**。テンプレートを並べて handler に処理させるアーキテクチャは Phase 42 で完全廃止された。
 
 ### 拡張ステップ（オプション）— 実機ビルド・プログラミング・UART 検証
 

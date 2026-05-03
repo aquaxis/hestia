@@ -87,16 +87,15 @@ impl RtlHandler {
             .unwrap_or_default();
 
         // Phase 20: HDL sources go under <root>/rtl/, lint reports under <root>/sim/.
-        // Phase 21: keep this handler generic. RTL sources come from
+        // Phase 42: agent-driven generation. RTL sources come from
         //   1) params.sources, or
-        //   2) existing <root>/rtl/*.{sv,v,vhd}, or
-        //   3) project-side templates copied from <root>/.hestia/rtl/templates/
-        // Hestia core does not embed any application-specific RTL.
+        //   2) existing <root>/rtl/*.{sv,v,vhd}
+        // The AI orchestrator must fs_write the design before lint. Template
+        // fallback was removed — Hestia is not a template-substitution engine.
         let rtl_dir = conductor_sdk::workspace::ensure_artifact_dir("rtl", None)?;
         let sim_dir = conductor_sdk::workspace::ensure_artifact_dir("sim", None)?;
         let run_id = conductor_sdk::workspace::resolve_run_id();
 
-        // Resolve RTL sources (Phase 21 template resolution).
         let mut hdl_sources: Vec<std::path::PathBuf> = params
             .get("sources")
             .and_then(|v| v.as_array())
@@ -120,31 +119,12 @@ impl RtlHandler {
             }
             if !hdl_sources.is_empty() { source_kind = "project_existing"; }
         }
-        if hdl_sources.is_empty() {
-            // Try project-side templates: copy them into <root>/rtl/.
-            let template_dir = conductor_sdk::workspace::resolve_project_root()
-                .join(".hestia/rtl/templates");
-            if let Ok(read_dir) = std::fs::read_dir(&template_dir) {
-                for entry in read_dir.flatten() {
-                    let src = entry.path();
-                    let name = match src.file_name() { Some(n) => n.to_owned(), None => continue };
-                    if src.extension().map(|e| matches!(e.to_string_lossy().as_ref(), "sv" | "v" | "vh" | "svh" | "vhd")).unwrap_or(false)
-                        && !name.to_string_lossy().starts_with("tb_")
-                    {
-                        let dst = rtl_dir.join(&name);
-                        let _ = std::fs::copy(&src, &dst);
-                        hdl_sources.push(dst);
-                    }
-                }
-            }
-            if !hdl_sources.is_empty() { source_kind = "project_template"; }
-        }
 
         let started = std::time::Instant::now();
         let (tool_invoked, tool_path_str, exit_code, diagnostics, lint_log_path, lint_status) = if hdl_sources.is_empty() {
             let log_path = sim_dir.join("lint.log");
-            let _ = std::fs::write(&log_path, "[hestia rtl.lint.v1] no RTL sources resolved (params.sources empty, no <root>/rtl/*.sv, no <root>/.hestia/rtl/templates/)\n");
-            (false, None, None, 0, Some(log_path.to_string_lossy().into_owned()), "skipped")
+            let _ = std::fs::write(&log_path, "[hestia rtl.lint.v1] no RTL sources resolved (params.sources empty, no <root>/rtl/*.{sv,v,vhd}). The AI orchestrator must fs_write the RTL design before invoking rtl.lint.\n");
+            (false, None, None, 0, Some(log_path.to_string_lossy().into_owned()), "input_required")
         } else if let Some(tool) = conductor_sdk::workspace::find_in_path(adapter) {
             let mut cmd = tokio::process::Command::new(&tool);
             if adapter == "verilator" {
@@ -241,26 +221,18 @@ impl RtlHandler {
         let sim_dir = conductor_sdk::workspace::ensure_artifact_dir("sim", None)?;
         let run_id = conductor_sdk::workspace::resolve_run_id();
 
-        // Resolve testbench file.
+        // Phase 42: agent-driven generation. Testbench and DUT sources come
+        // only from params or existing project files — no template fallback.
         let tb_filename = format!("{testbench}.sv");
         let mut tb_path: Option<std::path::PathBuf> = None;
         let mut dut_sources: Vec<std::path::PathBuf> = Vec::new();
         let mut source_kind = "empty";
 
-        // 1. Existing <root>/rtl/<testbench>.sv?
+        // Existing <root>/rtl/<testbench>.sv?
         let candidate = rtl_dir.join(&tb_filename);
         if candidate.is_file() {
             tb_path = Some(candidate);
             source_kind = "project_existing";
-        }
-        // 2. Project template <root>/.hestia/rtl/templates/<testbench>.sv?
-        if tb_path.is_none() {
-            if let Some(tmpl) = conductor_sdk::workspace::find_project_template("rtl", &tb_filename) {
-                let dst = rtl_dir.join(&tb_filename);
-                let _ = std::fs::copy(&tmpl, &dst);
-                tb_path = Some(dst);
-                source_kind = "project_template";
-            }
         }
 
         // Discover DUT sources from <root>/rtl/*.{sv,v} excluding the testbench file.
@@ -272,33 +244,13 @@ impl RtlHandler {
                 if is_hdl && !is_tb { dut_sources.push(p); }
             }
         }
-        // 3. If still no DUT sources, copy non-tb_*.sv templates from .hestia/rtl/templates/.
-        if dut_sources.is_empty() {
-            let template_dir = conductor_sdk::workspace::resolve_project_root()
-                .join(".hestia/rtl/templates");
-            if let Ok(read_dir) = std::fs::read_dir(&template_dir) {
-                for entry in read_dir.flatten() {
-                    let src = entry.path();
-                    let name = match src.file_name() { Some(n) => n.to_owned(), None => continue };
-                    if src.extension().map(|e| matches!(e.to_string_lossy().as_ref(), "sv" | "v")).unwrap_or(false)
-                        && name.to_string_lossy() != tb_filename
-                        && !name.to_string_lossy().starts_with("tb_")
-                    {
-                        let dst = rtl_dir.join(&name);
-                        let _ = std::fs::copy(&src, &dst);
-                        dut_sources.push(dst);
-                    }
-                }
-            }
-            if !dut_sources.is_empty() && source_kind == "empty" { source_kind = "project_template"; }
-        }
 
         let started = std::time::Instant::now();
         let sim_log = sim_dir.join("sim.log");
         let waves_path = sim_dir.join("waves.vcd");
         let (tool_invoked, tool_path_str, exit_code, sim_status) = if tb_path.is_none() {
-            let _ = std::fs::write(&sim_log, format!("[hestia rtl.simulate.v1] testbench '{testbench}' not found (no params, no <root>/rtl/{testbench}.sv, no template)\n"));
-            (false, None, None, "skipped")
+            let _ = std::fs::write(&sim_log, format!("[hestia rtl.simulate.v1] testbench '{testbench}' not found at <root>/rtl/{testbench}.sv. The AI orchestrator must fs_write the testbench (and DUT modules) before invoking rtl.simulate — Hestia does not load templates.\n"));
+            (false, None, None, "input_required")
         } else if let Some(tool) = conductor_sdk::workspace::find_in_path(simulator) {
             let tb_use = tb_path.as_ref().unwrap();
             let result = if simulator == "verilator" {
