@@ -1,10 +1,56 @@
 use anyhow::{bail, Result};
 use clap::Parser;
+use serde::Deserialize;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command;
+
+/// Subset of `.hestia/config.toml` consumed by `hestia start`.
+///
+/// Only the `[agent_cli]` section is read here so we can pass `--provider` /
+/// `--model` to `agent-cli run` and prevent the user's global agent-cli
+/// config (`~/.config/agent-cli/config.toml`) from silently overriding the
+/// project's choice (Phase 24).
+#[derive(Debug, Default, Deserialize)]
+struct HestiaConfig {
+    #[serde(default)]
+    agent_cli: AgentCliConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct AgentCliConfig {
+    /// `claude` / `codex` / `ollama` / `llama_cpp`
+    backend: Option<String>,
+    model: Option<String>,
+}
+
+impl AgentCliConfig {
+    /// Map our config key (`backend`) to agent-cli's `--provider` value.
+    /// agent-cli expects `llama.cpp` (with dot) but TOML keys can't have dots,
+    /// so we accept `llama_cpp` in config and normalize here.
+    fn provider_arg(&self) -> Option<String> {
+        self.backend.as_deref().map(|b| match b {
+            "llama_cpp" => "llama.cpp".to_string(),
+            other => other.to_string(),
+        })
+    }
+}
+
+/// Read `.hestia/config.toml` from the current working directory.
+/// Returns the parsed config, or an empty default if the file is absent or
+/// the section is missing — this preserves backwards compatibility with
+/// installations created before Phase 24.
+fn load_hestia_config() -> HestiaConfig {
+    let path = std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(".hestia/config.toml");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return HestiaConfig::default();
+    };
+    toml::from_str::<HestiaConfig>(&text).unwrap_or_default()
+}
 
 /// Hestia -- unified runner for domain conductors and CLIs
 #[derive(Parser)]
@@ -171,14 +217,31 @@ async fn start_conductor(domain: &str) -> Result<()> {
     let log_file_stderr = log_file.try_clone()
         .map_err(|e| anyhow::anyhow!("failed to dup log file: {e}"))?;
 
-    println!("Starting agent-cli --name {} --persona {} ...", domain, persona.display());
-    let _child = Command::new("agent-cli")
-        .arg("run")
+    let config = load_hestia_config();
+    let provider = config.agent_cli.provider_arg();
+    let model = config.agent_cli.model.as_deref();
+
+    let provider_log = provider.as_deref().unwrap_or("(global default)");
+    let model_log = model.unwrap_or("(global default)");
+    println!(
+        "Starting agent-cli --name {} --persona {} --provider {} --model {} ...",
+        domain, persona.display(), provider_log, model_log
+    );
+
+    let mut cmd = Command::new("agent-cli");
+    cmd.arg("run")
         .arg("--persona")
         .arg(&persona)
         .arg("--name")
         .arg(domain)
-        .arg("--auto-approve-tools")
+        .arg("--auto-approve-tools");
+    if let Some(p) = provider.as_deref() {
+        cmd.arg("--provider").arg(p);
+    }
+    if let Some(m) = model {
+        cmd.arg("--model").arg(m);
+    }
+    let _child = cmd
         .current_dir(&workdir)
         .stdin(Stdio::from(fifo_stdin))
         .stdout(Stdio::from(log_file))
