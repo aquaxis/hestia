@@ -1,8 +1,10 @@
 # Hestia
 
+[![CI](https://github.com/aquaxis/hestia/actions/workflows/ci.yml/badge.svg)](https://github.com/aquaxis/hestia/actions/workflows/ci.yml)
+
 ## Hardware Engineering Stack for Tool Integration and Automation
 
-**English** | [日本語](./README.md)
+**English** | [日本語](./README.md) | [Workflow Reference](./WORKFLOWS.md)
 
 Hestia is an integrated hardware development environment that orchestrates FPGA, ASIC, PCB, HAL, and embedded software development tools through a unified AI-powered architecture.
 

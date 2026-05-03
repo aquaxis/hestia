@@ -1,10 +1,12 @@
 # Hestia
 
+[![CI](https://github.com/aquaxis/hestia/actions/workflows/ci.yml/badge.svg)](https://github.com/aquaxis/hestia/actions/workflows/ci.yml)
+
 ## Hardware Engineering Stack for Tool Integration and Automation
 
 Hestia（ヘスティア）は、FPGA・ASIC・PCB・HAL・組込みソフトウェア開発ツールを統合する AI 駆動のハードウェア開発環境です。9 つの Conductor（ドメイン特化 AI エージェント）が agent-cli IPC で連携し、仕様書からの設計自動生成・ベンダーツールの統一的オーケストレーション・コンテナによる再現性のあるビルドを実現します。
 
-**日本語** | [English](./README_en.md)
+**日本語** | [English](./README_en.md) | [Workflow Reference](./WORKFLOWS.md)
 
 ## 特徴
 

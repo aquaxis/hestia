@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-and-test:
+    name: Build & test (${{ matrix.profile }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [dev, release]
+    defaults:
+      run:
+        working-directory: .hestia/tools
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .hestia/tools/target
+          key: ${{ runner.os }}-cargo-${{ matrix.profile }}-${{ hashFiles('.hestia/tools/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.profile }}-
+
+      - name: cargo check (warning 0 enforced)
+        run: cargo check --workspace --locked
+        if: matrix.profile == 'dev'
+
+      - name: cargo build
+        run: |
+          if [ "${{ matrix.profile }}" = "release" ]; then
+            cargo build --release --workspace --locked
+          else
+            cargo build --workspace --locked
+          fi
+
+      - name: cargo test
+        run: |
+          if [ "${{ matrix.profile }}" = "release" ]; then
+            cargo test --release --workspace --locked
+          else
+            cargo test --workspace --locked
+          fi
+
+  verilator-regression:
+    name: verilator opt-in regression
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .hestia/tools
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install verilator
+        run: sudo apt-get update && sudo apt-get install -y verilator
+
+      - name: Run opt-in regression
+        env:
+          HESTIA_TOOLS_REQUIRED: verilator
+        run: cargo test --release -p conductor-sdk --test workspace_tests --locked

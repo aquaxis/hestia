@@ -39,8 +39,8 @@ enum Commands {
         /// Path to instruction file
         #[arg(long, short)]
         file: String,
-        /// Polling timeout in seconds (default: 600)
-        #[arg(long, default_value_t = 600)]
+        /// Polling timeout in seconds (default: 1200; bump for execute-mode runs)
+        #[arg(long, default_value_t = 1200)]
         timeout_secs: u64,
         /// Polling interval in milliseconds (default: 500)
         #[arg(long, default_value_t = 500)]
@@ -179,9 +179,27 @@ async fn run_with_orchestrator(
     let interval = Duration::from_millis(poll_interval_ms);
     while !result_path.exists() {
         if Instant::now() >= deadline {
-            return Err(anyhow!(
-                "timeout waiting for result file: {result_path_str} (after {timeout_secs}s)"
-            ));
+            // Phase 28: synthesize a diagnostic aggregate JSON instead of just
+            // erroring out. This usually fires when the AI conductor LLM hit
+            // its tool-use iteration cap (agent-cli `max_iterations = 8`)
+            // before reaching the final `fs_write`. Surfacing a structured
+            // result lets callers (CI, scripts, the user) see *what was being
+            // done* rather than just "timeout".
+            let synthetic = synthesize_timeout_aggregate(
+                &run_id,
+                &body,
+                &result_path_str,
+                timeout_secs,
+            );
+            // Best-effort write so the run_log/ artifact still exists for
+            // post-mortem inspection.
+            if let Ok(serialized) = serde_json::to_string_pretty(&synthetic) {
+                let _ = std::fs::write(&result_path, serialized);
+            }
+            emit(common, "ai.run", &synthetic, true)?;
+            std::io::stdout().flush().ok();
+            std::io::stderr().flush().ok();
+            std::process::exit(1);
         }
         tokio::time::sleep(interval).await;
     }
@@ -226,6 +244,37 @@ async fn read_result_with_retry(path: &Path) -> Result<serde_json::Value> {
         path.display(),
         last_err.unwrap_or_else(|| "unknown".to_string())
     ))
+}
+
+/// Phase 28: build a synthetic aggregate JSON when the AI conductor never
+/// produced the expected `result_path` file within the polling deadline.
+///
+/// The most common cause is the AI conductor LLM hitting agent-cli's hardcoded
+/// `max_iterations = 8` cap before reaching its final `fs_write` call. Rather
+/// than just printing a bare timeout message, we mimic the schema the LLM
+/// would have written (so downstream tooling can parse it uniformly) and tag
+/// it with `status: "error"` + `aborted_reason: "timeout"`.
+fn synthesize_timeout_aggregate(
+    run_id: &str,
+    instruction: &str,
+    result_path: &str,
+    timeout_secs: u64,
+) -> serde_json::Value {
+    serde_json::json!({
+        "run_id": run_id,
+        "status": "error",
+        "instruction": instruction,
+        "aborted_reason": "timeout",
+        "aborted_message": format!(
+            "AI conductor LLM did not write {result_path} within {timeout_secs}s. \
+             This typically means the LLM exhausted its tool-use iteration budget \
+             (agent-cli max_iterations = 8) before reaching the final fs_write. \
+             Consider reducing workflow steps or skipping the per-step send_to notification."
+        ),
+        "workflow_steps": [],
+        "results": [],
+        "synthesized_by": "hestia-ai-cli",
+    })
 }
 
 /// in-process 経路: AiHandler を直接呼び出して即時応答
