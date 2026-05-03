@@ -10,6 +10,7 @@ target/
 
 # Cargo lock (workspace-level lock is kept, per-package locks ignored)
 **/Cargo.lock
+!.hestia/tools/Cargo.lock
 
 # Node.js / frontend
 node_modules/
