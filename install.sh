@@ -49,8 +49,22 @@ check_rust() {
 
 clone_repo() {
     if [ -d "${REPO_DIR}/.git" ]; then
-        info "Repository already exists at ${REPO_DIR}. Pulling latest..."
-        git -C "${REPO_DIR}" pull --ff-only || warn "git pull failed, using existing checkout"
+        info "Repository already exists at ${REPO_DIR}. Syncing to upstream/${BRANCH}..."
+        # If the working tree carries leftover local modifications (e.g. from
+        # earlier development on this clone), `git pull --ff-only` refuses to
+        # advance and we end up redeploying stale binaries / personas. Stash
+        # any such mods (so they're recoverable via `git stash list` if the
+        # user actually cared), then hard-reset to upstream.
+        if ! git -C "${REPO_DIR}" diff --quiet HEAD 2>/dev/null \
+           || ! git -C "${REPO_DIR}" diff --cached --quiet 2>/dev/null; then
+            warn "Local modifications detected in ${REPO_DIR}. Stashing before sync."
+            git -C "${REPO_DIR}" stash push -u -m "install.sh auto-stash $(date -u +%Y%m%dT%H%M%SZ)" >/dev/null 2>&1 \
+                || warn "git stash failed; proceeding anyway"
+        fi
+        git -C "${REPO_DIR}" fetch --depth 1 origin "${BRANCH}" \
+            || error "git fetch failed; cannot sync to upstream"
+        git -C "${REPO_DIR}" reset --hard "origin/${BRANCH}" \
+            || error "git reset --hard failed; clone is in a bad state — try removing ${REPO_DIR} and re-running"
     else
         info "Cloning Hestia repository to ${REPO_DIR}..."
         git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${REPO_DIR}"
