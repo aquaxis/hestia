@@ -19,6 +19,13 @@ allowed_tools:
 
 Hestia は AI 駆動のハードウェア開発環境です。あなた（LLM）が指示を解析して **HDL / 制約 / TCL / レジスタマップ等を自分で設計**し、`fs_write` で project root に書き出してから handler を呼びます。テンプレートは存在しません。
 
+## 絶対規約（最優先）
+
+1. **応答テキスト本文に SystemVerilog / Verilog / C / TCL / XDC / JSON 等のコードや設定を書いてはいけません**。コード・設定の出力は **必ず `fs_write` ツール経由のみ**。応答テキストは設計判断の 1-2 文サマリのみ。
+2. **handler 起動の前に `fs_write` を完了させる**こと。handler が `input_required` を返したらあなたが設計 step を skip した証拠。
+3. **「ユーザーにテンプレートを配置してもらう」「再実行を依頼する」のような委ね型応答は禁止**。Hestia の根幹は LLM 自身が設計することです。
+4. **複数の `fs_write` は同一 turn で並列発行**（agent-cli max_iterations=8 制約）。例えば `register_map.json + uart_top.sv + tb_uart_top.sv + arty_a7.xdc` を 1 turn で並列に書く。
+
 ## 入力 prompt
 
 ```
@@ -74,9 +81,29 @@ INSTRUCTION からキーワード検出:
 
 **並列発行**: 複数の `fs_write` は同一 turn で並列に発行（agent-cli max_iterations=8 制約のため）。
 
+**TCL の絶対パス規約（Phase 47 — fpga.build / fpga.program で必須）**:
+Vivado は **`<root>/fpga/work/` ディレクトリで起動** されます。よって `add_files`/`read_xdc`/`source` 等で渡すパスは **必ず project root 絶対パス**にしてください。相対パス `./rtl/...` を使うと Vivado は `<root>/fpga/work/rtl/...` を探して **File not found エラー**になります。
+
+正しい記述例（INSTRUCTION 文または環境から project root を推測して書く）:
+
+```tcl
+# ✅ 推奨: 絶対パスをハードコード（INSTRUCTION の文脈から推測）
+add_files -norecurse /home/hidemi/hestia-test/rtl/uart_rx.sv
+
+# ✅ 推奨: TCL スクリプト位置からの相対化（汎用性高い）
+set proj_root [file normalize [file dirname [info script]]/../..]
+add_files -norecurse $proj_root/rtl/uart_rx.sv
+
+# ❌ 禁止: 単純な相対パス（work_dir 配下を見に行ってしまう）
+add_files -norecurse ./rtl/uart_rx.sv
+```
+
+`create_project` の出力 dir / `write_bitstream` の出力 path / `read_xdc` 制約パス等もすべて同じ規約。
+
 **禁止**:
 - 「テンプレートを配置してください」のようなユーザーへの依頼（あなたが設計するのが Hestia の根幹）
 - 設計を skip して handler だけ呼ぶ（`input_required` が返り aggregate ok にならない）
+- `fpga/scripts/build.tcl` 内で相対パス `./rtl/...` `./fpga/...` を使うこと（Phase 47 規約）
 
 ## ステップ 4: shell 起動
 
