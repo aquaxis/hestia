@@ -122,6 +122,21 @@ enum Commands {
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// Tail an agent's structured activity log (Phase 48).
+    ///
+    /// The workspace `agent.log` only captures agent-cli's banner and
+    /// occasional notices because thinking / tool_use events are written
+    /// to a separate JSONL log under
+    /// `~/.local/share/agent-cli/logs/<agent-id>/`. This subcommand
+    /// resolves the latest log for the given domain and tails it so the
+    /// user can see real-time orchestrator activity.
+    Tail {
+        /// Domain name (ai, rtl, fpga, asic, pcb, hal, apps, debug, rag).
+        domain: String,
+        /// Print the resolved log path instead of streaming.
+        #[arg(long)]
+        path_only: bool,
+    },
 }
 
 /// Domain names that have a corresponding conductor.
@@ -306,6 +321,15 @@ async fn start_all_conductors() -> Result<()> {
     }
 
     println!("All conductors started (running in background via agent-cli)");
+    println!(
+        "[Phase 48] Activity logs: workspace agent.log captures only the agent-cli banner."
+    );
+    println!(
+        "[Phase 48] Use `hestia tail <domain>` to stream the LLM's thinking/tool_use events"
+    );
+    println!(
+        "[Phase 48] (or `hestia tail ai --path-only` to discover the underlying JSONL path)."
+    );
     Ok(())
 }
 
@@ -439,6 +463,94 @@ async fn show_status() -> Result<()> {
     Ok(())
 }
 
+/// Resolve the latest agent-cli structured-log path for `domain` (Phase 48).
+///
+/// Looks up the agent-id of the running agent whose `name` column matches
+/// `domain` via `agent-cli list`, then locates the most recently modified
+/// `*.jsonl` under `~/.local/share/agent-cli/logs/<agent-id>/`.
+async fn resolve_agent_log_path(domain: &str) -> Result<PathBuf> {
+    let output = Command::new("agent-cli")
+        .arg("list")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to run agent-cli list: {e}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut agent_id: Option<String> = None;
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("ID") || trimmed.starts_with('-') {
+            continue;
+        }
+        let fields: Vec<&str> = trimmed.split_whitespace().collect();
+        if fields.len() >= 2 && fields[1] == domain {
+            agent_id = Some(fields[0].to_string());
+            break;
+        }
+    }
+    let agent_id = agent_id.ok_or_else(|| {
+        anyhow::anyhow!(
+            "no running agent named '{domain}' found via 'agent-cli list'. Did you run 'hestia start'?"
+        )
+    })?;
+
+    let log_dir = dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("could not resolve $HOME"))?
+        .join(".local/share/agent-cli/logs")
+        .join(&agent_id);
+    if !log_dir.exists() {
+        bail!(
+            "log directory not found for agent '{domain}' ({agent_id}): {}",
+            log_dir.display()
+        );
+    }
+
+    let mut entries: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(&log_dir)
+        .map_err(|e| anyhow::anyhow!("readdir {}: {e}", log_dir.display()))?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".jsonl"))
+        .filter_map(|e| {
+            let mtime = e.metadata().ok()?.modified().ok()?;
+            Some((mtime, e.path()))
+        })
+        .collect();
+    entries.sort_by_key(|(t, _)| *t);
+    let latest = entries
+        .into_iter()
+        .next_back()
+        .map(|(_, p)| p)
+        .ok_or_else(|| anyhow::anyhow!("no .jsonl files under {}", log_dir.display()))?;
+    Ok(latest)
+}
+
+/// Tail an agent's structured log with simple human-readable formatting (Phase 48).
+async fn tail_agent_log(domain: &str, path_only: bool) -> Result<()> {
+    let path = resolve_agent_log_path(domain).await?;
+    if path_only {
+        println!("{}", path.display());
+        return Ok(());
+    }
+    eprintln!("[hestia tail {domain}] streaming {}", path.display());
+    eprintln!("[hestia tail {domain}] (Ctrl+C to stop)");
+
+    // Use `tail -F -n +1` to read from the start and follow.
+    let status = Command::new("tail")
+        .arg("-F")
+        .arg("-n")
+        .arg("+1")
+        .arg(&path)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to spawn tail: {e}"))?;
+    if !status.success() {
+        bail!("tail exited with {status}");
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -463,6 +575,7 @@ async fn main() -> Result<()> {
         Commands::Apps { args } => dispatch_cli("apps", &args)?,
         Commands::Debug { args } => dispatch_cli("debug", &args)?,
         Commands::Rag { args } => dispatch_cli("rag", &args)?,
+        Commands::Tail { domain, path_only } => tail_agent_log(&domain, path_only).await?,
     }
 
     Ok(())
