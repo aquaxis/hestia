@@ -19,6 +19,8 @@ impl MessageHandler for FpgaHandler {
 
         let result = match method.as_str() {
             "fpga.init" => Self::handle_init(params).await,
+            "fpga.design.v1" => Self::handle_design(params).await,
+            "fpga.dispatch_targets.v1" => Self::handle_dispatch_targets(params).await,
             "fpga.synthesize" => Self::handle_synthesize(params).await,
             "fpga.implement" => Self::handle_implement(params).await,
             "fpga.bitstream" => Self::handle_bitstream(params).await,
@@ -74,6 +76,109 @@ impl FpgaHandler {
             "status": "ok",
             "method": "fpga.init",
             "project": project,
+        }))
+    }
+
+    /// Phase 55c — `fpga.design.v1`: handler が直接 fpga-designer へ送信し、
+    /// `expected_artifacts` を ai-conductor に提示する fire-and-forget dispatch モデル。
+    async fn handle_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let instruction = params.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
+        let target = params.get("target").and_then(|v| v.as_str()).unwrap_or("artix7");
+        let designer_peer = "fpga-designer";
+        let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
+        let expected_artifacts = vec![
+            "fpga/constraints/<top>.xdc".to_string(),
+            format!("fpga/{target}.part"),
+            "fpga/scripts/build.tcl".to_string(),
+        ];
+        if designer_alive {
+            let prompt = format!(
+                "[fpga.design.v1 target={target}] {instruction}\nfs_write fpga/constraints/<top>.xdc + fpga/{target}.part + fpga/scripts/build.tcl. Phase 47 absolute-path rule applies to TCL."
+            );
+            let dispatched = match conductor_sdk::workspace::agent_cli_send(designer_peer, &prompt) {
+                Ok(()) => true,
+                Err(e) => {
+                    tracing::warn!(error = %e, peer = designer_peer, "fpga.design.v1: agent-cli send failed");
+                    false
+                }
+            };
+            Ok(serde_json::json!({
+                "status": "delegated",
+                "method": "fpga.design.v1",
+                "phase": "phase55c",
+                "designer_peer": designer_peer,
+                "designer_alive": true,
+                "dispatched": dispatched,
+                "expected_artifacts": expected_artifacts,
+                "next_action": "ai-conductor は designer の fs_write 完了後に fpga.build を実行。",
+                "instruction": instruction,
+                "target": target,
+                "tcl_path_rule": "Phase 47 absolute path required",
+            }))
+        } else {
+            Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "fpga.design.v1",
+                "phase": "phase55b-fallback",
+                "designer_peer": designer_peer,
+                "designer_alive": false,
+                "expected_artifacts": expected_artifacts,
+                "fallback": "ai-conductor fs_write fpga/constraints/<top>.xdc + fpga/<target>.part + fpga/scripts/build.tcl",
+                "instruction": instruction,
+                "target": target,
+                "tcl_path_rule": "Phase 47 absolute path required",
+                "note": "fpga-designer が agent-cli registry に不在のため移行期間動作にフォールバック。ai-conductor が暫定で fs_write してください。",
+            }))
+        }
+    }
+
+    /// Phase 65 — `fpga.dispatch_targets.v1`: target ごとに fpga-synthesizer-{target} +
+    /// fpga-implementer-{target} を動的並列起動。設計 §5.x の target 並列ビルドフローを実装。
+    async fn handle_dispatch_targets(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let targets: Vec<String> = params.get("targets")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let spec = params.get("spec").and_then(|v| v.as_str()).unwrap_or("");
+        if targets.is_empty() {
+            return Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "fpga.dispatch_targets.v1",
+                "phase": "phase65",
+                "note": "targets array required (each entry spawns `fpga-synthesizer-{target}` + `fpga-implementer-{target}`)",
+            }));
+        }
+        let mut spawned: Vec<String> = Vec::new();
+        let mut dispatched_all = true;
+        for t in &targets {
+            for role in &["synthesizer", "implementer"] {
+                let peer = format!("fpga-{role}-{t}");
+                let r = std::process::Command::new("hestia")
+                    .args(["spawn-subagent", "--persona", &format!("fpga-{role}"), "--name", &peer])
+                    .output();
+                match r {
+                    Ok(o) if o.status.success() => spawned.push(peer.clone()),
+                    _ => dispatched_all = false,
+                }
+                let prompt = format!("[{peer}] target={t}: {spec}");
+                if conductor_sdk::workspace::agent_cli_send(&peer, &prompt).is_err() {
+                    dispatched_all = false;
+                }
+            }
+        }
+        // Phase 80: dispatch 完了後に ai-reviewer auto-spawn
+        let auto_review_dispatched = conductor_sdk::workspace::auto_review_after_dispatch(
+            "fpga", "fpga.dispatch_targets.v1", spawned.len(),
+        );
+
+        Ok(serde_json::json!({
+            "status": if dispatched_all { "delegated" } else { "partial" },
+            "method": "fpga.dispatch_targets.v1",
+            "phase": "phase65",
+            "spawned": spawned,
+            "dispatched_all": dispatched_all,
+            "targets_requested": targets.len(),
+            "auto_review_dispatched": auto_review_dispatched,
         }))
     }
 

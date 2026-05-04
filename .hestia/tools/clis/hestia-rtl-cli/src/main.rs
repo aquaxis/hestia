@@ -25,6 +25,12 @@ struct Cli {
 enum Commands {
     /// Initialize RTL project workspace
     Init,
+    /// Request RTL design (Phase 54 — delegates to rtl-designer in Phase 55)
+    Design {
+        /// Optional natural-language instruction for the designer
+        #[arg(long)]
+        instruction: Option<String>,
+    },
     /// Lint RTL source files
     Lint,
     /// Run RTL simulation
@@ -75,6 +81,10 @@ async fn main() -> Result<()> {
 
     let (method, params) = match &cli.command {
         Commands::Init => ("rtl.init", serde_json::json!({})),
+        Commands::Design { instruction } => (
+            "rtl.design.v1",
+            serde_json::json!({ "instruction": instruction.clone().unwrap_or_default() }),
+        ),
         Commands::Lint => ("rtl.lint.v1", serde_json::json!({})),
         Commands::Simulate => ("rtl.simulate.v1", serde_json::json!({})),
         Commands::Formal => ("rtl.formal.v1", serde_json::json!({})),

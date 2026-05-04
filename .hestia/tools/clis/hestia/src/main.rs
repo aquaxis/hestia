@@ -145,6 +145,19 @@ enum Commands {
         /// Domain name to mirror.
         domain: String,
     },
+    /// (Internal, Phase 55) Spawn a sub-agent agent-cli process with the given
+    /// persona file and peer name. Used by `hestia start` to launch planner /
+    /// designer sub-agents and by conductor handlers to spawn dynamic coder /
+    /// ingest workers (rtl-coder-{module}, hal-coder-{lang}, etc.).
+    #[command(hide = true)]
+    SpawnSubagent {
+        /// Persona filename under `.hestia/personas/` (e.g. `rtl-designer.md`).
+        #[arg(long)]
+        persona: String,
+        /// Peer name for agent-cli `--name` (e.g. `rtl-designer` or `rtl-coder-uart`).
+        #[arg(long)]
+        name: String,
+    },
 }
 
 /// Domain names that have a corresponding conductor.
@@ -155,6 +168,31 @@ const DOMAINS: &[&str] = &[
 /// Group 1 domain names (all except ai).
 const GROUP1_DOMAINS: &[&str] = &[
     "rtl", "fpga", "asic", "pcb", "hal", "apps", "debug", "rag",
+];
+
+/// Phase 55 — Resident sub-agents launched alongside each conductor.
+/// Each entry is `(persona_filename_root, peer_name)`. The persona is loaded
+/// from `.hestia/personas/<persona_filename_root>.md`; the peer name is the
+/// agent-cli `--name`. Differing entries (e.g. asic-signoff has persona file
+/// `asic-signoff-checker.md` but peer name `asic-signoff`, per design HD-033)
+/// are encoded explicitly here.
+///
+/// For Phase 55 we keep this set minimal to the canonical `planner` /
+/// `designer` pair across all 9 conductors — these are the agents whose
+/// presence directly enables the Phase 53/54 design.v1 delegation path.
+/// Specialized sub-agents (synthesizer, implementer, signoff, tester,
+/// programmer, schematic, layout, validator, builder, session, analyzer,
+/// quality, archivist, search) are reachable via `spawn-subagent` on demand.
+const RESIDENT_SUB_AGENTS: &[(&str, &[(&str, &str)])] = &[
+    ("ai",    &[("ai-planner", "ai-planner"),    ("ai-designer", "ai-designer")]),
+    ("rtl",   &[("rtl-planner", "rtl-planner"),  ("rtl-designer", "rtl-designer")]),
+    ("fpga",  &[("fpga-planner", "fpga-planner"),("fpga-designer", "fpga-designer")]),
+    ("asic",  &[("asic-planner", "asic-planner"),("asic-designer", "asic-designer")]),
+    ("pcb",   &[("pcb-planner", "pcb-planner"),  ("pcb-designer", "pcb-designer")]),
+    ("hal",   &[("hal-planner", "hal-planner"),  ("hal-designer", "hal-designer")]),
+    ("apps",  &[("apps-planner", "apps-planner"),("apps-designer", "apps-designer")]),
+    ("debug", &[("debug-planner", "debug-planner"),("debug-designer", "debug-designer")]),
+    ("rag",   &[("rag-planner", "rag-planner"),  ("rag-designer", "rag-designer")]),
 ];
 
 /// Maximum time to wait for ai-conductor readiness (seconds).
@@ -200,6 +238,144 @@ fn workspace_path(domain: &str) -> PathBuf {
         .join(domain)
 }
 
+/// Phase 57 — Initialize `.aiprj/` skeleton inside the per-peer workspace.
+///
+/// Implements design `hestia_design.md` §20.5「aiprj ワークスペース統合」at the
+/// minimum-viable level: each peer (conductor or sub-agent) gets a stub
+/// `.aiprj/instruction.md` placeholder + a symlink (or copy fallback) to the
+/// project-root `.aiprj/rules/` directory so the agent-cli persona can later
+/// self-execute setup_ai/update_ai/exec_job per design §20.5.3. This Phase
+/// only sets up the directory structure; persona-side self-execution remains
+/// a follow-up (Phase 57b candidate).
+///
+/// Failures are non-fatal — they're logged but don't block conductor startup.
+fn init_aiprj_workspace(peer_name: &str) {
+    let workspace = workspace_path(peer_name);
+    let aiprj_dir = workspace.join(".aiprj");
+    if let Err(e) = std::fs::create_dir_all(&aiprj_dir) {
+        eprintln!("[warn] failed to create {}: {e}", aiprj_dir.display());
+        return;
+    }
+
+    let instruction = aiprj_dir.join("instruction.md");
+    if !instruction.exists() {
+        let placeholder = format!(
+            "# Instruction for peer `{peer_name}`\n\n\
+             Phase 57 placeholder — populated by ai-conductor or upstream peers \
+             when delegation occurs (design hestia_design.md §20.5).\n"
+        );
+        if let Err(e) = std::fs::write(&instruction, placeholder) {
+            eprintln!("[warn] failed to write {}: {e}", instruction.display());
+        }
+    }
+
+    let rules_link = aiprj_dir.join("rules");
+    if !rules_link.exists() {
+        let project_rules = std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(".aiprj/rules");
+        if project_rules.exists() {
+            #[cfg(unix)]
+            let link_result = std::os::unix::fs::symlink(&project_rules, &rules_link);
+            #[cfg(not(unix))]
+            let link_result: std::io::Result<()> =
+                Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "symlink unsupported"));
+            if let Err(e) = link_result {
+                eprintln!(
+                    "[warn] symlink {} -> {} failed: {e} (continuing without rules link)",
+                    rules_link.display(), project_rules.display()
+                );
+            }
+        }
+    }
+}
+
+/// Phase 55 — Spawn an agent-cli process for a given persona file + peer name.
+/// Used by `start_conductor` (for the main conductor and resident sub-agents)
+/// and by the hidden `spawn-subagent` subcommand (for handler-driven dynamic
+/// sub-agents like `rtl-coder-{module}`). Creates a per-peer workspace under
+/// `.hestia/workspaces/<peer>/`, sets up FIFO stdin so the agent doesn't EOF,
+/// redirects stdout/stderr to `agent.log`, and (best-effort) spawns a mirror
+/// helper for log visibility.
+async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str) -> Result<()> {
+    let persona = persona_path(persona_filename_root);
+    if !persona.exists() {
+        bail!("persona file not found: {}", persona.display());
+    }
+
+    let workdir = workspace_path(peer_name);
+    if !workdir.exists() {
+        std::fs::create_dir_all(&workdir)?;
+    }
+
+    // Phase 57 — set up `.aiprj/` skeleton per design §20.5 before agent-cli starts.
+    init_aiprj_workspace(peer_name);
+
+    let fifo_path = workdir.join("stdin.pipe");
+    let _ = std::fs::remove_file(&fifo_path);
+    let c_path = std::ffi::CString::new(fifo_path.as_os_str().as_bytes())
+        .map_err(|e| anyhow::anyhow!("invalid fifo path: {e}"))?;
+    let mkfifo_result = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
+    if mkfifo_result != 0 {
+        bail!("failed to create FIFO {}: {}", fifo_path.display(), std::io::Error::last_os_error());
+    }
+    let fd = unsafe { libc::open(c_path.as_ptr(), libc::O_RDWR) };
+    if fd < 0 {
+        bail!("failed to open FIFO {}: {}", fifo_path.display(), std::io::Error::last_os_error());
+    }
+    let fifo_stdin = unsafe { std::fs::File::from_raw_fd(fd) };
+
+    let log_path = workdir.join("agent.log");
+    let log_file = std::fs::File::create(&log_path)
+        .map_err(|e| anyhow::anyhow!("failed to create log file {}: {e}", log_path.display()))?;
+    let log_file_stderr = log_file.try_clone()
+        .map_err(|e| anyhow::anyhow!("failed to dup log file: {e}"))?;
+
+    let config = load_hestia_config();
+    let provider = config.agent_cli.provider_arg();
+    let model = config.agent_cli.model.as_deref();
+
+    println!(
+        "Starting agent-cli --name {} --persona {} ...",
+        peer_name, persona.display()
+    );
+
+    let mut cmd = Command::new("agent-cli");
+    cmd.arg("run")
+        .arg("--persona")
+        .arg(&persona)
+        .arg("--name")
+        .arg(peer_name)
+        .arg("--auto-approve-tools");
+    if let Some(p) = provider.as_deref() {
+        cmd.arg("--provider").arg(p);
+    }
+    if let Some(m) = model {
+        cmd.arg("--model").arg(m);
+    }
+    let _child = cmd
+        .current_dir(&workdir)
+        .stdin(Stdio::from(fifo_stdin))
+        .stdout(Stdio::from(log_file))
+        .stderr(Stdio::from(log_file_stderr))
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("failed to spawn agent-cli for {peer_name}: {e}"))?;
+
+    // Best-effort mirror helper (Phase 49). Mirror walks workspace agent-cli
+    // logs by domain name; for sub-agents the mirror still runs against the
+    // peer name, which has a matching workspace dir.
+    let hestia_self = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("hestia"));
+    let _mirror = Command::new(&hestia_self)
+        .arg("mirror")
+        .arg(peer_name)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+
+    Ok(())
+}
+
 async fn start_conductor(domain: &str) -> Result<()> {
     let persona = persona_path(domain);
     if !persona.exists() {
@@ -210,6 +386,9 @@ async fn start_conductor(domain: &str) -> Result<()> {
     if !workdir.exists() {
         std::fs::create_dir_all(&workdir)?;
     }
+
+    // Phase 57 — set up `.aiprj/` skeleton per design §20.5 for the main conductor.
+    init_aiprj_workspace(domain);
 
     // Create a FIFO for stdin so agent-cli doesn't exit on EOF.
     // Opening with O_RDWR means the child is both reader and writer,
@@ -287,6 +466,18 @@ async fn start_conductor(domain: &str) -> Result<()> {
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| anyhow::anyhow!("failed to spawn mirror helper for {domain}: {e}"))?;
+
+    // Phase 55 — launch resident sub-agents (planner / designer) for this
+    // conductor. Failures are logged but not fatal: the conductor itself is
+    // already up and Phase 54 design.v1 stubs gracefully fall back when a
+    // sub-agent isn't reachable.
+    if let Some((_, agents)) = RESIDENT_SUB_AGENTS.iter().find(|(d, _)| *d == domain) {
+        for (persona_root, peer_name) in *agents {
+            if let Err(e) = spawn_agent_cli(persona_root, peer_name).await {
+                eprintln!("[warn] failed to start sub-agent {peer_name} for {domain}: {e}");
+            }
+        }
+    }
 
     Ok(())
 }
@@ -760,6 +951,13 @@ async fn main() -> Result<()> {
         Commands::Rag { args } => dispatch_cli("rag", &args)?,
         Commands::Tail { domain, path_only } => tail_agent_log(&domain, path_only).await?,
         Commands::Mirror { domain } => mirror_agent_log(&domain).await?,
+        Commands::SpawnSubagent { persona, name } => {
+            // Persona arg may be either a bare filename root (e.g. "rtl-coder")
+            // or a full filename ("rtl-coder.md"). Strip the .md suffix so
+            // persona_path() can re-add it consistently.
+            let persona_root = persona.strip_suffix(".md").unwrap_or(&persona);
+            spawn_agent_cli(persona_root, &name).await?;
+        }
     }
 
     Ok(())

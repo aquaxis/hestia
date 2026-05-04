@@ -17,6 +17,8 @@ impl MessageHandler for PcbHandler {
 
         let result = match method.as_str() {
             "pcb.init" => Self::handle_init(params).await,
+            "pcb.design.v1" => Self::handle_design(params).await,
+            "pcb.dispatch_phases.v1" => Self::handle_dispatch_phases(params).await,
             "pcb.build" => Self::handle_build(params).await,
             "pcb.generate_schematic" => Self::handle_generate_schematic(params).await,
             "pcb.ai_synthesize" => Self::handle_ai_synthesize(params).await,
@@ -68,6 +70,89 @@ impl PcbHandler {
             "status": "ok",
             "method": "pcb.init",
             "project": project,
+        }))
+    }
+
+    /// Phase 58 — `pcb.design.v1`: PCB 設計依頼を pcb-designer に dispatch。
+    async fn handle_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let instruction = params.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
+        let designer_peer = "pcb-designer";
+        let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
+        let expected_artifacts = vec!["pcb/schematic.kicad_sch", "pcb/board.kicad_pcb"];
+        if designer_alive {
+            let prompt = format!(
+                "[pcb.design.v1] {instruction}\nfs_write pcb/schematic.kicad_sch + pcb/board.kicad_pcb."
+            );
+            let dispatched = conductor_sdk::workspace::agent_cli_send(designer_peer, &prompt).is_ok();
+            Ok(serde_json::json!({
+                "status": "delegated",
+                "method": "pcb.design.v1",
+                "phase": "phase58",
+                "designer_peer": designer_peer,
+                "designer_alive": true,
+                "dispatched": dispatched,
+                "expected_artifacts": expected_artifacts,
+                "instruction": instruction,
+            }))
+        } else {
+            Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "pcb.design.v1",
+                "phase": "phase58-fallback",
+                "designer_peer": designer_peer,
+                "designer_alive": false,
+                "expected_artifacts": expected_artifacts,
+                "fallback": "ai-conductor fs_write pcb/schematic.kicad_sch + pcb/board.kicad_pcb",
+                "instruction": instruction,
+            }))
+        }
+    }
+
+    /// Phase 65 — `pcb.dispatch_phases.v1`: PCB phase ごとにサブエージェントに dispatch
+    /// （schematic / layout / tester）。
+    async fn handle_dispatch_phases(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let phases: Vec<String> = params.get("phases")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let spec = params.get("spec").and_then(|v| v.as_str()).unwrap_or("");
+        if phases.is_empty() {
+            return Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "pcb.dispatch_phases.v1",
+                "phase": "phase65",
+                "note": "phases array required (e.g. [\"schematic\",\"layout\",\"tester\"])",
+            }));
+        }
+        let mut spawned: Vec<String> = Vec::new();
+        let mut dispatched_all = true;
+        for ph in &phases {
+            let peer = format!("pcb-{ph}");
+            let r = std::process::Command::new("hestia")
+                .args(["spawn-subagent", "--persona", &peer, "--name", &peer])
+                .output();
+            match r {
+                Ok(o) if o.status.success() => spawned.push(peer.clone()),
+                _ => dispatched_all = false,
+            }
+            let prompt = format!("[{peer}] phase={ph}: {spec}");
+            if conductor_sdk::workspace::agent_cli_send(&peer, &prompt).is_err() {
+                dispatched_all = false;
+            }
+        }
+        // Phase 80: dispatch 完了後に ai-reviewer auto-spawn
+        let auto_review_dispatched = conductor_sdk::workspace::auto_review_after_dispatch(
+            "pcb", "pcb.dispatch_phases.v1", spawned.len(),
+        );
+
+        Ok(serde_json::json!({
+            "status": if dispatched_all { "delegated" } else { "partial" },
+            "method": "pcb.dispatch_phases.v1",
+            "phase": "phase65",
+            "spawned": spawned,
+            "dispatched_all": dispatched_all,
+            "phases_requested": phases.len(),
+            "auto_review_dispatched": auto_review_dispatched,
         }))
     }
 

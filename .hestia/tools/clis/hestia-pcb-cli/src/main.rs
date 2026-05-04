@@ -21,6 +21,11 @@ struct Cli {
 enum Commands {
     /// Initialize PCB project workspace
     Init,
+    /// Request PCB design (Phase 58 — delegates to pcb-designer)
+    Design {
+        #[arg(long)]
+        instruction: Option<String>,
+    },
     /// Run PCB build flow
     Build,
     /// AI-driven PCB synthesis
@@ -84,6 +89,10 @@ async fn main() -> Result<()> {
 
     let (method, params) = match &cli.command {
         Commands::Init => ("pcb.init", serde_json::json!({})),
+        Commands::Design { instruction } => (
+            "pcb.design.v1",
+            serde_json::json!({ "instruction": instruction.clone().unwrap_or_default() }),
+        ),
         Commands::Build => ("pcb.build", serde_json::json!({})),
         Commands::AiSynthesize => ("pcb.ai_synthesize", serde_json::json!({})),
         Commands::Output { output_command } => match output_command {

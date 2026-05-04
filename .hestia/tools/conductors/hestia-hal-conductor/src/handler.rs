@@ -17,6 +17,8 @@ impl MessageHandler for HalHandler {
 
         let result = match method.as_str() {
             "hal.init" => Self::handle_init(params).await,
+            "hal.design.v1" => Self::handle_design(params).await,
+            "hal.dispatch_coders.v1" => Self::handle_dispatch_coders(params).await,
             "hal.parse.v1" => Self::handle_parse(params).await,
             "hal.validate.v1" => Self::handle_validate(params).await,
             "hal.generate.v1" => Self::handle_generate(params).await,
@@ -65,6 +67,50 @@ impl HalHandler {
             "method": "hal.init",
             "project": project,
         }))
+    }
+
+    /// Phase 55c — `hal.design.v1`: handler が直接 hal-designer へ送信し、
+    /// `expected_artifacts` を ai-conductor に提示する fire-and-forget dispatch モデル。
+    async fn handle_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let instruction = params.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
+        let designer_peer = "hal-designer";
+        let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
+        let expected_artifacts = vec!["hal/register_map.json"];
+        if designer_alive {
+            let prompt = format!(
+                "[hal.design.v1] {instruction}\nfs_write hal/register_map.json with registers array (each: name/offset/fields)."
+            );
+            let dispatched = match conductor_sdk::workspace::agent_cli_send(designer_peer, &prompt) {
+                Ok(()) => true,
+                Err(e) => {
+                    tracing::warn!(error = %e, peer = designer_peer, "hal.design.v1: agent-cli send failed");
+                    false
+                }
+            };
+            Ok(serde_json::json!({
+                "status": "delegated",
+                "method": "hal.design.v1",
+                "phase": "phase55c",
+                "designer_peer": designer_peer,
+                "designer_alive": true,
+                "dispatched": dispatched,
+                "expected_artifacts": expected_artifacts,
+                "next_action": "ai-conductor は designer の fs_write 完了後に hal.parse.v1 を実行。",
+                "instruction": instruction,
+            }))
+        } else {
+            Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "hal.design.v1",
+                "phase": "phase55b-fallback",
+                "designer_peer": designer_peer,
+                "designer_alive": false,
+                "expected_artifacts": expected_artifacts,
+                "fallback": "ai-conductor fs_write hal/register_map.json",
+                "instruction": instruction,
+                "note": "hal-designer が agent-cli registry に不在のため移行期間動作にフォールバック。ai-conductor が暫定で fs_write してください。",
+            }))
+        }
     }
 
     async fn handle_parse(params: serde_json::Value) -> Result<serde_json::Value, String> {
@@ -130,6 +176,55 @@ impl HalHandler {
             "source_path": source_path,
             "artifact": artifact_path.to_string_lossy(),
             "artifact_dir": artifact_dir.to_string_lossy(),
+        }))
+    }
+
+    /// Phase 60b — `hal.dispatch_coders.v1`: hal-designer の出力（言語一覧）を受けて
+    /// `hal-coder-{lang}` (c/rust/python/svd 等) を動的並列起動。設計仕様書 §8.x の
+    /// 「言語ごとに動的起動」を実装。
+    async fn handle_dispatch_coders(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let langs: Vec<String> = params.get("languages")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let spec = params.get("spec").and_then(|v| v.as_str()).unwrap_or("");
+        if langs.is_empty() {
+            return Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "hal.dispatch_coders.v1",
+                "phase": "phase60b",
+                "note": "languages array required (each entry becomes a `hal-coder-{lang}` peer)",
+            }));
+        }
+        let mut spawned: Vec<String> = Vec::new();
+        let mut dispatched_all = true;
+        for lang in &langs {
+            let peer = format!("hal-coder-{lang}");
+            let r = std::process::Command::new("hestia")
+                .args(["spawn-subagent", "--persona", "hal-coder", "--name", &peer])
+                .output();
+            match r {
+                Ok(o) if o.status.success() => spawned.push(peer.clone()),
+                _ => dispatched_all = false,
+            }
+            let prompt = format!("[hal-coder-{lang}] generate driver code: {spec}");
+            if conductor_sdk::workspace::agent_cli_send(&peer, &prompt).is_err() {
+                dispatched_all = false;
+            }
+        }
+        // Phase 80: dispatch 完了後に ai-reviewer auto-spawn
+        let auto_review_dispatched = conductor_sdk::workspace::auto_review_after_dispatch(
+            "hal", "hal.dispatch_coders.v1", spawned.len(),
+        );
+
+        Ok(serde_json::json!({
+            "status": if dispatched_all { "delegated" } else { "partial" },
+            "method": "hal.dispatch_coders.v1",
+            "phase": "phase60b",
+            "spawned": spawned,
+            "dispatched_all": dispatched_all,
+            "languages_requested": langs.len(),
+            "auto_review_dispatched": auto_review_dispatched,
         }))
     }
 

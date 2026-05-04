@@ -15,3 +15,6 @@ anyhow.workspace = true
 async-trait.workspace = true
 clap.workspace = true
 tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

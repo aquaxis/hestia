@@ -76,3 +76,58 @@ async fn connect_returns_tool_unavailable_when_no_probe() {
         "debug.connect should return `ok` or `tool_unavailable`, got {status:?}");
     assert_eq!(result["method"], "debug.connect");
 }
+
+#[tokio::test]
+async fn dispatch_sessions_v1_requires_targets() {
+    let result = invoke("debug.dispatch_sessions.v1",
+                          json!({"targets": [], "spec": ""})).await;
+    assert_eq!(result["status"], "input_required");
+    assert_eq!(result["phase"], "phase65");
+}
+
+#[tokio::test]
+async fn dispatch_sessions_v1_includes_auto_review_dispatched_field() {
+    // Phase 80: dispatch path must include `auto_review_dispatched` boolean field.
+    // PATH override prevents `hestia spawn-subagent` from actually launching.
+    let prior_path = std::env::var("PATH").ok();
+    std::env::set_var("HESTIA_DISABLE_AUTO_REVIEW", "1");
+    std::env::set_var("HESTIA_PEER_SEND_NOOP", "1");
+    std::env::set_var("PATH", "/nonexistent");
+    let result = invoke("debug.dispatch_sessions.v1",
+        json!({"targets": ["jtag"], "spec": "test"})).await;
+    std::env::remove_var("HESTIA_DISABLE_AUTO_REVIEW");
+    std::env::remove_var("HESTIA_PEER_SEND_NOOP");
+    match prior_path {
+        Some(v) => std::env::set_var("PATH", v),
+        None => std::env::remove_var("PATH"),
+    }
+    assert!(result["auto_review_dispatched"].is_boolean(),
+        "auto_review_dispatched field must be present");
+    assert_eq!(result["auto_review_dispatched"], false);
+}
+
+#[tokio::test]
+async fn design_v1_falls_back_when_designer_offline() {
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    std::env::set_var("HESTIA_PEER_ALIVE_FORCE", "");
+    std::env::set_var("HESTIA_PEER_SEND_NOOP", "1");
+    let handler = DebugHandler;
+    let request = Request {
+        kind: "prompt".to_string(),
+        from: "test".to_string(),
+        method: "debug.design.v1".to_string(),
+        params: json!({"instruction": "JTAG SWD configuration for STM32"}),
+        id: MessageId::new(),
+        trace_id: None,
+    };
+    let response = handler.handle_request(request).await;
+    std::env::remove_var("HESTIA_PEER_ALIVE_FORCE");
+    std::env::remove_var("HESTIA_PEER_SEND_NOOP");
+    let result = match response {
+        Response::Success(s) => s.result,
+        Response::Error(e) => panic!("expected Success, got: {:?}", e.error),
+    };
+    assert_eq!(result["status"], "input_required");
+    assert_eq!(result["designer_peer"], "debug-designer");
+    assert_eq!(result["phase"], "phase58-fallback");
+}

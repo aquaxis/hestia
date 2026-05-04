@@ -97,6 +97,120 @@ pub fn ensure_artifact_dir(category: &str, subpath: Option<&str>) -> Result<Path
     Ok(dir)
 }
 
+/// Phase 55b — Check whether an agent-cli peer is currently alive in the
+/// shared registry by invoking `agent-cli list` and grepping its stdout.
+///
+/// Returns:
+/// - `true`  if `peer_name` appears as a live peer
+/// - `false` if `agent-cli` is not on PATH, fails, times out, or the peer is absent
+///
+/// Test override: setting `HESTIA_PEER_ALIVE_FORCE=<peer1>,<peer2>,...` causes
+/// the listed peers to be reported as alive without invoking `agent-cli`.
+/// This keeps unit tests deterministic in environments without a running
+/// `agent-cli` process.
+pub fn agent_cli_peer_alive(peer_name: &str) -> bool {
+    if let Ok(force) = std::env::var("HESTIA_PEER_ALIVE_FORCE") {
+        if force
+            .split(',')
+            .map(|s| s.trim())
+            .any(|p| p == peer_name)
+        {
+            return true;
+        }
+        // explicit override present but peer not listed — treat as offline
+        return false;
+    }
+
+    let output = std::process::Command::new("agent-cli")
+        .arg("list")
+        .output();
+    let Ok(out) = output else {
+        return false;
+    };
+    if !out.status.success() {
+        return false;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // agent-cli list output starts each peer line with the peer name.
+    stdout.lines().any(|line| {
+        let trimmed = line.trim_start();
+        trimmed.starts_with(&format!("{peer_name} "))
+            || trimmed == peer_name
+            || trimmed.starts_with(&format!("{peer_name}\t"))
+    })
+}
+
+/// Phase 80 — dispatch_*.v1 完了後に ai-reviewer を auto-spawn する汎用ヘルパ。
+///
+/// 各 conductor の `<domain>.dispatch_*.v1` メソッド末尾から呼出可能で、ai-reviewer に
+/// 「dispatch スコープのレビューを依頼」する prompt を送信する fire-and-forget 経路。
+///
+/// 引数:
+/// - `parent_conductor`: 親 conductor の peer 名（例 "rtl"）
+/// - `dispatch_method`: 実行された dispatch メソッド名（例 "rtl.dispatch_coders.v1"）
+/// - `spawned_count`: 動的 spawn された sub-agent 数
+///
+/// 返却: dispatch 成功なら true、失敗（hestia 不在 / agent-cli 不在等）なら false。
+/// 失敗は warn ログのみで dispatch 全体に影響なし。
+///
+/// env override `HESTIA_DISABLE_AUTO_REVIEW=1` で無効化可能（Phase 77 と共通）。
+pub fn auto_review_after_dispatch(
+    parent_conductor: &str,
+    dispatch_method: &str,
+    spawned_count: usize,
+) -> bool {
+    if std::env::var("HESTIA_DISABLE_AUTO_REVIEW").as_deref() == Ok("1") {
+        return false;
+    }
+    if spawned_count == 0 {
+        // spawn 0 件なら review する対象がないため skip
+        return false;
+    }
+    // hestia spawn-subagent --persona ai-reviewer --name ai-reviewer
+    let spawn_result = std::process::Command::new("hestia")
+        .args(["spawn-subagent", "--persona", "ai-reviewer", "--name", "ai-reviewer"])
+        .output();
+    if !matches!(&spawn_result, Ok(o) if o.status.success()) {
+        return false;
+    }
+    let prompt = format!(
+        "[{dispatch_method} auto-review] parent={parent_conductor} spawned_count={spawned_count}. Review the dynamic sub-agent outputs and write `<root>/.aiprj/REVIEW_REPORT_dispatch.md`."
+    );
+    agent_cli_send("ai-reviewer", &prompt).is_ok()
+}
+
+/// Phase 55c — Best-effort fire-and-forget message dispatch via `agent-cli send`.
+/// Returns `Ok(())` if the send subprocess exited 0, `Err(message)` otherwise.
+///
+/// Used by handler `<domain>.design.v1` paths to dispatch a delegation prompt
+/// to the corresponding `<domain>-designer` sub-agent without blocking on the
+/// LLM inference loop. The actual artifact production happens asynchronously
+/// in the designer's agent-cli process; the orchestrator (ai-conductor LLM)
+/// observes completion by checking for the `expected_artifacts` files.
+///
+/// Test override: setting `HESTIA_PEER_SEND_NOOP=1` makes this a no-op that
+/// returns Ok(()) without invoking agent-cli — used in unit tests where no
+/// agent-cli registry is available.
+pub fn agent_cli_send(peer_name: &str, text: &str) -> Result<(), String> {
+    if std::env::var("HESTIA_PEER_SEND_NOOP").as_deref() == Ok("1") {
+        return Ok(());
+    }
+    let output = std::process::Command::new("agent-cli")
+        .arg("send")
+        .arg(peer_name)
+        .arg(text)
+        .output()
+        .map_err(|e| format!("agent-cli send {peer_name}: spawn failed: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "agent-cli send {peer_name}: exit {} stderr={}",
+            output.status, stderr.trim()
+        ));
+    }
+    Ok(())
+}
+
 /// Look up an executable in `PATH` without taking on a `which` crate dependency.
 pub fn find_in_path(name: &str) -> Option<PathBuf> {
     if let Some(slash) = name.find('/') {

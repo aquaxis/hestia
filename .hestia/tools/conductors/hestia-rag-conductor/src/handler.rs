@@ -17,6 +17,8 @@ impl MessageHandler for RagHandler {
 
         let result = match method.as_str() {
             "rag.ingest" => Self::handle_ingest(params).await,
+            "rag.design.v1" => Self::handle_design(params).await,
+            "rag.dispatch_ingest.v1" => Self::handle_dispatch_ingest(params).await,
             "rag.search" => Self::handle_search(params).await,
             "rag.cleanup" => Self::handle_cleanup(params).await,
             "rag.status" => Self::handle_status().await,
@@ -69,6 +71,90 @@ impl RagHandler {
             "file_path": file_path,
             "force": force,
             "chunks_ingested": 0,
+        }))
+    }
+
+    /// Phase 58 — `rag.design.v1`: ナレッジベース構造設計依頼を rag-designer に dispatch。
+    async fn handle_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let instruction = params.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
+        let designer_peer = "rag-designer";
+        let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
+        let expected_artifacts = vec!["rag/index_schema.json", "rag/ingest_plan.json"];
+        if designer_alive {
+            let prompt = format!(
+                "[rag.design.v1] {instruction}\nfs_write rag/index_schema.json + rag/ingest_plan.json."
+            );
+            let dispatched = conductor_sdk::workspace::agent_cli_send(designer_peer, &prompt).is_ok();
+            Ok(serde_json::json!({
+                "status": "delegated",
+                "method": "rag.design.v1",
+                "phase": "phase58",
+                "designer_peer": designer_peer,
+                "designer_alive": true,
+                "dispatched": dispatched,
+                "expected_artifacts": expected_artifacts,
+                "instruction": instruction,
+            }))
+        } else {
+            Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "rag.design.v1",
+                "phase": "phase58-fallback",
+                "designer_peer": designer_peer,
+                "designer_alive": false,
+                "expected_artifacts": expected_artifacts,
+                "fallback": "ai-conductor fs_write rag/index_schema.json + rag/ingest_plan.json",
+                "instruction": instruction,
+            }))
+        }
+    }
+
+    /// Phase 60b — `rag.dispatch_ingest.v1`: rag-ingest-{source} 動的並列起動。
+    async fn handle_dispatch_ingest(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let sources: Vec<String> = params.get("sources")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let spec = params.get("spec").and_then(|v| v.as_str()).unwrap_or("");
+        if sources.is_empty() {
+            return Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "rag.dispatch_ingest.v1",
+                "phase": "phase60b",
+                "note": "sources array required (each entry becomes a `rag-ingest-{source}` peer)",
+            }));
+        }
+        let mut spawned: Vec<String> = Vec::new();
+        let mut dispatched_all = true;
+        for s in &sources {
+            // sanitize peer name (replace path separators / spaces)
+            let safe = s.replace(['/', ' ', '\\'], "_");
+            let peer = format!("rag-ingest-{safe}");
+            let r = std::process::Command::new("hestia")
+                .args(["spawn-subagent", "--persona", "rag-ingest", "--name", &peer])
+                .output();
+            match r {
+                Ok(o) if o.status.success() => spawned.push(peer.clone()),
+                _ => dispatched_all = false,
+            }
+            let prompt = format!("[rag-ingest-{safe}] ingest source `{s}`: {spec}");
+            if conductor_sdk::workspace::agent_cli_send(&peer, &prompt).is_err() {
+                dispatched_all = false;
+            }
+        }
+        // Phase 80: dispatch 完了後に ai-reviewer auto-spawn
+        let auto_review_dispatched = conductor_sdk::workspace::auto_review_after_dispatch(
+            "rag", "rag.dispatch_ingest.v1", spawned.len(),
+        );
+
+        Ok(serde_json::json!({
+            "status": if dispatched_all { "delegated" } else { "partial" },
+            "method": "rag.dispatch_ingest.v1",
+            "phase": "phase60b",
+            "spawned": spawned,
+            "dispatched_all": dispatched_all,
+            "sources_requested": sources.len(),
+            "auto_review_dispatched": auto_review_dispatched,
         }))
     }
 

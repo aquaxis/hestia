@@ -21,6 +21,11 @@ struct Cli {
 enum Commands {
     /// Create a debug session
     Create,
+    /// Request debug plan design (Phase 58 — delegates to debug-designer)
+    Design {
+        #[arg(long)]
+        instruction: Option<String>,
+    },
     /// Connect to a debug target
     Connect,
     /// Disconnect from a debug target
@@ -107,6 +112,10 @@ async fn main() -> Result<()> {
 
     let (method, params) = match &cli.command {
         Commands::Create => ("debug.create", serde_json::json!({})),
+        Commands::Design { instruction } => (
+            "debug.design.v1",
+            serde_json::json!({ "instruction": instruction.clone().unwrap_or_default() }),
+        ),
         Commands::Connect => ("debug.connect", serde_json::json!({})),
         Commands::Disconnect => ("debug.disconnect", serde_json::json!({})),
         Commands::Program => ("debug.program", serde_json::json!({})),

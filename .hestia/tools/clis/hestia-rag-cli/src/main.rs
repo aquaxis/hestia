@@ -21,6 +21,11 @@ struct Cli {
 enum Commands {
     /// Ingest documents into the RAG index
     Ingest,
+    /// Request RAG knowledge-base design (Phase 58 — delegates to rag-designer)
+    Design {
+        #[arg(long)]
+        instruction: Option<String>,
+    },
     /// Search the RAG index
     Search {
         /// Query text (positional, optional)
@@ -69,6 +74,10 @@ async fn main() -> Result<()> {
 
     let (method, params) = match &cli.command {
         Commands::Ingest => ("rag.ingest", serde_json::json!({})),
+        Commands::Design { instruction } => (
+            "rag.design.v1",
+            serde_json::json!({ "instruction": instruction.clone().unwrap_or_default() }),
+        ),
         Commands::Search { query } => ("rag.search", serde_json::json!({ "query": query })),
         Commands::Cleanup => ("rag.cleanup", serde_json::json!({})),
         Commands::Status => ("rag.status", serde_json::json!({})),

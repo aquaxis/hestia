@@ -21,6 +21,15 @@ struct Cli {
 enum Commands {
     /// Initialize ASIC project workspace
     Init,
+    /// Request ASIC design (Phase 58 — delegates to asic-designer)
+    Design {
+        /// Optional natural-language instruction for the designer
+        #[arg(long)]
+        instruction: Option<String>,
+        /// PDK target (sky130 / gf180mcu / ...)
+        #[arg(long, default_value = "sky130")]
+        pdk: String,
+    },
     /// Run ASIC build flow
     Build,
     /// PDK management
@@ -85,6 +94,13 @@ async fn main() -> Result<()> {
 
     let (method, params) = match &cli.command {
         Commands::Init => ("asic.init", serde_json::json!({})),
+        Commands::Design { instruction, pdk } => (
+            "asic.design.v1",
+            serde_json::json!({
+                "instruction": instruction.clone().unwrap_or_default(),
+                "pdk": pdk,
+            }),
+        ),
         Commands::Build => ("asic.build", serde_json::json!({})),
         Commands::Pdk { pdk_command } => match pdk_command {
             PdkCommands::Install { name } => (

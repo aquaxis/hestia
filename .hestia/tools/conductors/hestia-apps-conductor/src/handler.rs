@@ -17,6 +17,8 @@ impl MessageHandler for AppsHandler {
 
         let result = match method.as_str() {
             "apps.init" => Self::handle_init(params).await,
+            "apps.design.v1" => Self::handle_design(params).await,
+            "apps.dispatch_coders.v1" => Self::handle_dispatch_coders(params).await,
             "apps.build.v1" => Self::handle_build(params).await,
             "apps.flash.v1" => Self::handle_flash(params).await,
             "apps.test.v1" => Self::handle_test(params).await,
@@ -64,6 +66,97 @@ impl AppsHandler {
             "status": "ok",
             "method": "apps.init",
             "project": project,
+        }))
+    }
+
+    /// Phase 58 — `apps.design.v1`: Apps 設計依頼を apps-designer に dispatch。
+    async fn handle_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let instruction = params.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
+        let target = params.get("target").and_then(|v| v.as_str()).unwrap_or("cortex-m");
+        let designer_peer = "apps-designer";
+        let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
+        let expected_artifacts = vec![
+            "apps/main.c".to_string(),
+            "apps/Cargo.toml".to_string(),
+            "apps/linker.ld".to_string(),
+        ];
+        if designer_alive {
+            let prompt = format!(
+                "[apps.design.v1 target={target}] {instruction}\nfs_write apps/main.c + apps/Cargo.toml + apps/linker.ld."
+            );
+            let dispatched = conductor_sdk::workspace::agent_cli_send(designer_peer, &prompt).is_ok();
+            Ok(serde_json::json!({
+                "status": "delegated",
+                "method": "apps.design.v1",
+                "phase": "phase58",
+                "designer_peer": designer_peer,
+                "designer_alive": true,
+                "dispatched": dispatched,
+                "expected_artifacts": expected_artifacts,
+                "instruction": instruction,
+                "target": target,
+            }))
+        } else {
+            Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "apps.design.v1",
+                "phase": "phase58-fallback",
+                "designer_peer": designer_peer,
+                "designer_alive": false,
+                "expected_artifacts": expected_artifacts,
+                "fallback": "ai-conductor fs_write apps/main.c + apps/Cargo.toml + apps/linker.ld",
+                "instruction": instruction,
+                "target": target,
+            }))
+        }
+    }
+
+    /// Phase 60b — `apps.dispatch_coders.v1`: apps-coder-{module} 動的並列起動。
+    async fn handle_dispatch_coders(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let modules: Vec<String> = params.get("modules")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let spec = params.get("spec").and_then(|v| v.as_str()).unwrap_or("");
+        if modules.is_empty() {
+            return Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "apps.dispatch_coders.v1",
+                "phase": "phase60b",
+                "note": "modules array required",
+            }));
+        }
+        let max_parallel = std::cmp::min(modules.len(), 16);
+        let mut spawned: Vec<String> = Vec::new();
+        let mut dispatched_all = true;
+        for m in modules.iter().take(max_parallel) {
+            let peer = format!("apps-coder-{m}");
+            let r = std::process::Command::new("hestia")
+                .args(["spawn-subagent", "--persona", "apps-coder", "--name", &peer])
+                .output();
+            match r {
+                Ok(o) if o.status.success() => spawned.push(peer.clone()),
+                _ => dispatched_all = false,
+            }
+            let prompt = format!("[apps-coder-{m}] implement module: {spec}");
+            if conductor_sdk::workspace::agent_cli_send(&peer, &prompt).is_err() {
+                dispatched_all = false;
+            }
+        }
+        // Phase 80: dispatch 完了後に ai-reviewer auto-spawn
+        let auto_review_dispatched = conductor_sdk::workspace::auto_review_after_dispatch(
+            "apps", "apps.dispatch_coders.v1", spawned.len(),
+        );
+
+        Ok(serde_json::json!({
+            "status": if dispatched_all { "delegated" } else { "partial" },
+            "method": "apps.dispatch_coders.v1",
+            "phase": "phase60b",
+            "spawned": spawned,
+            "dispatched_all": dispatched_all,
+            "max_parallel": max_parallel,
+            "modules_requested": modules.len(),
+            "auto_review_dispatched": auto_review_dispatched,
         }))
     }
 

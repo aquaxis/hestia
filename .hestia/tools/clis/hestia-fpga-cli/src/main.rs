@@ -21,6 +21,15 @@ struct Cli {
 enum Commands {
     /// Initialize FPGA project workspace
     Init,
+    /// Request FPGA design (Phase 54 — delegates to fpga-designer in Phase 55)
+    Design {
+        /// Target device (artix7 / kintex7 / zynq7000 等)
+        #[arg(long, default_value = "artix7")]
+        target: String,
+        /// Optional natural-language instruction for the designer
+        #[arg(long)]
+        instruction: Option<String>,
+    },
     /// Build FPGA design for a target device
     Build {
         /// Target device (e.g. xilinx, intel, lattice, artix7)
@@ -103,6 +112,13 @@ async fn main() -> Result<()> {
 
     let (method, params) = match &cli.command {
         Commands::Init => ("fpga.init", serde_json::json!({})),
+        Commands::Design { target, instruction } => (
+            "fpga.design.v1",
+            serde_json::json!({
+                "target": target,
+                "instruction": instruction.clone().unwrap_or_default(),
+            }),
+        ),
         Commands::Build { target, top, part, constraints, execute } => {
             let mut p = serde_json::json!({ "target": target, "execute": execute });
             if let Some(v) = top { p["top"] = serde_json::json!(v); }

@@ -21,6 +21,13 @@ struct Cli {
 enum Commands {
     /// Initialize application project workspace
     Init,
+    /// Request application design (Phase 58 — delegates to apps-designer)
+    Design {
+        #[arg(long)]
+        instruction: Option<String>,
+        #[arg(long, default_value = "cortex-m")]
+        target: String,
+    },
     /// Build application firmware
     Build,
     /// Flash firmware to target
@@ -74,6 +81,13 @@ async fn main() -> Result<()> {
 
     let (method, params) = match &cli.command {
         Commands::Init => ("apps.init", serde_json::json!({})),
+        Commands::Design { instruction, target } => (
+            "apps.design.v1",
+            serde_json::json!({
+                "instruction": instruction.clone().unwrap_or_default(),
+                "target": target,
+            }),
+        ),
         Commands::Build => ("apps.build.v1", serde_json::json!({})),
         Commands::Flash => ("apps.flash.v1", serde_json::json!({})),
         Commands::Test { level } => ("apps.test.v1", serde_json::json!({ "level": level })),

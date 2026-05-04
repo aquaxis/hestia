@@ -17,6 +17,8 @@ impl MessageHandler for DebugHandler {
 
         let result = match method.as_str() {
             "debug.create" => Self::handle_create(params).await,
+            "debug.design.v1" => Self::handle_design(params).await,
+            "debug.dispatch_sessions.v1" => Self::handle_dispatch_sessions(params).await,
             "debug.connect" => Self::handle_connect(params).await,
             "debug.disconnect" => Self::handle_disconnect(params).await,
             "debug.reset" => Self::handle_reset(params).await,
@@ -77,6 +79,91 @@ impl DebugHandler {
             "method": "debug.create",
             "protocol": protocol,
             "session_id": format!("dbg_{}", uuid::Uuid::new_v4().simple()),
+        }))
+    }
+
+    /// Phase 58 — `debug.design.v1`: デバッグ計画の設計依頼を debug-designer に dispatch。
+    async fn handle_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let instruction = params.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
+        let designer_peer = "debug-designer";
+        let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
+        let expected_artifacts = vec!["debug/plan.json", "debug/probes.json"];
+        if designer_alive {
+            let prompt = format!(
+                "[debug.design.v1] {instruction}\nfs_write debug/plan.json + debug/probes.json."
+            );
+            let dispatched = conductor_sdk::workspace::agent_cli_send(designer_peer, &prompt).is_ok();
+            Ok(serde_json::json!({
+                "status": "delegated",
+                "method": "debug.design.v1",
+                "phase": "phase58",
+                "designer_peer": designer_peer,
+                "designer_alive": true,
+                "dispatched": dispatched,
+                "expected_artifacts": expected_artifacts,
+                "instruction": instruction,
+            }))
+        } else {
+            Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "debug.design.v1",
+                "phase": "phase58-fallback",
+                "designer_peer": designer_peer,
+                "designer_alive": false,
+                "expected_artifacts": expected_artifacts,
+                "fallback": "ai-conductor fs_write debug/plan.json + debug/probes.json",
+                "instruction": instruction,
+            }))
+        }
+    }
+
+    /// Phase 65 — `debug.dispatch_sessions.v1`: target ごとに debug-session-{target} を spawn。
+    /// 設計仕様書 §10.x の「target ごとに並列可」を実装。peer 名は `debug-session-{target}`、
+    /// ペルソナは `debug-session-manager.md`（Phase 56 §3.11 表 HD-039a）。
+    async fn handle_dispatch_sessions(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let targets: Vec<String> = params.get("targets")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let spec = params.get("spec").and_then(|v| v.as_str()).unwrap_or("");
+        if targets.is_empty() {
+            return Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "debug.dispatch_sessions.v1",
+                "phase": "phase65",
+                "note": "targets array required (each entry spawns `debug-session-{target}`)",
+            }));
+        }
+        let mut spawned: Vec<String> = Vec::new();
+        let mut dispatched_all = true;
+        for t in &targets {
+            let peer = format!("debug-session-{t}");
+            // ペルソナファイル名は debug-session-manager.md (Phase 56 §3.11)
+            let r = std::process::Command::new("hestia")
+                .args(["spawn-subagent", "--persona", "debug-session-manager", "--name", &peer])
+                .output();
+            match r {
+                Ok(o) if o.status.success() => spawned.push(peer.clone()),
+                _ => dispatched_all = false,
+            }
+            let prompt = format!("[{peer}] target={t}: {spec}");
+            if conductor_sdk::workspace::agent_cli_send(&peer, &prompt).is_err() {
+                dispatched_all = false;
+            }
+        }
+        // Phase 80: dispatch 完了後に ai-reviewer auto-spawn
+        let auto_review_dispatched = conductor_sdk::workspace::auto_review_after_dispatch(
+            "debug", "debug.dispatch_sessions.v1", spawned.len(),
+        );
+
+        Ok(serde_json::json!({
+            "status": if dispatched_all { "delegated" } else { "partial" },
+            "method": "debug.dispatch_sessions.v1",
+            "phase": "phase65",
+            "spawned": spawned,
+            "dispatched_all": dispatched_all,
+            "targets_requested": targets.len(),
+            "auto_review_dispatched": auto_review_dispatched,
         }))
     }
 

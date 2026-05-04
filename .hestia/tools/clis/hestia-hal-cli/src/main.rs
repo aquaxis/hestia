@@ -21,6 +21,12 @@ struct Cli {
 enum Commands {
     /// Initialize HAL project workspace
     Init,
+    /// Request HAL design (Phase 54 — delegates to hal-designer in Phase 55)
+    Design {
+        /// Optional natural-language instruction for the designer
+        #[arg(long)]
+        instruction: Option<String>,
+    },
     /// Parse HAL specification
     Parse,
     /// Validate HAL specification
@@ -74,6 +80,10 @@ async fn main() -> Result<()> {
 
     let (method, params) = match &cli.command {
         Commands::Init => ("hal.init", serde_json::json!({})),
+        Commands::Design { instruction } => (
+            "hal.design.v1",
+            serde_json::json!({ "instruction": instruction.clone().unwrap_or_default() }),
+        ),
         Commands::Parse => ("hal.parse.v1", serde_json::json!({})),
         Commands::Validate => ("hal.validate.v1", serde_json::json!({})),
         Commands::Generate { language } => (

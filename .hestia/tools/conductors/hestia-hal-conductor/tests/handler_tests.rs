@@ -12,10 +12,27 @@ use std::sync::Mutex;
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 async fn invoke_in(tmp: &std::path::Path, method: &str, params: serde_json::Value) -> serde_json::Value {
+    invoke_in_with_peers(tmp, method, params, None).await
+}
+
+/// Phase 55b — invoke variant that also overrides HESTIA_PEER_ALIVE_FORCE
+/// for tests that exercise the design.v1 delegation path.
+async fn invoke_in_with_peers(
+    tmp: &std::path::Path,
+    method: &str,
+    params: serde_json::Value,
+    alive_peers: Option<&str>,
+) -> serde_json::Value {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     std::fs::create_dir_all(tmp.join(".hestia")).expect("mkdir .hestia");
     let prior_root = std::env::var("HESTIA_PROJECT_ROOT").ok();
+    let prior_peers = std::env::var("HESTIA_PEER_ALIVE_FORCE").ok();
+    let prior_noop = std::env::var("HESTIA_PEER_SEND_NOOP").ok();
     std::env::set_var("HESTIA_PROJECT_ROOT", tmp);
+    if let Some(peers) = alive_peers {
+        std::env::set_var("HESTIA_PEER_ALIVE_FORCE", peers);
+    }
+    std::env::set_var("HESTIA_PEER_SEND_NOOP", "1");
 
     let handler = HalHandler;
     let request = Request {
@@ -31,6 +48,16 @@ async fn invoke_in(tmp: &std::path::Path, method: &str, params: serde_json::Valu
     match prior_root {
         Some(v) => std::env::set_var("HESTIA_PROJECT_ROOT", v),
         None => std::env::remove_var("HESTIA_PROJECT_ROOT"),
+    }
+    if alive_peers.is_some() {
+        match prior_peers {
+            Some(v) => std::env::set_var("HESTIA_PEER_ALIVE_FORCE", v),
+            None => std::env::remove_var("HESTIA_PEER_ALIVE_FORCE"),
+        }
+    }
+    match prior_noop {
+        Some(v) => std::env::set_var("HESTIA_PEER_SEND_NOOP", v),
+        None => std::env::remove_var("HESTIA_PEER_SEND_NOOP"),
     }
 
     match response {
@@ -94,4 +121,66 @@ async fn parse_ignores_template_directory_phase_42() {
     assert_eq!(result["status"], "input_required",
         "legacy template path must be ignored, got {result:?}");
     assert_eq!(result["source_kind"], "empty");
+}
+
+#[tokio::test]
+async fn design_v1_falls_back_to_input_required_when_designer_offline() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let result = invoke_in_with_peers(tmp.path(), "hal.design.v1",
+                            json!({"instruction": "design UART register map"}),
+                            Some("")).await;
+    assert_eq!(result["status"], "input_required");
+    assert_eq!(result["method"], "hal.design.v1");
+    assert_eq!(result["designer_peer"], "hal-designer");
+    assert_eq!(result["designer_alive"], false);
+    assert_eq!(result["phase"], "phase55b-fallback");
+    assert_eq!(result["instruction"], "design UART register map");
+}
+
+#[tokio::test]
+async fn dispatch_coders_v1_requires_languages() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let result = invoke_in_with_peers(tmp.path(), "hal.dispatch_coders.v1",
+                            json!({"languages": [], "spec": ""}), Some("")).await;
+    assert_eq!(result["status"], "input_required");
+    assert_eq!(result["phase"], "phase60b");
+}
+
+#[tokio::test]
+async fn dispatch_coders_v1_includes_auto_review_dispatched_field() {
+    // Phase 80: dispatch path must include `auto_review_dispatched` boolean field.
+    // PATH override prevents `hestia spawn-subagent` from actually launching.
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let prior_review = std::env::var("HESTIA_DISABLE_AUTO_REVIEW").ok();
+    let prior_path = std::env::var("PATH").ok();
+    std::env::set_var("HESTIA_DISABLE_AUTO_REVIEW", "1");
+    std::env::set_var("PATH", "/nonexistent");
+    let result = invoke_in_with_peers(tmp.path(), "hal.dispatch_coders.v1",
+        json!({"languages": ["c"], "spec": "test"}), Some("")).await;
+    match prior_review {
+        Some(v) => std::env::set_var("HESTIA_DISABLE_AUTO_REVIEW", v),
+        None => std::env::remove_var("HESTIA_DISABLE_AUTO_REVIEW"),
+    }
+    match prior_path {
+        Some(v) => std::env::set_var("PATH", v),
+        None => std::env::remove_var("PATH"),
+    }
+    assert!(result["auto_review_dispatched"].is_boolean(),
+        "auto_review_dispatched field must be present");
+    assert_eq!(result["auto_review_dispatched"], false);
+}
+
+#[tokio::test]
+async fn design_v1_delegates_to_designer_when_alive() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let result = invoke_in_with_peers(tmp.path(), "hal.design.v1",
+                            json!({"instruction": "design UART register map"}),
+                            Some("hal-designer")).await;
+    assert_eq!(result["status"], "delegated");
+    assert_eq!(result["method"], "hal.design.v1");
+    assert_eq!(result["designer_peer"], "hal-designer");
+    assert_eq!(result["designer_alive"], true);
+    assert_eq!(result["phase"], "phase55c");
+    assert_eq!(result["dispatched"], true);
+    assert!(result["expected_artifacts"].is_array());
 }

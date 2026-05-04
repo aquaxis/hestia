@@ -26,6 +26,8 @@ impl MessageHandler for RtlHandler {
 
         let result = match method.as_str() {
             "rtl.init" => Self::handle_init(params).await,
+            "rtl.design.v1" => Self::handle_design(params).await,
+            "rtl.dispatch_coders.v1" => Self::handle_dispatch_coders(params).await,
             "rtl.lint.v1" => Self::handle_lint(params).await,
             "rtl.lint.v1.format" => Self::handle_lint_format(params).await,
             "rtl.simulate.v1" => Self::handle_simulate(params).await,
@@ -74,6 +76,126 @@ impl RtlHandler {
             "status": "ok",
             "method": "rtl.init",
             "project": project,
+        }))
+    }
+
+    /// Phase 55c — `rtl.design.v1`: handler が直接 rtl-designer へ送信し、
+    /// `expected_artifacts` を ai-conductor に提示する fire-and-forget dispatch モデル。
+    /// designer 不在時は `phase55b-fallback` で ai-conductor 暫定 fs_write へフォールバック。
+    async fn handle_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let instruction = params.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
+        let designer_peer = "rtl-designer";
+        let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
+        let expected_artifacts = vec!["rtl/<top>.sv", "rtl/tb_<top>.sv"];
+        if designer_alive {
+            let prompt = format!(
+                "[rtl.design.v1] {instruction}\nfs_write rtl/<top>.sv (SystemVerilog top module) and rtl/tb_<top>.sv (testbench)."
+            );
+            let dispatched = match conductor_sdk::workspace::agent_cli_send(designer_peer, &prompt) {
+                Ok(()) => true,
+                Err(e) => {
+                    tracing::warn!(error = %e, peer = designer_peer, "rtl.design.v1: agent-cli send failed");
+                    false
+                }
+            };
+            Ok(serde_json::json!({
+                "status": "delegated",
+                "method": "rtl.design.v1",
+                "phase": "phase55c",
+                "designer_peer": designer_peer,
+                "designer_alive": true,
+                "dispatched": dispatched,
+                "expected_artifacts": expected_artifacts,
+                "next_action": "ai-conductor は designer の fs_write 完了後に rtl.lint.v1 / rtl.simulate.v1 を実行。expected_artifacts ファイルの存在を fs_read で確認可。",
+                "instruction": instruction,
+            }))
+        } else {
+            Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "rtl.design.v1",
+                "phase": "phase55b-fallback",
+                "designer_peer": designer_peer,
+                "designer_alive": false,
+                "expected_artifacts": expected_artifacts,
+                "fallback": "ai-conductor fs_write rtl/<top>.sv + rtl/tb_<top>.sv",
+                "instruction": instruction,
+                "note": "rtl-designer が agent-cli registry に不在のため移行期間動作にフォールバック。ai-conductor が暫定で fs_write してください。",
+            }))
+        }
+    }
+
+    /// Phase 60 — `rtl.dispatch_coders.v1`: rtl-designer の出力（モジュール一覧）を
+    /// 受けて `rtl-coder-{module}` を動的並列起動する。設計仕様書 §4.8 の
+    /// 「N 個の coder を並列起動・割当」を Hestia ランタイムで実装する経路。
+    ///
+    /// params:
+    ///   modules: ["uart_rx", "uart_tx", "led_ctrl", ...]
+    ///   spec: 各 coder に渡す設計仕様（natural language または JSON）
+    /// returns:
+    ///   spawned: ["rtl-coder-uart_rx", ...]
+    ///   dispatched: bool (全 coder への送信成否の AND)
+    async fn handle_dispatch_coders(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let modules: Vec<String> = params.get("modules")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let spec = params.get("spec").and_then(|v| v.as_str()).unwrap_or("");
+
+        if modules.is_empty() {
+            return Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "rtl.dispatch_coders.v1",
+                "phase": "phase60",
+                "note": "modules array required (each entry becomes a `rtl-coder-{module}` peer)",
+            }));
+        }
+
+        let max_parallel = std::cmp::min(modules.len(), 16); // 設計 §4.8 — 最大 16 並列
+        let mut spawned: Vec<String> = Vec::new();
+        let mut dispatched_all = true;
+
+        for module in modules.iter().take(max_parallel) {
+            let peer = format!("rtl-coder-{module}");
+
+            // hestia spawn-subagent --persona rtl-coder --name rtl-coder-{module}
+            let spawn_result = std::process::Command::new("hestia")
+                .args(["spawn-subagent", "--persona", "rtl-coder", "--name", &peer])
+                .output();
+            match spawn_result {
+                Ok(out) if out.status.success() => spawned.push(peer.clone()),
+                Ok(out) => {
+                    tracing::warn!(peer = %peer, stderr = %String::from_utf8_lossy(&out.stderr),
+                        "rtl.dispatch_coders.v1: spawn failed");
+                    dispatched_all = false;
+                }
+                Err(e) => {
+                    tracing::warn!(peer = %peer, error = %e,
+                        "rtl.dispatch_coders.v1: hestia binary not found in PATH");
+                    dispatched_all = false;
+                }
+            }
+
+            // 各 coder に spec を送信（設計 §4.8 並列開発フロー Step 3）
+            let prompt = format!("[rtl-coder-{module}] implement module: {spec}");
+            if conductor_sdk::workspace::agent_cli_send(&peer, &prompt).is_err() {
+                dispatched_all = false;
+            }
+        }
+
+        // Phase 80: dispatch 完了後に ai-reviewer auto-spawn
+        let auto_review_dispatched = conductor_sdk::workspace::auto_review_after_dispatch(
+            "rtl", "rtl.dispatch_coders.v1", spawned.len(),
+        );
+
+        Ok(serde_json::json!({
+            "status": if dispatched_all { "delegated" } else { "partial" },
+            "method": "rtl.dispatch_coders.v1",
+            "phase": "phase60",
+            "spawned": spawned,
+            "dispatched_all": dispatched_all,
+            "max_parallel": max_parallel,
+            "modules_requested": modules.len(),
+            "auto_review_dispatched": auto_review_dispatched,
         }))
     }
 

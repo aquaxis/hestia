@@ -19,6 +19,8 @@ impl MessageHandler for AsicHandler {
 
         let result = match method.as_str() {
             "asic.init" => Self::handle_init(params).await,
+            "asic.design.v1" => Self::handle_design(params).await,
+            "asic.dispatch_steps.v1" => Self::handle_dispatch_steps(params).await,
             "asic.build" => Self::handle_build(params).await,
             "asic.advance" => Self::handle_advance(params).await,
             "asic.synthesize" => Self::handle_synthesize(params).await,
@@ -78,6 +80,103 @@ impl AsicHandler {
             "status": "ok",
             "method": "asic.init",
             "project": project,
+        }))
+    }
+
+    /// Phase 58 — `asic.design.v1`: ASIC 設計依頼を asic-designer に dispatch。
+    async fn handle_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let instruction = params.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
+        let pdk = params.get("pdk").and_then(|v| v.as_str()).unwrap_or("sky130");
+        let designer_peer = "asic-designer";
+        let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
+        let expected_artifacts = vec![
+            "asic/floorplan.def".to_string(),
+            "asic/constraints.sdc".to_string(),
+            "asic/config.json".to_string(),
+        ];
+        if designer_alive {
+            let prompt = format!(
+                "[asic.design.v1 pdk={pdk}] {instruction}\nfs_write asic/floorplan.def + asic/constraints.sdc + asic/config.json."
+            );
+            let dispatched = conductor_sdk::workspace::agent_cli_send(designer_peer, &prompt).is_ok();
+            Ok(serde_json::json!({
+                "status": "delegated",
+                "method": "asic.design.v1",
+                "phase": "phase58",
+                "designer_peer": designer_peer,
+                "designer_alive": true,
+                "dispatched": dispatched,
+                "expected_artifacts": expected_artifacts,
+                "instruction": instruction,
+                "pdk": pdk,
+            }))
+        } else {
+            Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "asic.design.v1",
+                "phase": "phase58-fallback",
+                "designer_peer": designer_peer,
+                "designer_alive": false,
+                "expected_artifacts": expected_artifacts,
+                "fallback": "ai-conductor fs_write asic/floorplan.def + asic/constraints.sdc + asic/config.json",
+                "instruction": instruction,
+                "pdk": pdk,
+            }))
+        }
+    }
+
+    /// Phase 65 — `asic.dispatch_steps.v1`: ASIC ステップごとに対応サブエージェントへ
+    /// 順次 dispatch（synthesizer / implementer / signoff_checker / tester）。
+    async fn handle_dispatch_steps(params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let steps: Vec<String> = params.get("steps")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let spec = params.get("spec").and_then(|v| v.as_str()).unwrap_or("");
+        if steps.is_empty() {
+            return Ok(serde_json::json!({
+                "status": "input_required",
+                "method": "asic.dispatch_steps.v1",
+                "phase": "phase65",
+                "note": "steps array required (e.g. [\"synthesizer\",\"implementer\",\"signoff\",\"tester\"])",
+            }));
+        }
+        let mut spawned: Vec<String> = Vec::new();
+        let mut dispatched_all = true;
+        for step in &steps {
+            // signoff は peer 名 asic-signoff (Phase 56 §3.11)、ファイルは asic-signoff-checker.md
+            let (persona, peer) = match step.as_str() {
+                "signoff" | "signoff_checker" => ("asic-signoff-checker", "asic-signoff".to_string()),
+                other => (
+                    Box::leak(format!("asic-{other}").into_boxed_str()) as &str,
+                    format!("asic-{other}"),
+                ),
+            };
+            let r = std::process::Command::new("hestia")
+                .args(["spawn-subagent", "--persona", persona, "--name", &peer])
+                .output();
+            match r {
+                Ok(o) if o.status.success() => spawned.push(peer.clone()),
+                _ => dispatched_all = false,
+            }
+            let prompt = format!("[{peer}] step={step}: {spec}");
+            if conductor_sdk::workspace::agent_cli_send(&peer, &prompt).is_err() {
+                dispatched_all = false;
+            }
+        }
+        // Phase 80: dispatch 完了後に ai-reviewer auto-spawn
+        let auto_review_dispatched = conductor_sdk::workspace::auto_review_after_dispatch(
+            "asic", "asic.dispatch_steps.v1", spawned.len(),
+        );
+
+        Ok(serde_json::json!({
+            "status": if dispatched_all { "delegated" } else { "partial" },
+            "method": "asic.dispatch_steps.v1",
+            "phase": "phase65",
+            "spawned": spawned,
+            "dispatched_all": dispatched_all,
+            "steps_requested": steps.len(),
+            "auto_review_dispatched": auto_review_dispatched,
         }))
     }
 
