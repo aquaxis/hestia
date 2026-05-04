@@ -248,14 +248,30 @@ impl RtlHandler {
         let started = std::time::Instant::now();
         let sim_log = sim_dir.join("sim.log");
         let waves_path = sim_dir.join("waves.vcd");
+        // warnings_count is captured for the verilator branch so we can return
+        // sim_warnings (Phase 50) instead of conflating it with sim_failed.
+        let mut warnings_count: usize = 0;
         let (tool_invoked, tool_path_str, exit_code, sim_status) = if tb_path.is_none() {
             let _ = std::fs::write(&sim_log, format!("[hestia rtl.simulate.v1] testbench '{testbench}' not found at <root>/rtl/{testbench}.sv. The AI orchestrator must fs_write the testbench (and DUT modules) before invoking rtl.simulate — Hestia does not load templates.\n"));
             (false, None, None, "input_required")
         } else if let Some(tool) = conductor_sdk::workspace::find_in_path(simulator) {
             let tb_use = tb_path.as_ref().unwrap();
             let result = if simulator == "verilator" {
+                // Phase 50: pass `--Wno-fatal` so cosmetic warnings (EOFNEWLINE,
+                // WIDTHTRUNC, WIDTHEXPAND, UNUSEDSIGNAL etc.) are reported but
+                // do not exit non-zero. Real syntax/elaboration errors still
+                // fail the run. The rtl.lint pass (separate handler invocation)
+                // is the canonical place for strict warning enforcement.
                 let mut cmd = tokio::process::Command::new(&tool);
-                cmd.args(["--binary", "-Wall", "-o", "sim_bin", "--top-module", testbench]);
+                cmd.args([
+                    "--binary",
+                    "-Wall",
+                    "--Wno-fatal",
+                    "-o",
+                    "sim_bin",
+                    "--top-module",
+                    testbench,
+                ]);
                 cmd.arg(tb_use);
                 for s in &dut_sources { cmd.arg(s); }
                 cmd.current_dir(&sim_dir);
@@ -273,7 +289,21 @@ impl RtlHandler {
             match result {
                 Ok(out) => {
                     let _ = std::fs::write(&sim_log, &out.stderr);
-                    let status = if out.status.success() { "ok" } else { "sim_failed" };
+                    if simulator == "verilator" {
+                        let stderr_text = String::from_utf8_lossy(&out.stderr);
+                        warnings_count = stderr_text.matches("%Warning").count();
+                    }
+                    // Phase 50 status logic:
+                    //  - exit != 0  → sim_failed (real error)
+                    //  - exit == 0 + warnings_count > 0 → sim_warnings (compiled but flagged)
+                    //  - exit == 0 + no warnings → ok
+                    let status = if !out.status.success() {
+                        "sim_failed"
+                    } else if warnings_count > 0 {
+                        "sim_warnings"
+                    } else {
+                        "ok"
+                    };
                     (true, Some(tool.to_string_lossy().into_owned()), out.status.code(), status)
                 }
                 Err(e) => {
@@ -328,6 +358,7 @@ impl RtlHandler {
             "simulator": simulator,
             "tool_invoked": tool_invoked,
             "success": tool_invoked && exit_code == Some(0),
+            "warnings": warnings_count,
             "duration_secs": duration_secs,
             "run_id": run_id,
             "source_kind": source_kind,

@@ -252,24 +252,37 @@ async fn read_result_with_retry(path: &Path) -> Result<serde_json::Value> {
 /// The most common cause is the AI conductor LLM hitting agent-cli's hardcoded
 /// `max_iterations = 8` cap before reaching its final `fs_write` call. Rather
 /// than just printing a bare timeout message, we mimic the schema the LLM
-/// would have written (so downstream tooling can parse it uniformly) and tag
-/// it with `status: "error"` + `aborted_reason: "timeout"`.
+/// would have written (so downstream tooling can parse it uniformly).
+///
+/// Phase 50: add canonical `halted_reason` field (replacing the older
+/// `aborted_reason`, which is kept for backward compatibility with downstream
+/// parsers) and an `agent_log_path` hint so the user can inspect the
+/// orchestrator activity that timed out.
 fn synthesize_timeout_aggregate(
     run_id: &str,
     instruction: &str,
     result_path: &str,
     timeout_secs: u64,
 ) -> serde_json::Value {
+    let agent_log_hint =
+        "~/.hestia/workspaces/ai/agent.log (or `hestia tail ai` for live JSONL).";
     serde_json::json!({
         "run_id": run_id,
         "status": "error",
         "instruction": instruction,
+        // Phase 50 canonical field — see persona ステップ 6.
+        "halted_reason": "timeout",
+        // Backward-compat alias retained for parsers written before Phase 50.
         "aborted_reason": "timeout",
-        "aborted_message": format!(
+        "halt_message": format!(
             "AI conductor LLM did not write {result_path} within {timeout_secs}s. \
-             This typically means the LLM exhausted its tool-use iteration budget \
-             (agent-cli max_iterations = 8) before reaching the final fs_write. \
-             Consider reducing workflow steps or skipping the per-step send_to notification."
+             Common causes: the LLM exhausted its tool-use iteration budget \
+             (agent-cli max_iterations = 8) before reaching its final fs_write, \
+             or the underlying provider stalled in a long thinking loop \
+             (Phase 48–50). Inspect {agent_log_hint}"
+        ),
+        "aborted_message": format!(
+            "AI conductor LLM did not write {result_path} within {timeout_secs}s."
         ),
         "workflow_steps": [],
         "results": [],

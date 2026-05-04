@@ -132,10 +132,12 @@ handler が返す `status`:
 
 | status | exit_code | aggregate 寄与 | 意味 |
 |--------|-----------|---------------|------|
-| `ok` / `started` / `skipped` / `tool_unavailable` / `input_required` / `sent` / `no_response` / `mismatch` / `lint_failed` / `sim_failed` / `ready` / `write_failed` | 0 | 成功 | 各種正常／honest 報告 |
+| `ok` / `started` / `skipped` / `tool_unavailable` / `input_required` / `sent` / `no_response` / `mismatch` / `lint_failed` / `sim_failed` / `sim_warnings` / `ready` / `write_failed` | 0 | 成功 | 各種正常／honest 報告 |
 | `build_failed` / `program_failed` / `error` | ≠ 0 | error | 実ツールが失敗 / handler 内部エラー |
 
 **halt-on-error**: `exit_code != 0` のとき以降の step を skip。`input_required` は exit 0 なので継続（あなたが fs_write を忘れたなら集約を見て後で気づく）。
+
+**iteration 制限規約 (Phase 50 — 重要)**: 同じ step での `fs_write` + handler 再実行 cycle は **最大 2 回まで**。3 回目で同じ status (sim_failed/lint_failed/build_failed 等) が継続したら、aggregate JSON にその step の最終 status と error log を記録し、**次 step に強制移行** してください。修正は次回 user セッションに任せ、本 run では残り step を実行することを優先します。verilator の cosmetic warnings (EOFNEWLINE / WIDTHTRUNC / WIDTHEXPAND / UNUSEDSIGNAL) は `sim_warnings` 扱いとなり exit_code 0 の継続成功です — fix loop に陥らないでください。
 
 ## ステップ 6: 結果集約
 
@@ -145,6 +147,7 @@ handler が返す `status`:
 {
   "run_id": "<RUN_ID>",
   "status": "ok" または "error",
+  "halted_reason": "completed" | "halt_on_error" | "iteration_budget" | "timeout" | "shell_killed",
   "instruction": "<INSTRUCTION 原文>",
   "workflow_steps": [
     {"step": 1, "conductor": "hal", "method": "hal.parse"}
@@ -152,12 +155,19 @@ handler が返す `status`:
   "results": [
     {"step": 1, "conductor": "hal", "method": "hal.parse",
      "status": "ok", "exit_code": 0,
-     "response": { /* CLI stdout の JSON */ }}
+     "response": { /* CLI stdout の JSON */ },
+     "error_log_excerpt": "<error 時のみ、先頭 4KB>"}
   ]
 }
 ```
 
-全 step exit_code 0 なら全体 `ok`、1 件でも error なら `error`。
+全 step exit_code 0 なら全体 `ok`、1 件でも error なら `error`。`halted_reason` (Phase 50 必須) は終了理由を表す:
+
+- `completed`: 全 step 正常完了
+- `halt_on_error`: ある step が exit_code != 0 で残りを skip
+- `iteration_budget`: ステップ 5 の iteration 制限（同 step 3 回目）に達して次 step に進んだ
+- `timeout`: hestia-ai-cli の internal timeout で synthetic JSON を出力
+- `shell_killed`: 親プロセス停止
 
 ## 成果物保存場所
 
@@ -174,6 +184,14 @@ handler は project root 配下に書きます（`.hestia/` 配下は内部メ�
 ## 応答テキスト
 
 `fs_write` 完了後、ユーザー向け 1-2 文サマリを返します。フロントエンドは `RESULT_PATH` のファイル内容のみを参照します。
+
+**halt 時の必須報告 (Phase 50)**: workflow が `completed` 以外で終わった場合（halt_on_error / iteration_budget 到達 / timeout 等）、応答テキストに以下 3 要素を必ず含めてください:
+
+1. 完了 step 数 / 全 step 数（例: 「全 6 step 中 3 step 完了」）
+2. 停止 step とその status（例: 「rtl.simulate で sim_failed」）
+3. 残り step が実行されなかった理由（例: 「iteration budget 2 回に達したため次 step を skip」）
+
+ユーザーが next action を判断できる粒度で報告してください。「実行が止まりました」だけでは不十分です。
 
 ## 構造化メソッドハンドラ（参考）
 

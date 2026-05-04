@@ -137,6 +137,14 @@ enum Commands {
         #[arg(long)]
         path_only: bool,
     },
+    /// (Internal, Phase 49) Mirror an agent-cli structured log into the
+    /// workspace `agent.log` so users can `cat .hestia/workspaces/<domain>/agent.log`
+    /// and see live orchestrator activity. Spawned automatically by `hestia start`.
+    #[command(hide = true)]
+    Mirror {
+        /// Domain name to mirror.
+        domain: String,
+    },
 }
 
 /// Domain names that have a corresponding conductor.
@@ -263,6 +271,22 @@ async fn start_conductor(domain: &str) -> Result<()> {
         .stderr(Stdio::from(log_file_stderr))
         .spawn()
         .map_err(|e| anyhow::anyhow!("failed to spawn agent-cli for {domain}: {e}"))?;
+
+    // Phase 49: spawn the structured-log mirror as a detached background helper.
+    // Resolve hestia's own path (argv[0]) so we always invoke the same binary
+    // that started us, regardless of $PATH ordering. Inherit our cwd (the
+    // project root) — `mirror_agent_log` calls `workspace_path` which derives
+    // the workspace from cwd, so we must NOT change directory here.
+    let hestia_self = std::env::current_exe()
+        .unwrap_or_else(|_| PathBuf::from("hestia"));
+    let _mirror = Command::new(&hestia_self)
+        .arg("mirror")
+        .arg(domain)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("failed to spawn mirror helper for {domain}: {e}"))?;
 
     Ok(())
 }
@@ -524,6 +548,165 @@ async fn resolve_agent_log_path(domain: &str) -> Result<PathBuf> {
     Ok(latest)
 }
 
+/// Detect whether an agent for `domain` is registered with agent-cli (Phase 49).
+async fn is_agent_alive(domain: &str) -> bool {
+    let output = Command::new("agent-cli")
+        .arg("list")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await;
+    let Ok(out) = output else { return false; };
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("ID") || trimmed.starts_with('-') {
+            continue;
+        }
+        let fields: Vec<&str> = trimmed.split_whitespace().collect();
+        if fields.len() >= 2 && fields[1] == domain {
+            return true;
+        }
+    }
+    false
+}
+
+/// Mirror an agent-cli structured JSONL log into the workspace agent.log (Phase 49).
+///
+/// The workspace `agent.log` is normally just a redirect of agent-cli's stdout
+/// (banner + occasional notices). agent-cli writes its real activity (thinking,
+/// tool_call, tool_result, peer_prompt, assistant) into a separate JSONL file
+/// under `~/.local/share/agent-cli/logs/<agent-id>/`. This task polls that
+/// JSONL and appends human-readable summary lines to the workspace agent.log
+/// so users who run `cat .hestia/workspaces/ai/agent.log` see live activity.
+async fn mirror_agent_log(domain: &str) -> Result<()> {
+    use std::io::Write;
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+    let workspace_log = workspace_path(domain).join("agent.log");
+
+    // Wait for agent-cli to register and produce its structured log.
+    let timeout = std::time::Duration::from_secs(60);
+    let start = std::time::Instant::now();
+    let log_path = loop {
+        if let Ok(p) = resolve_agent_log_path(domain).await {
+            break p;
+        }
+        if start.elapsed() > timeout {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    };
+
+    // Announce the mirror is active (one-line marker).
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&workspace_log)
+    {
+        let _ = writeln!(f, "[mirror] phase49 active, source={}", log_path.display());
+    }
+
+    let mut last_pos: u64 = 0;
+    let mut thinking_count: u64 = 0;
+    let mut thinking_last_emit: u64 = 0;
+    let mut buf = String::new();
+
+    loop {
+        if !is_agent_alive(domain).await {
+            if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(&workspace_log) {
+                let _ = writeln!(f, "[mirror] agent stopped, exiting");
+            }
+            return Ok(());
+        }
+
+        let size = match std::fs::metadata(&log_path) {
+            Ok(m) => m.len(),
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                continue;
+            }
+        };
+
+        if size > last_pos {
+            let mut file = match tokio::fs::File::open(&log_path).await {
+                Ok(f) => f,
+                Err(_) => {
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    continue;
+                }
+            };
+            let _ = file.seek(std::io::SeekFrom::Start(last_pos)).await;
+            buf.clear();
+            let _ = file.read_to_string(&mut buf).await;
+            last_pos = size;
+
+            let Ok(mut out) = std::fs::OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(&workspace_log)
+            else {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                continue;
+            };
+
+            for line in buf.lines() {
+                let Ok(ev) = serde_json::from_str::<serde_json::Value>(line) else { continue; };
+                let kind = ev.get("kind").and_then(|v| v.as_str()).unwrap_or("?");
+                match kind {
+                    "thinking" => {
+                        thinking_count += 1;
+                        if thinking_count - thinking_last_emit >= 50 {
+                            let snippet: String = ev
+                                .get("text")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .chars()
+                                .take(80)
+                                .collect();
+                            let _ = writeln!(
+                                out,
+                                "[mirror][thinking#{}] {}",
+                                thinking_count,
+                                snippet.trim()
+                            );
+                            thinking_last_emit = thinking_count;
+                        }
+                    }
+                    "tool_call" => {
+                        let name = ev.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                        let args_text = ev.get("args").map(|v| v.to_string()).unwrap_or_default();
+                        let args_short: String = args_text.chars().take(160).collect();
+                        let _ = writeln!(out, "[mirror][tool_call] {} args={}", name, args_short);
+                    }
+                    "tool_result" => {
+                        let name = ev.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                        let ok = ev.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let _ = writeln!(out, "[mirror][tool_result] {} ok={}", name, ok);
+                    }
+                    "peer_prompt" => {
+                        let from = ev.get("from").and_then(|v| v.as_str()).unwrap_or("?");
+                        let _ = writeln!(out, "[mirror][peer_prompt] from={}", from);
+                    }
+                    "assistant" => {
+                        let snippet: String = ev
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .chars()
+                            .take(160)
+                            .collect();
+                        let _ = writeln!(out, "[mirror][assistant] {}", snippet.trim());
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    }
+}
+
 /// Tail an agent's structured log with simple human-readable formatting (Phase 48).
 async fn tail_agent_log(domain: &str, path_only: bool) -> Result<()> {
     let path = resolve_agent_log_path(domain).await?;
@@ -576,6 +759,7 @@ async fn main() -> Result<()> {
         Commands::Debug { args } => dispatch_cli("debug", &args)?,
         Commands::Rag { args } => dispatch_cli("rag", &args)?,
         Commands::Tail { domain, path_only } => tail_agent_log(&domain, path_only).await?,
+        Commands::Mirror { domain } => mirror_agent_log(&domain).await?,
     }
 
     Ok(())
