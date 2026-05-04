@@ -169,4 +169,18 @@ make clean          # Clean build artifacts
 
 ## License
 
-MIT OR Apache-2.0
+HESTIA is distributed under the **triple license** of the HESTIA Software License Version 1.0.
+See [`LICENSE.md`](./LICENSE.md) for the authoritative Japanese-language conditions
+(English translations are advisory only; the Japanese original prevails per LICENSE Article 4.12).
+
+### Related Documents
+
+| Document | Description |
+|---------|-------------|
+| [`LICENSE.md`](./LICENSE.md) | HESTIA Software License (triple license, Japanese authoritative) |
+| [`CLA.md`](./CLA.md) | Contributor License Agreement |
+| [`SELF-DECLARATION.md`](./SELF-DECLARATION.md) | Small Business Relief Self-Declaration Program operations manual |
+| [`FAQ.md`](./FAQ.md) | FAQ on license / CLA / self-declaration |
+| [`SUPPORT.md`](./SUPPORT.md) | Support contacts and inquiry procedure |
+
+Copyright (C) 2026 AQUAXIS TECHNOLOGY. All Rights Reserved.

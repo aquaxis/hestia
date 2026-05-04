@@ -132,6 +132,20 @@ install_data() {
     done
 
     info "Installed ${count} persona files to ${SHARE_DIR}/personas/"
+
+    # Phase 81 — install hestia agent rules to ${SHARE_DIR}/rules/
+    rules_src="${REPO_DIR}/.hestia/rules"
+    if [ -d "${rules_src}" ]; then
+        info "Installing hestia agent rules to ${SHARE_DIR}/rules/..."
+        mkdir -p "${SHARE_DIR}/rules"
+        rules_count=0
+        for file in "${rules_src}"/*.md; do
+            [ -f "${file}" ] || continue
+            cp "${file}" "${SHARE_DIR}/rules/$(basename "${file}")"
+            rules_count=$((rules_count + 1))
+        done
+        info "Installed ${rules_count} rule files to ${SHARE_DIR}/rules/"
+    fi
 }
 
 check_path() {

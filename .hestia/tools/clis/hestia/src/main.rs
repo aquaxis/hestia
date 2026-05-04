@@ -238,54 +238,37 @@ fn workspace_path(domain: &str) -> PathBuf {
         .join(domain)
 }
 
-/// Phase 57 — Initialize `.aiprj/` skeleton inside the per-peer workspace.
+/// Phase 81 — Initialize per-peer hestia workspace (replaces Phase 57's
+/// `init_aiprj_workspace`).
 ///
-/// Implements design `hestia_design.md` §20.5「aiprj ワークスペース統合」at the
-/// minimum-viable level: each peer (conductor or sub-agent) gets a stub
-/// `.aiprj/instruction.md` placeholder + a symlink (or copy fallback) to the
-/// project-root `.aiprj/rules/` directory so the agent-cli persona can later
-/// self-execute setup_ai/update_ai/exec_job per design §20.5.3. This Phase
-/// only sets up the directory structure; persona-side self-execution remains
-/// a follow-up (Phase 57b candidate).
+/// Phase 22 P-1 (rules 隔離) → Phase 57 P-2 (`.aiprj/rules` symlink 共有)
+/// → Phase 81 **P-3** (`.hestia/rules/` への hestia agent 向け解釈変更版を配置、
+/// `.aiprj/` 直接参照を排除) の進化に伴う改名 + ロジック変更。
+///
+/// 各 peer (conductor or sub-agent) に `<workspace>/instruction.md` placeholder
+/// のみ生成。`.aiprj/rules` への symlink は生成しない — agent は project-root
+/// の `<root>/.hestia/rules/` を共有参照する。これにより hestia ランタイムは
+/// `.aiprj/` 不在環境（end user 配布版、CI 環境等）でも完全動作可能となる。
 ///
 /// Failures are non-fatal — they're logged but don't block conductor startup.
-fn init_aiprj_workspace(peer_name: &str) {
+fn init_hestia_workspace(peer_name: &str) {
     let workspace = workspace_path(peer_name);
-    let aiprj_dir = workspace.join(".aiprj");
-    if let Err(e) = std::fs::create_dir_all(&aiprj_dir) {
-        eprintln!("[warn] failed to create {}: {e}", aiprj_dir.display());
+    if let Err(e) = std::fs::create_dir_all(&workspace) {
+        eprintln!("[warn] failed to create {}: {e}", workspace.display());
         return;
     }
 
-    let instruction = aiprj_dir.join("instruction.md");
+    let instruction = workspace.join("instruction.md");
     if !instruction.exists() {
         let placeholder = format!(
             "# Instruction for peer `{peer_name}`\n\n\
-             Phase 57 placeholder — populated by ai-conductor or upstream peers \
-             when delegation occurs (design hestia_design.md §20.5).\n"
+             Phase 81 placeholder — populated by ai-conductor or upstream peers \
+             when delegation occurs. The agent self-executes setup_ai / \
+             update_ai / exec_job / close_ai cycles by referencing \
+             `<root>/.hestia/rules/` (Phase 81 P-3).\n"
         );
         if let Err(e) = std::fs::write(&instruction, placeholder) {
             eprintln!("[warn] failed to write {}: {e}", instruction.display());
-        }
-    }
-
-    let rules_link = aiprj_dir.join("rules");
-    if !rules_link.exists() {
-        let project_rules = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join(".aiprj/rules");
-        if project_rules.exists() {
-            #[cfg(unix)]
-            let link_result = std::os::unix::fs::symlink(&project_rules, &rules_link);
-            #[cfg(not(unix))]
-            let link_result: std::io::Result<()> =
-                Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "symlink unsupported"));
-            if let Err(e) = link_result {
-                eprintln!(
-                    "[warn] symlink {} -> {} failed: {e} (continuing without rules link)",
-                    rules_link.display(), project_rules.display()
-                );
-            }
         }
     }
 }
@@ -308,8 +291,8 @@ async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str) -> Result
         std::fs::create_dir_all(&workdir)?;
     }
 
-    // Phase 57 — set up `.aiprj/` skeleton per design §20.5 before agent-cli starts.
-    init_aiprj_workspace(peer_name);
+    // Phase 81 — set up per-peer hestia workspace before agent-cli starts.
+    init_hestia_workspace(peer_name);
 
     let fifo_path = workdir.join("stdin.pipe");
     let _ = std::fs::remove_file(&fifo_path);
@@ -387,8 +370,8 @@ async fn start_conductor(domain: &str) -> Result<()> {
         std::fs::create_dir_all(&workdir)?;
     }
 
-    // Phase 57 — set up `.aiprj/` skeleton per design §20.5 for the main conductor.
-    init_aiprj_workspace(domain);
+    // Phase 81 — set up per-peer hestia workspace for the main conductor.
+    init_hestia_workspace(domain);
 
     // Create a FIFO for stdin so agent-cli doesn't exit on EOF.
     // Opening with O_RDWR means the child is both reader and writer,
@@ -594,6 +577,7 @@ fn init_hestia_dir() -> Result<()> {
         base.join("log"),
         base.join("common/rules"),
         base.join("personas"),
+        base.join("rules"),
         base.join("workspaces"),
     ];
 
@@ -646,6 +630,39 @@ fn init_hestia_dir() -> Result<()> {
         eprintln!(
             "Warning: No persona files found. Run install.sh first or set HESTIA_SHARE_DIR."
         );
+    }
+
+    // Phase 81 — copy hestia agent rules from share to project .hestia/rules/.
+    // Without these, the agent self-execution loop (Article 4 of setup_project.md)
+    // can't find its rule files and degrades to idle.
+    let rules_dir = base.join("rules");
+    let rules_src_dirs = [
+        share_dir.join("rules"),
+        dirs::home_dir()
+            .map(|h| PathBuf::from(h).join(".hestia/src/hestia/.hestia/rules"))
+            .unwrap_or_default(),
+    ];
+    let mut rules_copied = 0u32;
+    for src in &rules_src_dirs {
+        if src.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(src) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().is_some_and(|e| e == "md") {
+                        let name = path.file_name().unwrap();
+                        let dest = rules_dir.join(name);
+                        if !dest.exists() {
+                            std::fs::copy(&path, &dest)?;
+                            rules_copied += 1;
+                        }
+                    }
+                }
+            }
+            break;
+        }
+    }
+    if rules_copied > 0 {
+        println!("Copied {rules_copied} hestia rule files from share directory");
     }
     Ok(())
 }

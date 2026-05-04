@@ -180,4 +180,17 @@ make clean          # ビルド成果物を削除
 
 ## ライセンス
 
-MIT OR Apache-2.0
+HESTIA は **トリプルライセンス**（HESTIA ソフトウェアライセンス Version 1.0）の下で配布されます。
+詳細条項は [`LICENSE.md`](./LICENSE.md) を参照してください。
+
+### 関連ドキュメント
+
+| ドキュメント | 内容 |
+|------------|------|
+| [`LICENSE.md`](./LICENSE.md) | HESTIA ソフトウェアライセンス（トリプルライセンス、日本語正文） |
+| [`CLA.md`](./CLA.md) | Contributor License Agreement |
+| [`SELF-DECLARATION.md`](./SELF-DECLARATION.md) | 小規模事業者救済 自己申告制度 運用マニュアル |
+| [`FAQ.md`](./FAQ.md) | ライセンス・CLA・自己申告制度に関する FAQ |
+| [`SUPPORT.md`](./SUPPORT.md) | サポート窓口・問合せ手順 |
+
+Copyright (C) 2026 AQUAXIS TECHNOLOGY. All Rights Reserved.
