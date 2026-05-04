@@ -92,11 +92,13 @@ async fn dispatch_sessions_v1_includes_auto_review_dispatched_field() {
     let prior_path = std::env::var("PATH").ok();
     std::env::set_var("HESTIA_DISABLE_AUTO_REVIEW", "1");
     std::env::set_var("HESTIA_PEER_SEND_NOOP", "1");
+    std::env::set_var("HESTIA_STRICT_SUBAGENT", "0");
     std::env::set_var("PATH", "/nonexistent");
     let result = invoke("debug.dispatch_sessions.v1",
         json!({"targets": ["jtag"], "spec": "test"})).await;
     std::env::remove_var("HESTIA_DISABLE_AUTO_REVIEW");
     std::env::remove_var("HESTIA_PEER_SEND_NOOP");
+    std::env::remove_var("HESTIA_STRICT_SUBAGENT");
     match prior_path {
         Some(v) => std::env::set_var("PATH", v),
         None => std::env::remove_var("PATH"),
@@ -111,6 +113,7 @@ async fn design_v1_falls_back_when_designer_offline() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     std::env::set_var("HESTIA_PEER_ALIVE_FORCE", "");
     std::env::set_var("HESTIA_PEER_SEND_NOOP", "1");
+    std::env::set_var("HESTIA_STRICT_SUBAGENT", "0");
     let handler = DebugHandler;
     let request = Request {
         kind: "prompt".to_string(),
@@ -123,6 +126,7 @@ async fn design_v1_falls_back_when_designer_offline() {
     let response = handler.handle_request(request).await;
     std::env::remove_var("HESTIA_PEER_ALIVE_FORCE");
     std::env::remove_var("HESTIA_PEER_SEND_NOOP");
+    std::env::remove_var("HESTIA_STRICT_SUBAGENT");
     let result = match response {
         Response::Success(s) => s.result,
         Response::Error(e) => panic!("expected Success, got: {:?}", e.error),

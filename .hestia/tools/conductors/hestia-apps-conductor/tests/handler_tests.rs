@@ -64,11 +64,13 @@ async fn dispatch_coders_v1_includes_auto_review_dispatched_field() {
     let prior_path = std::env::var("PATH").ok();
     std::env::set_var("HESTIA_DISABLE_AUTO_REVIEW", "1");
     std::env::set_var("HESTIA_PEER_SEND_NOOP", "1");
+    std::env::set_var("HESTIA_STRICT_SUBAGENT", "0");
     std::env::set_var("PATH", "/nonexistent");
     let result = unwrap_ok(invoke("apps.dispatch_coders.v1",
         json!({"modules": ["main_loop"], "spec": "test"})).await);
     std::env::remove_var("HESTIA_DISABLE_AUTO_REVIEW");
     std::env::remove_var("HESTIA_PEER_SEND_NOOP");
+    std::env::remove_var("HESTIA_STRICT_SUBAGENT");
     match prior_path {
         Some(v) => std::env::set_var("PATH", v),
         None => std::env::remove_var("PATH"),
@@ -83,10 +85,12 @@ async fn dispatch_coders_v1_includes_auto_review_dispatched_field() {
 async fn design_v1_falls_back_when_designer_offline() {
     std::env::set_var("HESTIA_PEER_ALIVE_FORCE", "");
     std::env::set_var("HESTIA_PEER_SEND_NOOP", "1");
+    std::env::set_var("HESTIA_STRICT_SUBAGENT", "0");
     let result = unwrap_ok(invoke("apps.design.v1",
         json!({"instruction": "blink LED on STM32"})).await);
     std::env::remove_var("HESTIA_PEER_ALIVE_FORCE");
     std::env::remove_var("HESTIA_PEER_SEND_NOOP");
+    std::env::remove_var("HESTIA_STRICT_SUBAGENT");
     assert_eq!(result["status"], "input_required");
     assert_eq!(result["designer_peer"], "apps-designer");
     assert_eq!(result["phase"], "phase58-fallback");

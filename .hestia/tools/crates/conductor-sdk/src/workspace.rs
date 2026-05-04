@@ -98,7 +98,7 @@ pub fn ensure_artifact_dir(category: &str, subpath: Option<&str>) -> Result<Path
 }
 
 /// Phase 55b — Check whether an agent-cli peer is currently alive in the
-/// shared registry by invoking `agent-cli list` and grepping its stdout.
+/// shared registry by invoking `agent-cli list` and parsing its stdout.
 ///
 /// Returns:
 /// - `true`  if `peer_name` appears as a live peer
@@ -108,6 +108,18 @@ pub fn ensure_artifact_dir(category: &str, subpath: Option<&str>) -> Result<Path
 /// the listed peers to be reported as alive without invoking `agent-cli`.
 /// This keeps unit tests deterministic in environments without a running
 /// `agent-cli` process.
+///
+/// # Phase 87 — H11 真因修正（agent-cli list 出力 parsing 修正）
+///
+/// agent-cli list の実出力形式は `<ID>  <NAME>  <PROVIDER>  <MODEL>  <ROLE>  <SKILLS>`
+/// で、各行は **agent-id（`agent-01KXX...`）から始まり**、peer 名（NAME）は
+/// **2 列目**に現れる。Phase 55b の旧実装は peer 名が行頭にあると期待していた
+/// ため、`agent-cli list` で peer が確かに登録されていても false を返していた
+/// （Phase 83 で観測された ai-conductor 約 80% 肩代わりの真因 = H11）。
+///
+/// 本修正で whitespace 区切りの 2 列目（NAME 列）を peer 名と比較するよう変更。
+/// ヘッダー行（`ID NAME PROVIDER ...`）は `peer_name == "NAME"` でない限り
+/// マッチしない（NAME という名の peer が存在することは事実上ない）。
 pub fn agent_cli_peer_alive(peer_name: &str) -> bool {
     if let Ok(force) = std::env::var("HESTIA_PEER_ALIVE_FORCE") {
         if force
@@ -131,27 +143,37 @@ pub fn agent_cli_peer_alive(peer_name: &str) -> bool {
         return false;
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
-    // agent-cli list output starts each peer line with the peer name.
+    // Phase 87 H11 fix — parse the NAME column (whitespace-separated 2nd field)
+    // instead of expecting peer name at line start. The first column is the
+    // agent-id (e.g. `agent-01KQSXX...`), the second is the peer name.
     stdout.lines().any(|line| {
-        let trimmed = line.trim_start();
-        trimmed.starts_with(&format!("{peer_name} "))
-            || trimmed == peer_name
-            || trimmed.starts_with(&format!("{peer_name}\t"))
+        let mut fields = line.split_whitespace();
+        // skip the ID column
+        let _id = fields.next();
+        match fields.next() {
+            Some(name) => name == peer_name,
+            None => false,
+        }
     })
 }
 
-/// Phase 84f — strict subagent モード判定。
+/// Phase 84f / Phase 88 — strict subagent モード判定。
 ///
-/// env `HESTIA_STRICT_SUBAGENT=1` 設定時、各 conductor の `<domain>.design.v1`
-/// handler は `phase55b-fallback` ではなく `subagent_unavailable` + halt を
-/// 返却する。Phase 83 で発見した「fallback が steady-state 化」問題への対処。
+/// env `HESTIA_STRICT_SUBAGENT` の値で各 conductor の `<domain>.design.v1`
+/// handler の振る舞いを決定:
+/// - `=1` または `=true` または **未設定** → strict（`subagent_unavailable` + halt）
+/// - `=0` または `=false` → 非 strict（Phase 55b 互換 `phase55b-fallback`）
 ///
-/// 既定（未設定）では Phase 55b 互換動作（fallback で `input_required` 返却）を維持し、
-/// strict モードは test 環境 / CI で sub-agent 起動不全を早期検出する目的で使用する。
+/// **Phase 88 (1.7.0) で default を strict ON に変更**。Phase 83/84/87 で 3 度連続観察した
+/// 「fallback が steady-state 化 → sub-agent 階層が永久に 0% 機能」問題を構造的に解消。
+/// fallback への沈黙的依存（persona が fallback 経路を normal flow と誤学習する）は
+/// 明示的 opt-out（`HESTIA_STRICT_SUBAGENT=0`）が必要となる。
 pub fn strict_subagent_enabled() -> bool {
-    std::env::var("HESTIA_STRICT_SUBAGENT")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
+    match std::env::var("HESTIA_STRICT_SUBAGENT") {
+        Ok(v) if v == "0" || v.eq_ignore_ascii_case("false") => false,
+        // Phase 88: default → strict ON（旧 Phase 84f は default OFF だった）
+        _ => true,
+    }
 }
 
 /// Phase 84 — registry 登録確定までの待機。

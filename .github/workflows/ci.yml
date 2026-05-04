@@ -79,3 +79,56 @@ jobs:
         env:
           HESTIA_TOOLS_REQUIRED: verilator
         run: cargo test --release -p conductor-sdk --test workspace_tests --locked
+
+  verify-no-gap:
+    name: Phase 88 退行検出（agent.log gap matrix）
+    runs-on: ubuntu-latest
+    # Phase 88: agent.log を成果物として収集できる E2E テストが揃った段階で
+    # build-and-test の後段で実行する。当面は scripts/verify_no_gap.sh の
+    # script 自体の健全性（shellcheck + 既知の baseline agent.log を NG 判定）
+    # を CI で検証する。実 agent.log の検証は user 環境または E2E job で実施。
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Lint verify_no_gap.sh
+        run: shellcheck scripts/verify_no_gap.sh
+
+      - name: Self-test — verify_no_gap.sh detects baseline gap (Phase 87 fixture)
+        run: |
+          # Phase 87 baseline agent.log fixture should FAIL (=detect gap), exit code 1.
+          # Use a synthetic minimal fixture inline.
+          cat > /tmp/agent_baseline.log <<'EOF'
+          [tool-call] shell {"cmd":"hestia-hal-cli design"}
+          [tool-result ok] shell: {"phase":"phase55b-fallback","designer_alive":false,"status":"input_required"}
+          [tool-call] fs_write {"path":"hal/register_map.json"}
+          [tool-result ok] fs_write: wrote hal/register_map.json
+          EOF
+          set +e
+          ./scripts/verify_no_gap.sh /tmp/agent_baseline.log
+          rc=$?
+          set -e
+          if [ "$rc" -ne 1 ]; then
+            echo "FAIL: verify_no_gap.sh should have exited 1 on baseline fixture, got $rc"
+            exit 1
+          fi
+          echo "OK: verify_no_gap.sh correctly flagged baseline gap (exit 1)"
+
+      - name: Self-test — verify_no_gap.sh passes on healthy fixture
+        run: |
+          # Synthetic healthy agent.log: 3 designers delegated, agent-cli send, no fallback.
+          cat > /tmp/agent_healthy.log <<'EOF'
+          [tool-call] shell {"cmd":"hestia-hal-cli design"}
+          [tool-result ok] shell: {"phase":"phase55c","designer_alive":true,"status":"delegated","designer_peer":"hal-designer"}
+          [tool-call] shell {"cmd":"agent-cli send hal-designer prompt"}
+          [tool-call] shell {"cmd":"hestia-rtl-cli design"}
+          [tool-result ok] shell: {"phase":"phase55c","designer_alive":true,"status":"delegated","designer_peer":"rtl-designer"}
+          [tool-call] shell {"cmd":"agent-cli send rtl-designer prompt"}
+          [tool-call] shell {"cmd":"hestia-fpga-cli design"}
+          [tool-result ok] shell: {"phase":"phase55c","designer_alive":true,"status":"delegated","designer_peer":"fpga-designer"}
+          [tool-call] shell {"cmd":"agent-cli send fpga-designer prompt"}
+          EOF
+          ./scripts/verify_no_gap.sh /tmp/agent_healthy.log
+          echo "OK: verify_no_gap.sh correctly passed healthy fixture"

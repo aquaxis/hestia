@@ -28,11 +28,14 @@ async fn invoke_in_with_peers(
     let prior_root = std::env::var("HESTIA_PROJECT_ROOT").ok();
     let prior_peers = std::env::var("HESTIA_PEER_ALIVE_FORCE").ok();
     let prior_noop = std::env::var("HESTIA_PEER_SEND_NOOP").ok();
+    let prior_strict = std::env::var("HESTIA_STRICT_SUBAGENT").ok();
     std::env::set_var("HESTIA_PROJECT_ROOT", tmp);
     if let Some(peers) = alive_peers {
         std::env::set_var("HESTIA_PEER_ALIVE_FORCE", peers);
     }
     std::env::set_var("HESTIA_PEER_SEND_NOOP", "1");
+    // Phase 88: default strict ON のため fallback path テスト用に opt-out
+    std::env::set_var("HESTIA_STRICT_SUBAGENT", "0");
 
     let handler = HalHandler;
     let request = Request {
@@ -58,6 +61,10 @@ async fn invoke_in_with_peers(
     match prior_noop {
         Some(v) => std::env::set_var("HESTIA_PEER_SEND_NOOP", v),
         None => std::env::remove_var("HESTIA_PEER_SEND_NOOP"),
+    }
+    match prior_strict {
+        Some(v) => std::env::set_var("HESTIA_STRICT_SUBAGENT", v),
+        None => std::env::remove_var("HESTIA_STRICT_SUBAGENT"),
     }
 
     match response {
