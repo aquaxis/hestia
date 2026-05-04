@@ -80,6 +80,20 @@ impl RagHandler {
         let designer_peer = "rag-designer";
         let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
         let expected_artifacts = vec!["rag/index_schema.json", "rag/ingest_plan.json"];
+        // Phase 84f — strict mode: designer 不在時は fallback ではなく halt
+        if !designer_alive && conductor_sdk::workspace::strict_subagent_enabled() {
+            return Ok(serde_json::json!({
+                "status": "subagent_unavailable",
+                "method": "rag.design.v1",
+                "phase": "phase84-strict",
+                "designer_peer": designer_peer,
+                "designer_alive": false,
+                "halted_reason": "subagent_spawn_failure",
+                "expected_artifacts": expected_artifacts,
+                "instruction": instruction,
+                "note": "HESTIA_STRICT_SUBAGENT=1: rag-designer が registry 不在のため halt。`hestia start` ログ確認 + `agent-cli list` で resident sub-agent 登録状態を調査してください。",
+            }));
+        }
         if designer_alive {
             let prompt = format!(
                 "[rag.design.v1] {instruction}\nfs_write rag/index_schema.json + rag/ingest_plan.json."

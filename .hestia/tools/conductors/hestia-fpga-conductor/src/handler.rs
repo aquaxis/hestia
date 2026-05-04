@@ -91,6 +91,21 @@ impl FpgaHandler {
             format!("fpga/{target}.part"),
             "fpga/scripts/build.tcl".to_string(),
         ];
+        // Phase 84f — strict mode: designer 不在時は fallback ではなく halt
+        if !designer_alive && conductor_sdk::workspace::strict_subagent_enabled() {
+            return Ok(serde_json::json!({
+                "status": "subagent_unavailable",
+                "method": "fpga.design.v1",
+                "phase": "phase84-strict",
+                "designer_peer": designer_peer,
+                "designer_alive": false,
+                "halted_reason": "subagent_spawn_failure",
+                "expected_artifacts": expected_artifacts,
+                "instruction": instruction,
+                "target": target,
+                "note": "HESTIA_STRICT_SUBAGENT=1: fpga-designer が registry 不在のため halt。`hestia start` ログ確認 + `agent-cli list` で resident sub-agent 登録状態を調査してください。",
+            }));
+        }
         if designer_alive {
             let prompt = format!(
                 "[fpga.design.v1 target={target}] {instruction}\nfs_write fpga/constraints/<top>.xdc + fpga/{target}.part + fpga/scripts/build.tcl. Phase 47 absolute-path rule applies to TCL."

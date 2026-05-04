@@ -87,6 +87,20 @@ impl RtlHandler {
         let designer_peer = "rtl-designer";
         let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
         let expected_artifacts = vec!["rtl/<top>.sv", "rtl/tb_<top>.sv"];
+        // Phase 84f — strict mode: designer 不在時は fallback ではなく halt
+        if !designer_alive && conductor_sdk::workspace::strict_subagent_enabled() {
+            return Ok(serde_json::json!({
+                "status": "subagent_unavailable",
+                "method": "rtl.design.v1",
+                "phase": "phase84-strict",
+                "designer_peer": designer_peer,
+                "designer_alive": false,
+                "halted_reason": "subagent_spawn_failure",
+                "expected_artifacts": expected_artifacts,
+                "instruction": instruction,
+                "note": "HESTIA_STRICT_SUBAGENT=1: rtl-designer が registry 不在のため halt。`hestia start` ログ確認 + `agent-cli list` で resident sub-agent 登録状態を調査してください。",
+            }));
+        }
         if designer_alive {
             let prompt = format!(
                 "[rtl.design.v1] {instruction}\nfs_write rtl/<top>.sv (SystemVerilog top module) and rtl/tb_<top>.sv (testbench)."

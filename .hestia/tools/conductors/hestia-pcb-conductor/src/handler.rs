@@ -79,6 +79,20 @@ impl PcbHandler {
         let designer_peer = "pcb-designer";
         let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
         let expected_artifacts = vec!["pcb/schematic.kicad_sch", "pcb/board.kicad_pcb"];
+        // Phase 84f — strict mode: designer 不在時は fallback ではなく halt
+        if !designer_alive && conductor_sdk::workspace::strict_subagent_enabled() {
+            return Ok(serde_json::json!({
+                "status": "subagent_unavailable",
+                "method": "pcb.design.v1",
+                "phase": "phase84-strict",
+                "designer_peer": designer_peer,
+                "designer_alive": false,
+                "halted_reason": "subagent_spawn_failure",
+                "expected_artifacts": expected_artifacts,
+                "instruction": instruction,
+                "note": "HESTIA_STRICT_SUBAGENT=1: pcb-designer が registry 不在のため halt。`hestia start` ログ確認 + `agent-cli list` で resident sub-agent 登録状態を調査してください。",
+            }));
+        }
         if designer_alive {
             let prompt = format!(
                 "[pcb.design.v1] {instruction}\nfs_write pcb/schematic.kicad_sch + pcb/board.kicad_pcb."

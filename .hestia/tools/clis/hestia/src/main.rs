@@ -356,6 +356,18 @@ async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str) -> Result
         .stderr(Stdio::null())
         .spawn();
 
+    // Phase 84 — registry 登録確定まで待機。
+    // agent-cli が起動して IPC ready になるまで最大 10 秒 polling。timeout した
+    // 場合は warn のみで継続（fire-and-forget セマンティクスは維持しつつ、後続
+    // 経路で peer_alive チェックが false になれば fallback / halt が発動する）。
+    if !conductor_sdk::workspace::wait_for_registry(peer_name, 10_000) {
+        eprintln!(
+            "[warn] sub-agent {peer_name} did not register within 10s — \
+             check {} for agent-cli startup errors",
+            log_path.display()
+        );
+    }
+
     Ok(())
 }
 
@@ -450,10 +462,22 @@ async fn start_conductor(domain: &str) -> Result<()> {
         .spawn()
         .map_err(|e| anyhow::anyhow!("failed to spawn mirror helper for {domain}: {e}"))?;
 
+    // Phase 84 — registry 登録確定まで待機（main conductor）。
+    // sub-agent spawn の前に conductor 自身が agent-cli registry に登録済である
+    // ことを保証する。タイムアウト時は warn のみで sub-agent spawn に進む。
+    if !conductor_sdk::workspace::wait_for_registry(domain, 15_000) {
+        eprintln!(
+            "[warn] conductor {domain} did not register within 15s — \
+             check {} for agent-cli startup errors",
+            log_path.display()
+        );
+    }
+
     // Phase 55 — launch resident sub-agents (planner / designer) for this
     // conductor. Failures are logged but not fatal: the conductor itself is
     // already up and Phase 54 design.v1 stubs gracefully fall back when a
-    // sub-agent isn't reachable.
+    // sub-agent isn't reachable. Phase 84 では `spawn_agent_cli` 内で
+    // `wait_for_registry` を呼び出し、起動完了を確認した上で次の peer に進む。
     if let Some((_, agents)) = RESIDENT_SUB_AGENTS.iter().find(|(d, _)| *d == domain) {
         for (persona_root, peer_name) in *agents {
             if let Err(e) = spawn_agent_cli(persona_root, peer_name).await {

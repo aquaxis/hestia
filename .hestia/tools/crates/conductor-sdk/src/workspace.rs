@@ -140,6 +140,48 @@ pub fn agent_cli_peer_alive(peer_name: &str) -> bool {
     })
 }
 
+/// Phase 84f — strict subagent モード判定。
+///
+/// env `HESTIA_STRICT_SUBAGENT=1` 設定時、各 conductor の `<domain>.design.v1`
+/// handler は `phase55b-fallback` ではなく `subagent_unavailable` + halt を
+/// 返却する。Phase 83 で発見した「fallback が steady-state 化」問題への対処。
+///
+/// 既定（未設定）では Phase 55b 互換動作（fallback で `input_required` 返却）を維持し、
+/// strict モードは test 環境 / CI で sub-agent 起動不全を早期検出する目的で使用する。
+pub fn strict_subagent_enabled() -> bool {
+    std::env::var("HESTIA_STRICT_SUBAGENT")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+/// Phase 84 — registry 登録確定までの待機。
+///
+/// `agent-cli list` を polling して `peer_name` が registry に登録されるまで
+/// 最大 `timeout_ms` ミリ秒待機する。返却:
+/// - `true`  ... 期限内に登録確認
+/// - `false` ... timeout または agent-cli 不在
+///
+/// 用途: `spawn_agent_cli` から子プロセス spawn 直後に呼出し、agent-cli が
+/// IPC ready になるまでブロックすることで、後続の design.v1 / dispatch から
+/// 即座に peer 委譲できる状態を保証する。
+///
+/// Test override: `HESTIA_PEER_ALIVE_FORCE` が設定されている場合は
+/// `agent_cli_peer_alive` の判定をそのまま使用（テスト互換性）。
+pub fn wait_for_registry(peer_name: &str, timeout_ms: u64) -> bool {
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_millis(timeout_ms);
+    let interval = std::time::Duration::from_millis(200);
+    loop {
+        if agent_cli_peer_alive(peer_name) {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(interval);
+    }
+}
+
 /// Phase 80 — dispatch_*.v1 完了後に ai-reviewer を auto-spawn する汎用ヘルパ。
 ///
 /// 各 conductor の `<domain>.dispatch_*.v1` メソッド末尾から呼出可能で、ai-reviewer に
