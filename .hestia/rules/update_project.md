@@ -5,7 +5,7 @@ description: hestia agent が update_ai サイクルで従う更新規約。`.ai
 
 # Hestia Agent Update Guidelines (Phase 81)
 
-このファイルは hestia agent が **update_ai サイクル**（`<workspace>/instruction.md` 更新検出時、または上位から「現状反映」依頼を受けたとき）で参照する規約です。プロジェクト管理 AI 用の `.aiprj/rules/update_project.md` とは独立した hestia 文脈の実体です。
+このファイルは hestia agent が **update_ai サイクル**（上位から「現状反映」依頼を受けたとき、または上位指示と現行 `<workspace>/requirements.md` の内容差分検出時、Phase 89 用語統一）で参照する規約です。プロジェクト管理 AI 用の `.aiprj/rules/update_project.md` とは独立した hestia 文脈の実体です。
 
 ---
 
@@ -13,9 +13,11 @@ description: hestia agent が update_ai サイクルで従う更新規約。`.ai
 
 agent は以下のいずれかを検出した場合に update_ai サイクルへ遷移します:
 
-1. `<workspace>/instruction.md` の mtime が前回読込以降に変化
-2. 上位 conductor から `agent-cli send` で「update / refresh / reload」相当の prompt 受信
+1. 上位 conductor から `agent-cli send` で「update / refresh / reload」相当の prompt 受信
+2. 上位指示と現行 `<workspace>/requirements.md` の内容差分検出
 3. 自身の責務範囲内で workspace 内成果物の不整合を検出（Article 3 参照）
+
+（Phase 89 用語統一により旧 mtime 監視ベースのトリガーは廃止、上記 3 系統に整理）
 
 判定は exec_job サイクル内でも周期的に行います（毎 prompt 受信時）。
 

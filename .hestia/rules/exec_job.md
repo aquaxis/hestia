@@ -14,8 +14,8 @@ description: hestia agent が exec_job サイクルで従う実行規約。`.aip
 agent は次の優先順で作業の根拠を取得します:
 
 1. **ペルソナ責務**: `.hestia/personas/<self>.md` の `name` / `description` フィールドが示す責務範囲
-2. **workspace 状態**: `<workspace>/instruction.md` および `<workspace>/agent.log`（過去の対話履歴）
-3. **上位 prompt**: 直近に受信した `agent-cli send` の text フィールド
+2. **workspace 状態**: `<workspace>/{requirements,design,tasks}.md`（自己実行サイクルで生成済の 3 文書）および `<workspace>/agent.log`（過去の対話履歴）
+3. **上位 prompt**: 直近に受信した `agent-cli send` の text フィールド（上位指示はすべて本経路に統合、Phase 89 用語統一）
 
 `.aiprj/AI_PRJ_REQUIREMENTS.md` 等のプロジェクト管理 AI 用文書は **参照しません**（Phase 22 P-1 / Phase 81 P-3 規約）。
 

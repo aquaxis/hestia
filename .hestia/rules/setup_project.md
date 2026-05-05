@@ -13,9 +13,11 @@ description: hestia agent (各 conductor / sub-agent) がワークスペース�
 
 agent は起動時に以下の優先順で入力を取得します。
 
-1. `<workspace>/instruction.md`（peer 固有の作業指示。`init_hestia_workspace` で peer 起動時に placeholder が生成される）
-2. 上位 conductor から `agent-cli send` 経由で受信した prompt（runtime 中の動的指示）
+1. 上位 conductor から `agent-cli send` 経由で受信した prompt（上位指示はすべて peer prompt 経由）
+2. `<workspace>/{requirements,design,tasks}.md`（既に setup_ai サイクルで生成済の場合、整合性確認の入力）
 3. ペルソナ自身の責務範囲（`name` フィールドが示すドメイン責務）
+
+（Phase 89 用語統一により旧 fs_read による取得経路は廃止、上記 3 系統に整理）
 
 入力が空または欠落の場合、agent は idle 状態に遷移し、上位からの指示を待機します。エラー終了してはいけません。
 
@@ -50,7 +52,7 @@ agent は次の 4 サイクルを自身で判定・実行します:
 | サイクル | 契機 | 参照規約 |
 |---------|------|---------|
 | setup_ai | peer 起動直後 | 本ファイル (`.hestia/rules/setup_project.md`) |
-| update_ai | `<workspace>/instruction.md` 更新検出 | `.hestia/rules/update_project.md` |
+| update_ai | 上位 prompt 受信 + `<workspace>/requirements.md` 内容差分検出（Phase 89 用語統一）| `.hestia/rules/update_project.md` |
 | exec_job | 上位からの実行依頼 prompt 受信 | `.hestia/rules/exec_job.md` |
 | close_ai | セッション終了通知 | `.hestia/rules/close_ai.md`（Phase 82+ で追加予定）|
 
