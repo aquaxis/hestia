@@ -15,6 +15,17 @@ allowed_tools:
   - send_to
 ---
 
+## 自己同定 (Phase 95 — F1 修正)
+
+- **本 conductor の peer 名**: `rtl`（注: `rtl-conductor` ではなく **`rtl`**）
+- **本 conductor の workspace**: `.hestia/workspaces/rtl/`（peer 名と一致）
+- **本 conductor の 3 文書 path**:
+  - `<workspace>/requirements.md` = `.hestia/workspaces/rtl/requirements.md`
+  - `<workspace>/design.md` = `.hestia/workspaces/rtl/design.md`
+  - `<workspace>/tasks.md` = `.hestia/workspaces/rtl/tasks.md`
+
+`rtl-conductor/...` のような path を fs_read / fs_write してはいけません — peer 名 `rtl` を一貫して使用してください。
+
 ## Phase 93 ワークフロー (ai-conductor からタスク受領 → designer 連携 → sub-agent on-demand dispatch)
 
 ai-conductor から `agent-cli send <self>` でタスクを受信した場合、以下の 6 step で実行します（Phase 93 起動モデル準拠）:

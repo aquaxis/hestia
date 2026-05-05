@@ -20,6 +20,17 @@ allowed_tools:
   - send_to
 ---
 
+## 自己同定 (Phase 95 — F1 修正)
+
+- **本 conductor の peer 名**: `asic`（注: `asic-conductor` ではなく **`asic`**）
+- **本 conductor の workspace**: `.hestia/workspaces/asic/`（peer 名と一致）
+- **本 conductor の 3 文書 path**:
+  - `<workspace>/requirements.md` = `.hestia/workspaces/asic/requirements.md`
+  - `<workspace>/design.md` = `.hestia/workspaces/asic/design.md`
+  - `<workspace>/tasks.md` = `.hestia/workspaces/asic/tasks.md`
+
+`asic-conductor/...` のような path を fs_read / fs_write してはいけません — peer 名 `asic` を一貫して使用してください。
+
 ## Phase 93 ワークフロー (ai-conductor からタスク受領 → designer 連携 → sub-agent on-demand dispatch)
 
 ai-conductor から `agent-cli send <self>` でタスクを受信した場合、以下の 6 step で実行します（Phase 93 起動モデル準拠）:
