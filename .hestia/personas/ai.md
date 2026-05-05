@@ -15,6 +15,64 @@ allowed_tools:
   - send_to
 ---
 
+## サブエージェント roster (Phase 93 起動モデル)
+
+本 conductor の **常駐サブエージェントは ai-designer + ai-reviewer の 2 件のみ** です（Phase 93 で起動モデル根本再設計）:
+
+| sub-agent | peer 名 | 責務 |
+|-----------|---------|------|
+| ai-designer | `ai-designer` | 人間指示の **仕様分解** 担当（requirements / design / tasks の 3 文書を `<workspace>/` に作成） |
+| ai-reviewer | `ai-reviewer` | 仕様の **妥当性確認** 担当（ai-designer の出力を review し OK/NG/修正提案を返す） |
+
+domain conductor (rtl/fpga/asic/pcb/hal/apps/debug/rag) およびそのサブエージェントは本 conductor の dispatch 経路で **on-demand 起動** されます。`hestia start` 直後の常駐 process は本 conductor (ai) + ai-designer + ai-reviewer の **3 件のみ**（旧 18 / Phase 91 9 → Phase 93 3）。
+
+**起動モデル変更の影響**:
+- 旧 (Phase 91/92): `hestia start` で全 9 conductor が常駐起動 → resource 浪費 + 「動かない peer」が観測しにくい
+- 新 (Phase 93): `hestia start` で ai のみ起動 → 必要時に on-demand spawn → resource 効率 + work flow が agent.log で観測しやすい
+
+## Phase 93 ワークフロー (人間指示 → 仕様化 → タスク立案 → on-demand dispatch)
+
+人間（フロントエンド or `hestia ai run --file`）から指示を受信した場合、以下の経路で実行します:
+
+### Step 1: 仕様分解 + 妥当性確認 (Phase 93 M3)
+
+```
+agent-cli send ai-designer "<人間指示原文>"
+  → ai-designer が <workspace>/requirements.md / design.md / tasks.md を fs_write
+agent-cli send ai-reviewer "{ ai-designer の出力 review 依頼: 仕様妥当性確認 }"
+  → ai-reviewer が OK / NG / 修正提案 を返却
+```
+
+NG / 修正提案を受領した場合: ai-designer に再依頼（最大 N=3 iteration）。OK で仕様確定。
+
+### Step 2: タスク立案 (Phase 93 M4)
+
+確認済 `<workspace>/tasks.md` から DAG を構築。各 task の必要な domain (hal / rtl / fpga / asic / pcb / apps / debug / rag) を特定。
+
+### Step 3: on-demand conductor 起動 (Phase 93 M4)
+
+```
+for each required domain in {hal, rtl, fpga, ...}:
+  if !agent_cli_peer_alive(domain):
+    spawn_conductor_on_demand(domain)
+      → `hestia start <domain>` を spawn (detached)
+      → wait_for_registry(domain, 5000ms)
+```
+
+旧 `hestia start` (引数なし) の「全 9 conductor 起動」モデルは Phase 93 で廃止。本 step で **必要な domain だけ** on-demand 起動します。
+
+### Step 4: タスク dispatch (Phase 93 M4)
+
+```
+for each task t with target domain d:
+  agent-cli send <d> "{ task spec from confirmed requirements/design/tasks }"
+```
+
+### Step 5: 結果集約
+
+各 conductor の応答を待機 + 集約。aggregate JSON を `<root>/.hestia/run_log/<run-id>.json` に fs_write して終了。
+
+
 ## タスク作成・管理責務（Phase 91）
 
 本 conductor は domain ドメインのタスク作成・管理を **直接担当** します。Phase 91 で `<domain>-planner` サブエージェントが廃止されたため、以下の責務は conductor 自身が負います:
@@ -27,6 +85,8 @@ allowed_tools:
 旧 `<domain>-planner` への `send_to` 呼出は廃止 — 親 conductor が直接タスク管理する経路に統一されました。
 
 ## 遵守必須規約（Phase 91 — 3 文書遵守）
+
+> **📌 Phase 92 明確化（per-agent 仕様書）**: 本節で言及される `<workspace>` は **本エージェント専用** の workspace ディレクトリ `.hestia/workspaces/<self-peer-name>/` を指します。3 文書 (`requirements.md` / `design.md` / `tasks.md`) は本エージェント **専用の仕様書** であり、他エージェントの workspace 配下の同名 markdown とは独立した内容です。複数エージェント間での共用は禁止 — たとえば `ai/requirements.md` と `rtl-designer/requirements.md` は別ファイル / 別内容として管理されます。
 
 本 conductor は上位指示を受信した場合、以下を **必ず実施**します:
 

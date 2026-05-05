@@ -183,18 +183,19 @@ const GROUP1_DOMAINS: &[&str] = &[
 /// Specialized sub-agents (synthesizer, implementer, signoff, tester,
 /// programmer, schematic, layout, validator, builder, session, analyzer,
 /// quality, archivist, search) are reachable via `spawn-subagent` on demand.
-// Phase 91: planner サブエージェント 9 件を削除（タスク作成・管理は各 conductor が直接担当）
-// 常駐起動 sub-agent は designer のみ（9 conductor × 1 = 9 件）
+// Phase 93: 起動モデル根本再設計 — `hestia start` で ai-conductor のみ起動
+// （旧 18 件 / Phase 91 9 件 → 3 件常駐: ai + ai-designer + ai-reviewer）。
+// domain conductor (rtl/fpga/asic/pcb/hal/apps/debug/rag) およびその sub-agent は
+// ai-conductor が dispatch 時に on-demand 起動する経路に変更。
+//
+// ai-conductor の常駐サブエージェントは ai-designer + ai-reviewer の 2 件のみ:
+// - ai-designer: 人間指示の仕様分解担当
+// - ai-reviewer: 仕様の妥当性確認担当
 const RESIDENT_SUB_AGENTS: &[(&str, &[(&str, &str)])] = &[
-    ("ai",    &[("ai-designer", "ai-designer")]),
-    ("rtl",   &[("rtl-designer", "rtl-designer")]),
-    ("fpga",  &[("fpga-designer", "fpga-designer")]),
-    ("asic",  &[("asic-designer", "asic-designer")]),
-    ("pcb",   &[("pcb-designer", "pcb-designer")]),
-    ("hal",   &[("hal-designer", "hal-designer")]),
-    ("apps",  &[("apps-designer", "apps-designer")]),
-    ("debug", &[("debug-designer", "debug-designer")]),
-    ("rag",   &[("rag-designer", "rag-designer")]),
+    ("ai", &[
+        ("ai-designer", "ai-designer"),
+        ("ai-reviewer", "ai-reviewer"),
+    ]),
 ];
 
 /// Maximum time to wait for ai-conductor readiness (seconds).
@@ -240,39 +241,32 @@ fn workspace_path(domain: &str) -> PathBuf {
         .join(domain)
 }
 
-/// Phase 81 — Initialize per-peer hestia workspace (replaces Phase 57's
-/// `init_aiprj_workspace`).
+/// Phase 81 → Phase 92 — Initialize per-peer hestia workspace.
 ///
 /// Phase 22 P-1 (rules 隔離) → Phase 57 P-2 (`.aiprj/rules` symlink 共有)
 /// → Phase 81 **P-3** (`.hestia/rules/` への hestia agent 向け解釈変更版を配置、
-/// `.aiprj/` 直接参照を排除) の進化に伴う改名 + ロジック変更。
+/// `.aiprj/` 直接参照を排除) → Phase 89 (`.hestia/rules/` から
+/// `<workspace>/instruction.md` 取得記述削除) → Phase 91 (起動規約を
+/// combined execution に変更) → **Phase 92** (`<workspace>/instruction.md`
+/// placeholder 生成を完全廃止) の進化に伴うロジック変更。
 ///
-/// 各 peer (conductor or sub-agent) に `<workspace>/instruction.md` placeholder
-/// のみ生成。`.aiprj/rules` への symlink は生成しない — agent は project-root
-/// の `<root>/.hestia/rules/` を共有参照する。これにより hestia ランタイムは
-/// `.aiprj/` 不在環境（end user 配布版、CI 環境等）でも完全動作可能となる。
+/// Phase 92 で workspace ディレクトリ作成のみを担う関数に simplify。agent は
+/// 上位指示を peer prompt 経由のみで受信し、3 文書 (`requirements.md` /
+/// `design.md` / `tasks.md`) は agent 自身が setup_ai サイクル時に必要に応じて
+/// fs_write で作成する（per-agent / 共用ではない / Phase 91 遵守必須化 +
+/// Phase 92 明確化）。
 ///
 /// Failures are non-fatal — they're logged but don't block conductor startup.
 fn init_hestia_workspace(peer_name: &str) {
     let workspace = workspace_path(peer_name);
     if let Err(e) = std::fs::create_dir_all(&workspace) {
         eprintln!("[warn] failed to create {}: {e}", workspace.display());
-        return;
     }
-
-    let instruction = workspace.join("instruction.md");
-    if !instruction.exists() {
-        let placeholder = format!(
-            "# Instruction for peer `{peer_name}`\n\n\
-             Phase 81 placeholder — populated by ai-conductor or upstream peers \
-             when delegation occurs. The agent self-executes setup_ai / \
-             update_ai / exec_job / close_ai cycles by referencing \
-             `<root>/.hestia/rules/` (Phase 81 P-3).\n"
-        );
-        if let Err(e) = std::fs::write(&instruction, placeholder) {
-            eprintln!("[warn] failed to write {}: {e}", instruction.display());
-        }
-    }
+    // Phase 92: instruction.md placeholder 生成を廃止。
+    // 旧 Phase 81 placeholder は agent が読み込まない dead file 状態だった
+    // （Phase 89 で .hestia/rules/ から取得記述削除、Phase 91 で combined execution
+    // に変更された結果）。Phase 92 で生成自体を廃止し、filesystem を simplify。
+    let _ = peer_name; // peer_name は logging で使われていたが Phase 92 で不要化
 }
 
 /// Phase 55 — Spawn an agent-cli process for a given persona file + peer name.
@@ -529,22 +523,26 @@ async fn wait_for_ai_readiness() -> Result<()> {
 }
 
 async fn start_all_conductors() -> Result<()> {
-    // Group 0: ai-conductor を最優先で起動し、readiness を待機
+    // Phase 93 起動モデル再設計:
+    // `hestia start` (引数なし) は ai-conductor のみ起動する。
+    // ai-conductor が人間指示を受信した時点で domain conductor (rtl/fpga/asic/...)
+    // を on-demand 起動する経路に統一（spawn_conductor_on_demand 経由）。
+    // 旧仕様の「全 9 conductor を並列起動」は廃止。手動起動が必要な場合は
+    // `hestia start <domain>` で個別 spawn 可能（fallback 経路）。
     start_conductor("ai").await?;
     wait_for_ai_readiness().await?;
 
-    // Group 1: 残り 8 conductor を並列起動
-    let mut handles = Vec::new();
-    for domain in GROUP1_DOMAINS {
-        let h = tokio::spawn(async move { start_conductor(domain).await });
-        handles.push(h);
-    }
-
-    for h in handles {
-        h.await.map_err(|e| anyhow::anyhow!("task join error: {e}"))??;
-    }
-
-    println!("All conductors started (running in background via agent-cli)");
+    println!("ai-conductor started (Phase 93: ai-conductor only at startup)");
+    println!(
+        "  → ai-conductor + ai-designer + ai-reviewer の 3 process が常駐起動"
+    );
+    println!(
+        "  → domain conductor (rtl/fpga/asic/pcb/hal/apps/debug/rag) は ai-conductor が"
+    );
+    println!(
+        "    dispatch 時に on-demand 起動 (Phase 93 起動モデル)"
+    );
+    let _ = GROUP1_DOMAINS; // Phase 93: 起動時 spawn から除外、参照のみ保持
     println!(
         "[Phase 48] Activity logs: workspace agent.log captures only the agent-cli banner."
     );

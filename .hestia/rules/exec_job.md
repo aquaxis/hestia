@@ -41,6 +41,11 @@ agent は workspace 内 3 文書および project root 配下の成果物の **�
 
 ---
 
+
+**Phase 92 明確化**: 第一段の 3 文書 (`requirements.md` / `design.md` / `tasks.md`) は **各エージェント専用** であり、`.hestia/workspaces/<peer>/` 配下に各々独立して存在します。他エージェントの 3 文書との共用 / 参照共有は禁止です（per-agent 仕様書）。
+
+---
+
 ## Article 3: 進捗の記録
 
 agent は明示的な fs_write による進捗記録を行いません。代わりに:

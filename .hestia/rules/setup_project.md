@@ -37,6 +37,11 @@ agent はペルソナの責務範囲内で **3 文書 + workspace 内および p
 
 ---
 
+
+**Phase 92 明確化**: 各 persona 階層の 3 文書 (`requirements.md` / `design.md` / `tasks.md`) はそのエージェントの workspace ディレクトリ専用 (`.hestia/workspaces/<peer>/`) であり、他エージェントの 3 文書とは独立しています。共用配置 (`<root>/requirements.md` 等の project root 直下や複数エージェント間の参照共有) は禁止です。たとえば `ai/requirements.md` と `rtl-designer/requirements.md` は別ファイル / 別内容として管理されます。
+
+---
+
 ## Article 3: テンプレート埋め込み禁止（Phase 42 継承）
 
 `.hestia/tools/` 配下の handler ソースに HDL / 制約 / TCL / レジスタマップ等のドメイン固有テンプレートを埋め込んではいけません。LLM (ai-conductor / designer 等) が `fs_write` で動的生成し、handler は実ツール起動 (verilator / Vivado / yosys 等) のみ担当します。

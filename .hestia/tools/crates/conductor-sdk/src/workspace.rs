@@ -275,6 +275,51 @@ pub fn agent_cli_send(peer_name: &str, text: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Phase 93 — Spawn a domain conductor on-demand via `hestia start <domain>`.
+///
+/// Phase 93 起動モデル再設計の一環: `hestia start` (引数なし) は ai-conductor のみを
+/// 起動し、domain conductor (rtl/fpga/asic/pcb/hal/apps/debug/rag) は ai-conductor が
+/// dispatch 時に本ヘルパで on-demand 起動する。
+///
+/// 動作:
+/// 1. `agent_cli_peer_alive(domain)` で生存確認
+/// 2. 不在なら `hestia start <domain>` を spawn（detached / fire-and-forget）
+/// 3. `wait_for_registry(domain, 5000ms)` で registry 登録完了を待機
+/// 4. 戻り値: 起動成功なら `Ok(())`、registry 登録失敗なら `Err`
+///
+/// 既に生存中の peer に対しては no-op（Ok 返却）。
+///
+/// 環境変数:
+/// - `HESTIA_PEER_SEND_NOOP=1` — test 用に spawn を skip して Ok を返す
+pub fn spawn_conductor_on_demand(domain: &str) -> Result<(), String> {
+    if std::env::var("HESTIA_PEER_SEND_NOOP").as_deref() == Ok("1") {
+        return Ok(());
+    }
+    if agent_cli_peer_alive(domain) {
+        return Ok(()); // 既に起動中
+    }
+    // detached spawn: `hestia start <domain>` を background で起動
+    let result = std::process::Command::new("hestia")
+        .arg("start")
+        .arg(domain)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .stdin(std::process::Stdio::null())
+        .spawn();
+    if let Err(e) = result {
+        return Err(format!(
+            "spawn_conductor_on_demand({domain}): hestia start spawn failed: {e}"
+        ));
+    }
+    // registry 登録完了を待機（最大 5 秒）
+    if !wait_for_registry(domain, 5000) {
+        return Err(format!(
+            "spawn_conductor_on_demand({domain}): registry timeout 5000ms"
+        ));
+    }
+    Ok(())
+}
+
 /// Look up an executable in `PATH` without taking on a `which` crate dependency.
 pub fn find_in_path(name: &str) -> Option<PathBuf> {
     if let Some(slash) = name.find('/') {

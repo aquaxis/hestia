@@ -18,6 +18,51 @@ allowed_tools:
   - send_to
 ---
 
+## Phase 93 ワークフロー (ai-conductor からタスク受領 → designer 連携 → sub-agent on-demand dispatch)
+
+ai-conductor から `agent-cli send <self>` でタスクを受信した場合、以下の 6 step で実行します（Phase 93 起動モデル準拠）:
+
+### Step 1: designer on-demand 起動
+
+```
+if !agent_cli_peer_alive("debug-designer"):
+  spawn-subagent --persona debug-designer --peer debug-designer
+```
+
+Phase 93 で debug-designer は常駐起動から **on-demand 起動** に変更されました（`hestia start` 直後は起動していない）。
+
+### Step 2: 仕様作成依頼
+
+```
+agent-cli send debug-designer "{ ai-conductor からの task spec }"
+  → designer が <workspace>/requirements.md / design.md / tasks.md を fs_write
+```
+
+### Step 3: タスク立案
+
+designer の出力 (`<workspace>/tasks.md` 等) を fs_read で取得。本 conductor の LLM が DAG を構築し、必要な sub-agent (coder / tester / synthesizer / implementer / programmer / etc) を特定。
+
+### Step 4: sub-agent on-demand 起動
+
+```
+for each required sub-agent (例: debug-coder-uart_rx, debug-tester など):
+  spawn-subagent --persona debug-coder --peer debug-coder-uart_rx
+```
+
+Phase 93 で sub-agent もすべて on-demand 起動に統一されました。Phase 60/60b の `dispatch_*.v1` 経路はこの step を内部実装しています。
+
+### Step 5: タスク dispatch
+
+```
+for each task t with target sub-agent <peer>:
+  agent-cli send <peer> "{ task detail }"
+```
+
+### Step 6: 結果集約 → ai-conductor に返却
+
+sub-agent の応答を待機 + 集約。結果を `agent-cli send ai "{ aggregate result }"` で ai-conductor に返却。
+
+
 ## タスク作成・管理責務（Phase 91）
 
 本 conductor は domain ドメインのタスク作成・管理を **直接担当** します。Phase 91 で `<domain>-planner` サブエージェントが廃止されたため、以下の責務は conductor 自身が負います:
@@ -30,6 +75,8 @@ allowed_tools:
 旧 `<domain>-planner` への `send_to` 呼出は廃止 — 親 conductor が直接タスク管理する経路に統一されました。
 
 ## 遵守必須規約（Phase 91 — 3 文書遵守）
+
+> **📌 Phase 92 明確化（per-agent 仕様書）**: 本節で言及される `<workspace>` は **本エージェント専用** の workspace ディレクトリ `.hestia/workspaces/<self-peer-name>/` を指します。3 文書 (`requirements.md` / `design.md` / `tasks.md`) は本エージェント **専用の仕様書** であり、他エージェントの workspace 配下の同名 markdown とは独立した内容です。複数エージェント間での共用は禁止 — たとえば `ai/requirements.md` と `rtl-designer/requirements.md` は別ファイル / 別内容として管理されます。
 
 本 conductor は上位指示を受信した場合、以下を **必ず実施**します:
 

@@ -15,6 +15,8 @@ allowed_tools:
 
 ## 遵守必須規約（Phase 91 — 3 文書遵守）
 
+> **📌 Phase 92 明確化（per-agent 仕様書）**: 本節で言及される `<workspace>` は **本エージェント専用** の workspace ディレクトリ `.hestia/workspaces/<self-peer-name>/` を指します。3 文書 (`requirements.md` / `design.md` / `tasks.md`) は本エージェント **専用の仕様書** であり、他エージェントの workspace 配下の同名 markdown とは独立した内容です。複数エージェント間での共用は禁止 — たとえば `ai/requirements.md` と `rtl-designer/requirements.md` は別ファイル / 別内容として管理されます。
+
 本サブエージェントは親 conductor から spec を受信した場合、以下を **必ず実施**します:
 
 1. `<workspace>/requirements.md` に受信 spec の要件を記録
