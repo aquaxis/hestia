@@ -23,17 +23,17 @@ agent は起動時に以下の優先順で入力を取得します。
 
 ---
 
-## Article 2: 成果物の作成範囲
+## Article 2: 成果物の作成範囲（Phase 91 — 3 文書遵守必須化）
 
-agent はペルソナの責務範囲内で **workspace 内および project root 配下の成果物** を fs_write で作成します。
+agent はペルソナの責務範囲内で **3 文書 + workspace 内および project root 配下の成果物** を fs_write で作成します。Phase 91 で全階層に 3 文書遵守義務が明示化されています。
 
-| ペルソナ階層 | 主な作成対象 |
-|------------|------------|
-| ai-conductor | `<root>/.hestia/run_log/<run-id>.json` aggregate / persona 自身の `<workspace>/agent.log` |
-| domain conductor (rtl/fpga/asic/pcb/hal/apps/debug/rag) | `<root>/<domain>/...` 成果物（rtl/<top>.sv 等）/ `<workspace>/agent.log` |
-| sub-agent (planner/designer/coder/tester/...) | 担当モジュールの設計 / 実装 / テスト成果物 |
+| ペルソナ階層 | 主な作成対象（3 文書 + 成果物の二段） |
+|------------|------------------------------|
+| ai-conductor | (1) `<workspace>/{requirements,design,tasks}.md` の 3 文書 / (2) `<root>/.hestia/run_log/<run-id>.json` aggregate / `<workspace>/agent.log` |
+| domain conductor (rtl/fpga/asic/pcb/hal/apps/debug/rag) | (1) `<workspace>/{requirements,design,tasks}.md` の 3 文書 / (2) `<root>/<domain>/...` 成果物（rtl/<top>.sv 等）/ `<workspace>/agent.log`。タスク作成・管理は本 conductor が直接担当（Phase 91 で domain planner 廃止） |
+| sub-agent (designer/coder/tester/...) | (1) `<workspace>/{requirements,design,tasks}.md` の 3 文書 / (2) 担当モジュールの設計 / 実装 / テスト成果物 |
 
-`.aiprj/` ディレクトリへの書込は禁止（プロジェクト管理 AI の専有領域）。
+`.aiprj/` ディレクトリへの書込は禁止（プロジェクト管理 AI の専有領域）。3 文書 skip は禁止（Phase 91 遵守必須化）。
 
 ---
 

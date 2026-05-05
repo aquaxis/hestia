@@ -183,16 +183,18 @@ const GROUP1_DOMAINS: &[&str] = &[
 /// Specialized sub-agents (synthesizer, implementer, signoff, tester,
 /// programmer, schematic, layout, validator, builder, session, analyzer,
 /// quality, archivist, search) are reachable via `spawn-subagent` on demand.
+// Phase 91: planner サブエージェント 9 件を削除（タスク作成・管理は各 conductor が直接担当）
+// 常駐起動 sub-agent は designer のみ（9 conductor × 1 = 9 件）
 const RESIDENT_SUB_AGENTS: &[(&str, &[(&str, &str)])] = &[
-    ("ai",    &[("ai-planner", "ai-planner"),    ("ai-designer", "ai-designer")]),
-    ("rtl",   &[("rtl-planner", "rtl-planner"),  ("rtl-designer", "rtl-designer")]),
-    ("fpga",  &[("fpga-planner", "fpga-planner"),("fpga-designer", "fpga-designer")]),
-    ("asic",  &[("asic-planner", "asic-planner"),("asic-designer", "asic-designer")]),
-    ("pcb",   &[("pcb-planner", "pcb-planner"),  ("pcb-designer", "pcb-designer")]),
-    ("hal",   &[("hal-planner", "hal-planner"),  ("hal-designer", "hal-designer")]),
-    ("apps",  &[("apps-planner", "apps-planner"),("apps-designer", "apps-designer")]),
-    ("debug", &[("debug-planner", "debug-planner"),("debug-designer", "debug-designer")]),
-    ("rag",   &[("rag-planner", "rag-planner"),  ("rag-designer", "rag-designer")]),
+    ("ai",    &[("ai-designer", "ai-designer")]),
+    ("rtl",   &[("rtl-designer", "rtl-designer")]),
+    ("fpga",  &[("fpga-designer", "fpga-designer")]),
+    ("asic",  &[("asic-designer", "asic-designer")]),
+    ("pcb",   &[("pcb-designer", "pcb-designer")]),
+    ("hal",   &[("hal-designer", "hal-designer")]),
+    ("apps",  &[("apps-designer", "apps-designer")]),
+    ("debug", &[("debug-designer", "debug-designer")]),
+    ("rag",   &[("rag-designer", "rag-designer")]),
 ];
 
 /// Maximum time to wait for ai-conductor readiness (seconds).

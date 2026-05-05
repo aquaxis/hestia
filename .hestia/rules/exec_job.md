@@ -21,15 +21,23 @@ agent は次の優先順で作業の根拠を取得します:
 
 ---
 
-## Article 2: workspace 内成果物の整合性
+## Article 2: 3 文書 + 成果物の二段整合（Phase 91 強化）
 
-agent は workspace 配下および project root 配下の成果物 (`rtl/`, `hal/`, `fpga/`, `sim/`, `debug/` 等) の **整合性** を維持します。例:
+agent は workspace 内 3 文書および project root 配下の成果物の **二段整合** を維持します:
 
+**第一段（3 文書整合）**:
+- `<workspace>/requirements.md`（受信指示の要件）
+- `<workspace>/design.md`（責務範囲の設計判断）
+- `<workspace>/tasks.md`（実施項目と進捗）
+
+3 文書間で内容が矛盾しないことを確認します。例: `requirements.md` で「UART loopback」と記載しているなら `design.md` で UART RX/TX FSM の設計、`tasks.md` でその実装タスクが対応していること。
+
+**第二段（成果物整合）**:
 - `hal/register_map.json` のレジスタ定義と `rtl/<top>.sv` のポート信号が整合すること
 - `fpga/constraints/<top>.xdc` のピン制約と `rtl/<top>.sv` のトップレベル I/O が整合すること
 - `sim/lint_report.json` の lint 結果に基づき `rtl/` 側の品質ゲートを判定すること
 
-不整合を検出した場合、agent は **上位に halt 理由付きで報告** し、独自判断で修正を試みません（責務境界 / Phase 53 ai persona 是正）。
+不整合を検出した場合、agent は **上位に halt 理由付きで報告** し、独自判断で修正を試みません（責務境界 / Phase 53 ai persona 是正）。3 文書 skip も不整合と扱います（Phase 91 遵守必須化）。
 
 ---
 

@@ -23,17 +23,17 @@ agent は以下のいずれかを検出した場合に update_ai サイクルへ
 
 ---
 
-## Article 2: 更新対象
+## Article 2: 更新対象（Phase 91 — 3 文書遵守）
 
-agent はペルソナ責務範囲内で workspace 内成果物を更新します:
+agent はペルソナ責務範囲内で **3 文書 + workspace 内成果物** を更新します。Phase 91 で全階層に 3 文書遵守義務が明示化されています:
 
-| ペルソナ階層 | 主な更新対象 |
-|------------|------------|
-| ai-conductor | `<root>/.hestia/run_log/<run-id>.json` aggregate / persona 自身の `<workspace>/agent.log` |
-| domain conductor | 担当ドメインの成果物 (`<root>/<domain>/...`) / handler 経由で生成された artifact |
-| sub-agent | 担当モジュールの設計 / 実装 / テスト成果物 |
+| ペルソナ階層 | 主な更新対象（3 文書 + 成果物） |
+|------------|---------------------------|
+| ai-conductor | (1) `<workspace>/{requirements,design,tasks}.md` の 3 文書 / (2) `<root>/.hestia/run_log/<run-id>.json` aggregate / `<workspace>/agent.log` |
+| domain conductor | (1) 3 文書 / (2) 担当ドメインの成果物 (`<root>/<domain>/...`) / handler 経由で生成された artifact。Phase 91 で domain planner 廃止に伴いタスク管理は本 conductor が直接担当 |
+| sub-agent | (1) 3 文書 / (2) 担当モジュールの設計 / 実装 / テスト成果物 |
 
-`.aiprj/AI_PRJ_*.md` 等のプロジェクト管理 AI 用文書は **更新しません**（責務外）。
+`.aiprj/AI_PRJ_*.md` 等のプロジェクト管理 AI 用文書は **更新しません**（責務外）。3 文書 skip は禁止（Phase 91 遵守必須化）。
 
 ---
 
