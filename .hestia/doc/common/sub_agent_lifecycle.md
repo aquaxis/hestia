@@ -81,15 +81,19 @@ agent-cli list    # 稼働中 peer 一覧取得
 
 ```
 .hestia/workspaces/<peer>/
-├── .aiprj/
-│   ├── instruction.md
-│   ├── AI_PRJ_REQUIREMENTS.md
-│   ├── AI_PRJ_DESIGN.md
-│   ├── AI_PRJ_TASKS.md
-│   ├── AI_LOG/YYYY-MM-DD_NNN.md
-│   └── rules/{setup_ai,update_ai,exec_job,close_ai}.md
+├── requirements.md     # setup_ai/update_ai サイクルで agent 自身が fs_write（Phase 89 で改名）
+├── design.md           # 同上（Phase 89 で改名）
+├── tasks.md            # 同上（Phase 89 で改名）
+├── agent.log           # agent-cli mirror 経由で自動記録（Phase 49）
 └── （作業生成物）
 ```
+
+**重要規約**:
+
+- `<workspace>/instruction.md` placeholder は **生成しない**（Phase 92 で廃止）。指示は peer prompt 経由のみで受信
+- 起動規約は project root の `.hestia/rules/{setup_project,update_project,exec_job}.md` から参照（Phase 81〜92）
+- `.aiprj/` は project 管理 AI 専有領域で、各 sub-agent workspace には作成しない（Phase 91 規約 / Phase 102 で runtime 整合化）
+- 3 文書 (`requirements.md` / `design.md` / `tasks.md`) は per-agent / 共用ではない（Phase 92 明確化）
 
 ## ヘルスチェック対象
 

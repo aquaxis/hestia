@@ -237,8 +237,9 @@ pub fn auto_review_after_dispatch(
     if !matches!(&spawn_result, Ok(o) if o.status.success()) {
         return false;
     }
+    // Phase 102 — レビュー成果物は project root 直下に書き出す (`.aiprj/` は project 管理 AI 専有領域)。
     let prompt = format!(
-        "[{dispatch_method} auto-review] parent={parent_conductor} spawned_count={spawned_count}. Review the dynamic sub-agent outputs and write `<root>/.aiprj/REVIEW_REPORT_dispatch.md`."
+        "[{dispatch_method} auto-review] parent={parent_conductor} spawned_count={spawned_count}. Review the dynamic sub-agent outputs and write `<root>/REVIEW_REPORT_dispatch.md`."
     );
     agent_cli_send("ai-reviewer", &prompt).is_ok()
 }
