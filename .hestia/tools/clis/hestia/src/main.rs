@@ -1,10 +1,12 @@
 use anyhow::{bail, Result};
 use clap::Parser;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::FromRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::{Duration, SystemTime};
 use tokio::process::Command;
 
 /// Subset of `.hestia/config.toml` consumed by `hestia start`.
@@ -75,8 +77,17 @@ enum Commands {
         /// Domain name. Omit to stop all conductors.
         domain: Option<String>,
     },
-    /// Show status of all conductor daemons
-    Status,
+    /// Show status of all conductor daemons.
+    ///
+    /// By default, columns `ID NAME STATUS PROVIDER MODEL ROLE` are
+    /// displayed. `STATUS` is one of IDLE / BUSY / WAITING / ERROR /
+    /// STARTING / UNKNOWN, derived from each agent's recent activity.
+    /// Pass `--all` to also include the `SKILLS` column.
+    Status {
+        /// Include the `SKILLS` column in the output.
+        #[arg(long, default_value_t = false)]
+        all: bool,
+    },
     /// Dispatch to hestia-ai-cli
     Ai {
         #[arg(trailing_var_arg = true)]
@@ -701,7 +712,7 @@ fn home_share_dir() -> PathBuf {
         })
 }
 
-async fn show_status() -> Result<()> {
+async fn show_status(all: bool) -> Result<()> {
     let output = Command::new("agent-cli")
         .arg("list")
         .stdout(Stdio::piped())
@@ -711,12 +722,339 @@ async fn show_status() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("failed to run agent-cli list: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    print!("{stdout}");
+    let now = SystemTime::now();
+    let statuses = collect_agent_statuses(&stdout, now);
+    print!("{}", transform_status_listing(&stdout, all, &statuses));
 
     if !output.status.success() {
         bail!("agent-cli list exited with {}", output.status);
     }
     Ok(())
+}
+
+/// Operational status of an agent, derived from its agent-cli structured log
+/// and registry membership. Displayed as a `STATUS` column by `hestia status`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AgentStatus {
+    /// Agent is registered, last activity is a completed assistant reply.
+    Idle,
+    /// Agent log was modified within the busy window and the last event is
+    /// thinking / tool_call / tool_result (response in progress).
+    Busy,
+    /// Agent has accepted a user prompt but no assistant reply has appeared.
+    Waiting,
+    /// Last tool_result reported `ok = false`.
+    Error,
+    /// Agent registered but its JSONL log is empty / unreadable / absent.
+    Starting,
+    /// State could not be determined (e.g. log read failure).
+    Unknown,
+}
+
+impl AgentStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Idle => "IDLE",
+            Self::Busy => "BUSY",
+            Self::Waiting => "WAITING",
+            Self::Error => "ERROR",
+            Self::Starting => "STARTING",
+            Self::Unknown => "UNKNOWN",
+        }
+    }
+}
+
+/// Width reserved for the `STATUS` column. Equal to the longest status string
+/// (`STARTING` = 8) so values are right-padded to a consistent width.
+const STATUS_COLUMN_WIDTH: usize = 8;
+
+/// One activity event extracted from an agent-cli structured JSONL log.
+/// Only the `kind` and (for `tool_result`) the `ok` flag are needed to
+/// classify the agent's status; the original timestamp is read separately
+/// from the file's mtime so we don't depend on a date parsing crate.
+#[derive(Debug, Clone)]
+struct StatusEvent {
+    kind: String,
+    ok: Option<bool>,
+}
+
+/// Pure status classifier — easy to unit-test without touching the filesystem.
+fn derive_status_from_log(events: &[StatusEvent], mtime_age: Duration) -> AgentStatus {
+    let Some(last) = events.last() else {
+        return AgentStatus::Starting;
+    };
+    if last.kind == "tool_result" && last.ok == Some(false) {
+        return AgentStatus::Error;
+    }
+    if mtime_age < Duration::from_secs(30) {
+        match last.kind.as_str() {
+            "thinking" | "tool_call" | "tool_result" => return AgentStatus::Busy,
+            _ => {}
+        }
+    }
+    match last.kind.as_str() {
+        "user" => AgentStatus::Waiting,
+        "assistant" => AgentStatus::Idle,
+        _ => AgentStatus::Idle,
+    }
+}
+
+/// Resolve the latest `*.jsonl` file under `~/.local/share/agent-cli/logs/<agent_id>/`
+/// and classify the agent's current status from its tail. Returns
+/// [`AgentStatus::Starting`] when the directory or jsonl is missing,
+/// [`AgentStatus::Unknown`] only for unexpected I/O errors.
+fn derive_agent_status(agent_id: &str, now: SystemTime) -> AgentStatus {
+    let Some(home) = dirs::home_dir() else {
+        return AgentStatus::Unknown;
+    };
+    let log_dir = home.join(".local/share/agent-cli/logs").join(agent_id);
+    let Ok(entries) = std::fs::read_dir(&log_dir) else {
+        return AgentStatus::Starting;
+    };
+    let latest = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".jsonl"))
+        .filter_map(|e| {
+            let mtime = e.metadata().ok()?.modified().ok()?;
+            Some((mtime, e.path()))
+        })
+        .max_by_key(|(t, _)| *t);
+    let Some((mtime, path)) = latest else {
+        return AgentStatus::Starting;
+    };
+    let mtime_age = now.duration_since(mtime).unwrap_or(Duration::ZERO);
+    let tail = match read_tail_string(&path, 8192) {
+        Ok(s) => s,
+        Err(_) => return AgentStatus::Unknown,
+    };
+    let events = parse_status_events(&tail);
+    derive_status_from_log(&events, mtime_age)
+}
+
+/// Read the trailing `max_bytes` of `path` as UTF-8. The boundary is realigned
+/// to the next valid char boundary so a partial multi-byte sequence at the
+/// start is dropped silently.
+fn read_tail_string(path: &Path, max_bytes: u64) -> std::io::Result<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(path)?;
+    let len = f.metadata()?.len();
+    let from = len.saturating_sub(max_bytes);
+    f.seek(SeekFrom::Start(from))?;
+    let mut buf = Vec::with_capacity(max_bytes.min(len) as usize);
+    f.read_to_end(&mut buf)?;
+    let mut start = 0usize;
+    while start < buf.len() && (buf[start] & 0xC0) == 0x80 {
+        start += 1;
+    }
+    Ok(String::from_utf8_lossy(&buf[start..]).into_owned())
+}
+
+/// Parse newline-delimited JSON event lines from a JSONL tail. The very first
+/// line is dropped if its parse fails, since a tail-seek can split a line in
+/// the middle. Subsequent unparseable lines are skipped silently.
+fn parse_status_events(tail: &str) -> Vec<StatusEvent> {
+    let mut events = Vec::new();
+    let mut lines = tail.lines();
+    if let Some(first) = lines.next() {
+        if let Some(ev) = parse_event_line(first) {
+            events.push(ev);
+        }
+    }
+    for line in lines {
+        if let Some(ev) = parse_event_line(line) {
+            events.push(ev);
+        }
+    }
+    events
+}
+
+fn parse_event_line(line: &str) -> Option<StatusEvent> {
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    let kind = v.get("kind")?.as_str()?.to_string();
+    let ok = v.get("ok").and_then(|x| x.as_bool());
+    Some(StatusEvent { kind, ok })
+}
+
+/// Resolve the `STATUS` value for every data row in `agent-cli list` output by
+/// reading each agent's structured log. Header / blank / non-`agent-*` rows
+/// are ignored.
+fn collect_agent_statuses(stdout: &str, now: SystemTime) -> HashMap<String, AgentStatus> {
+    let mut out = HashMap::new();
+    for line in stdout.lines().skip(1) {
+        let id = line.split_whitespace().next().unwrap_or("");
+        if id.starts_with("agent-") && !out.contains_key(id) {
+            let status = derive_agent_status(id, now);
+            out.insert(id.to_string(), status);
+        }
+    }
+    out
+}
+
+/// Drop the `SKILLS` column when `all` is false, then insert a `STATUS`
+/// column right after `NAME`. The end result for the default mode is
+/// `ID NAME STATUS PROVIDER MODEL ROLE`; with `--all` the `SKILLS` column is
+/// kept and we get `ID NAME STATUS PROVIDER MODEL ROLE SKILLS`.
+///
+/// Column geometry is inferred from "≥2 consecutive spaces" inter-column gaps
+/// (single spaces only occur inside a column value), so multi-byte ROLE
+/// values don't throw off the cut points.
+///
+/// `statuses` maps an agent ID to its derived [`AgentStatus`]; rows whose ID
+/// is not present (e.g. malformed) are rendered as `UNKNOWN`. The header row
+/// is always rendered with literal `STATUS`. If the header is missing `ID` or
+/// has fewer than two column separators, the input is returned unmodified.
+fn transform_status_listing(
+    stdout: &str,
+    all: bool,
+    statuses: &HashMap<String, AgentStatus>,
+) -> String {
+    if stdout.is_empty() {
+        return String::new();
+    }
+    let header = stdout.lines().next().unwrap_or("");
+    if !header.contains("ID") {
+        return stdout.to_string();
+    }
+    let intermediate = strip_skills_column(stdout, all);
+    insert_status_column(&intermediate, statuses)
+}
+
+/// First half of [`transform_status_listing`]: drop the trailing `SKILLS`
+/// column when `all` is false, otherwise pass the input through unchanged.
+fn strip_skills_column(stdout: &str, all: bool) -> String {
+    if all || !stdout.lines().next().unwrap_or("").contains("SKILLS") {
+        return stdout.to_string();
+    }
+    let header = stdout.lines().next().unwrap_or("");
+    let separators = count_column_separators(header);
+    if separators == 0 {
+        return stdout.to_string();
+    }
+    let trailing_newline = stdout.ends_with('\n');
+    let mut out = String::with_capacity(stdout.len());
+    for line in stdout.lines() {
+        out.push_str(cut_before_nth_separator(line, separators));
+        out.push('\n');
+    }
+    if !trailing_newline && out.ends_with('\n') {
+        out.pop();
+    }
+    out
+}
+
+/// Second half of [`transform_status_listing`]: insert a `STATUS` column at
+/// the position of the column **after** the `NAME` column (i.e. the byte
+/// offset where `PROVIDER` would start). The original `NAME` column padding
+/// is kept intact so `STATUS` values line up vertically across rows even when
+/// `NAME` values have differing display widths.
+fn insert_status_column(text: &str, statuses: &HashMap<String, AgentStatus>) -> String {
+    let trailing_newline = text.ends_with('\n');
+    let mut out = String::with_capacity(text.len() + 256);
+    for (idx, line) in text.lines().enumerate() {
+        match nth_separator_end(line, 2) {
+            Some(p) => {
+                let status_str = if idx == 0 {
+                    "STATUS"
+                } else {
+                    let id = line.split_whitespace().next().unwrap_or("");
+                    statuses
+                        .get(id)
+                        .map(|s| s.as_str())
+                        .unwrap_or(AgentStatus::Unknown.as_str())
+                };
+                out.push_str(&line[..p]);
+                out.push_str(status_str);
+                let pad = STATUS_COLUMN_WIDTH.saturating_sub(status_str.len());
+                for _ in 0..pad {
+                    out.push(' ');
+                }
+                out.push_str("  ");
+                out.push_str(&line[p..]);
+            }
+            None => out.push_str(line),
+        }
+        out.push('\n');
+    }
+    if !trailing_newline && out.ends_with('\n') {
+        out.pop();
+    }
+    out
+}
+
+/// Byte offset just after the `n`-th inter-column gap — i.e. the first
+/// byte of the (`n` + 1)-th column. Counts only gaps followed by content
+/// (mirrors [`count_column_separators`]).
+fn nth_separator_end(line: &str, n: usize) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let mut seen = 0usize;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b' ' {
+            let start = i;
+            while i < bytes.len() && bytes[i] == b' ' {
+                i += 1;
+            }
+            if i - start >= 2 && i < bytes.len() {
+                seen += 1;
+                if seen == n {
+                    return Some(i);
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
+/// Number of 2+space runs in `line` that are followed by non-whitespace
+/// content. Trailing whitespace runs are excluded so the header (which is
+/// often padded out with spaces after `SKILLS`) reports the true column count
+/// minus one (= number of inter-column separators).
+fn count_column_separators(line: &str) -> usize {
+    let bytes = line.as_bytes();
+    let mut count = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b' ' {
+            let start = i;
+            while i < bytes.len() && bytes[i] == b' ' {
+                i += 1;
+            }
+            if i - start >= 2 && i < bytes.len() {
+                count += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    count
+}
+
+/// Cut `line` at the start of its `n`-th 2+space run and trim trailing
+/// whitespace from the head. If `line` has fewer than `n` such runs, the
+/// whole line (trimmed) is returned.
+fn cut_before_nth_separator(line: &str, n: usize) -> &str {
+    let bytes = line.as_bytes();
+    let mut seen = 0usize;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b' ' {
+            let start = i;
+            while i < bytes.len() && bytes[i] == b' ' {
+                i += 1;
+            }
+            if i - start >= 2 {
+                seen += 1;
+                if seen == n {
+                    return line[..start].trim_end();
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+    line.trim_end()
 }
 
 /// Resolve the latest agent-cli structured-log path for `domain` (Phase 48).
@@ -980,7 +1318,7 @@ async fn main() -> Result<()> {
             Some(d) => stop_conductor(&d).await?,
             None => stop_all_conductors().await?,
         },
-        Commands::Status => show_status().await?,
+        Commands::Status { all } => show_status(all).await?,
         Commands::Ai { args } => dispatch_cli("ai", &args)?,
         Commands::Rtl { args } => dispatch_cli("rtl", &args)?,
         Commands::Fpga { args } => dispatch_cli("fpga", &args)?,
@@ -1002,4 +1340,181 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        derive_status_from_log, parse_status_events, transform_status_listing, AgentStatus,
+        StatusEvent,
+    };
+    use std::collections::HashMap;
+    use std::time::Duration;
+
+    const HEADER: &str =
+        "ID                                NAME       PROVIDER  MODEL          ROLE             SKILLS\n";
+    const ROW_LONG: &str =
+        "agent-01KQX72WJY3Z59RN77YXB9Z02P  ai         ollama    glm-5.1:cloud  Hestia メタ      指示テキスト解析, DAG 構築\n";
+    const ROW_NO_SKILLS: &str =
+        "agent-01KQX72WT3DY2GKWSDDXA9QK0K  ai-review  ollama    glm-5.1:cloud  AI reviewer      \n";
+
+    fn statuses_for(pairs: &[(&str, AgentStatus)]) -> HashMap<String, AgentStatus> {
+        pairs.iter().map(|(k, v)| ((*k).to_string(), *v)).collect()
+    }
+
+    // ─── transform_status_listing ────────────────────────────────────────
+
+    #[test]
+    fn transform_inserts_status_and_drops_skills_by_default() {
+        let input = format!("{HEADER}{ROW_LONG}{ROW_NO_SKILLS}");
+        let map = statuses_for(&[
+            ("agent-01KQX72WJY3Z59RN77YXB9Z02P", AgentStatus::Busy),
+            ("agent-01KQX72WT3DY2GKWSDDXA9QK0K", AgentStatus::Idle),
+        ]);
+        let out = transform_status_listing(&input, false, &map);
+        assert!(!out.contains("SKILLS"), "SKILLS header dropped");
+        assert!(!out.contains("DAG 構築"), "SKILLS payload dropped");
+        assert!(out.contains("STATUS"), "STATUS header inserted");
+        assert!(out.contains("BUSY"), "BUSY status row visible");
+        assert!(out.contains("IDLE"), "IDLE status row visible");
+        assert!(out.contains("Hestia メタ"), "ROLE value retained");
+        assert!(out.ends_with('\n'), "trailing newline preserved");
+    }
+
+    #[test]
+    fn transform_keeps_skills_column_when_all() {
+        let input = format!("{HEADER}{ROW_LONG}");
+        let map = statuses_for(&[(
+            "agent-01KQX72WJY3Z59RN77YXB9Z02P",
+            AgentStatus::Idle,
+        )]);
+        let out = transform_status_listing(&input, true, &map);
+        assert!(out.contains("SKILLS"), "SKILLS header kept");
+        assert!(out.contains("DAG 構築"), "SKILLS payload kept");
+        assert!(out.contains("STATUS"), "STATUS still inserted");
+        assert!(out.contains("IDLE"));
+    }
+
+    #[test]
+    fn transform_uses_unknown_for_missing_id() {
+        let input = format!("{HEADER}{ROW_LONG}");
+        let map: HashMap<String, AgentStatus> = HashMap::new();
+        let out = transform_status_listing(&input, false, &map);
+        assert!(out.contains("UNKNOWN"), "missing ID falls back to UNKNOWN");
+    }
+
+    #[test]
+    fn transform_passes_through_when_header_missing_id() {
+        let input = "no header here\nrow\n";
+        let map: HashMap<String, AgentStatus> = HashMap::new();
+        let out = transform_status_listing(input, false, &map);
+        assert_eq!(out, input);
+    }
+
+    #[test]
+    fn transform_handles_empty_input() {
+        let map: HashMap<String, AgentStatus> = HashMap::new();
+        assert_eq!(transform_status_listing("", false, &map), "");
+        assert_eq!(transform_status_listing("", true, &map), "");
+    }
+
+    #[test]
+    fn transform_preserves_no_trailing_newline() {
+        let raw = format!("{HEADER}{ROW_LONG}");
+        let input = raw.trim_end_matches('\n');
+        let map = statuses_for(&[(
+            "agent-01KQX72WJY3Z59RN77YXB9Z02P",
+            AgentStatus::Idle,
+        )]);
+        let out = transform_status_listing(input, false, &map);
+        assert!(!out.ends_with('\n'), "no trailing newline preserved");
+        assert!(out.contains("STATUS"));
+    }
+
+    // ─── derive_status_from_log ──────────────────────────────────────────
+
+    fn ev(kind: &str, ok: Option<bool>) -> StatusEvent {
+        StatusEvent {
+            kind: kind.to_string(),
+            ok,
+        }
+    }
+
+    #[test]
+    fn derive_starting_when_no_events() {
+        assert_eq!(
+            derive_status_from_log(&[], Duration::from_secs(0)),
+            AgentStatus::Starting
+        );
+    }
+
+    #[test]
+    fn derive_idle_when_last_assistant_and_old() {
+        let events = vec![ev("user", None), ev("assistant", None)];
+        assert_eq!(
+            derive_status_from_log(&events, Duration::from_secs(120)),
+            AgentStatus::Idle
+        );
+    }
+
+    #[test]
+    fn derive_waiting_when_last_user() {
+        let events = vec![ev("assistant", None), ev("user", None)];
+        assert_eq!(
+            derive_status_from_log(&events, Duration::from_secs(120)),
+            AgentStatus::Waiting
+        );
+    }
+
+    #[test]
+    fn derive_busy_when_recent_tool_call() {
+        let events = vec![ev("user", None), ev("thinking", None), ev("tool_call", None)];
+        assert_eq!(
+            derive_status_from_log(&events, Duration::from_secs(5)),
+            AgentStatus::Busy
+        );
+    }
+
+    #[test]
+    fn derive_error_when_tool_result_failed() {
+        let events = vec![ev("tool_call", None), ev("tool_result", Some(false))];
+        assert_eq!(
+            derive_status_from_log(&events, Duration::from_secs(1)),
+            AgentStatus::Error
+        );
+    }
+
+    #[test]
+    fn derive_busy_overrides_old_assistant_with_recent_tool_use() {
+        // mtime is recent and the very last event is a thinking step, so the
+        // agent is mid-flight even though older events include `assistant`.
+        let events = vec![
+            ev("assistant", None),
+            ev("user", None),
+            ev("thinking", None),
+        ];
+        assert_eq!(
+            derive_status_from_log(&events, Duration::from_secs(10)),
+            AgentStatus::Busy
+        );
+    }
+
+    // ─── parse_status_events ─────────────────────────────────────────────
+
+    #[test]
+    fn parse_skips_truncated_first_line() {
+        let tail = "{\"kind\": broken,\n{\"ts\":\"x\",\"kind\":\"assistant\",\"text\":\"hi\"}\n";
+        let events = parse_status_events(tail);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, "assistant");
+    }
+
+    #[test]
+    fn parse_extracts_ok_field_for_tool_result() {
+        let tail = "{\"kind\":\"tool_result\",\"ok\":false}\n";
+        let events = parse_status_events(tail);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, "tool_result");
+        assert_eq!(events[0].ok, Some(false));
+    }
 }
