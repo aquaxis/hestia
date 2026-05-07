@@ -21,7 +21,7 @@ Apps coder — アプリケーションコード実装。apps-conductor 配下�
 **複数起動規約**: 本サブエージェントは並列実行可能（多重度 N、常時 N（最大 16））。親 conductor (`apps`) は `apps-coder-<suffix>` 形式で複数インスタンスを動的起動できる:
 
 - サフィックス変数: `{module}` （例: task1 / driver / scheduler 等のモジュール名）
-- 起動例: `agent-cli run --persona-file ./.hestia/personas/apps-coder.md --name apps-coder-<suffix> --workdir .hestia/workspaces/apps-coder-<suffix>`
+- 起動例: `agent-cli run --persona-file ./.hestia/personas/apps-coder.md --name apps-coder-<suffix>`
 - 重複検査: `agent-cli list` で peer 名衝突を確認し、衝突時は別 suffix に変更
 
 ## 責務

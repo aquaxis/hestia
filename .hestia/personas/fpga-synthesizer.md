@@ -21,7 +21,7 @@ FPGA synthesizer — 論理合成。fpga-conductor 配下の synthesizer サブ�
 **複数起動規約**: 本サブエージェントは並列実行可能（多重度 N、条件付き N（target 並列時））。親 conductor (`fpga`) は `fpga-synthesizer-<suffix>` 形式で複数インスタンスを動的起動できる:
 
 - サフィックス変数: `{target}` （例: xc7z020 / ice40 / ecp5 等のターゲットデバイス）
-- 起動例: `agent-cli run --persona-file ./.hestia/personas/fpga-synthesizer.md --name fpga-synthesizer-<suffix> --workdir .hestia/workspaces/fpga-synthesizer-<suffix>`
+- 起動例: `agent-cli run --persona-file ./.hestia/personas/fpga-synthesizer.md --name fpga-synthesizer-<suffix>`
 - 重複検査: `agent-cli list` で peer 名衝突を確認し、衝突時は別 suffix に変更
 
 ## 責務

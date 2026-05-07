@@ -121,8 +121,8 @@ ai-conductor から「ARTY-A7-100T で uart_led_top の bitstream 生成 + 実�
 
 | サブエージェント | サフィックス形式 | 起動コマンド例 | サフィックス指定対象 |
 |---|---|---|---|
-| `fpga-synthesizer` | `fpga-synthesizer-{target}` | `agent-cli run --persona-file ./.hestia/personas/fpga-synthesizer.md --name fpga-synthesizer-<suffix> --workdir .hestia/workspaces/fpga-synthesizer-<suffix>` | ターゲットデバイス（target 並列時のみ） |
-| `fpga-implementer` | `fpga-implementer-{target}` | `agent-cli run --persona-file ./.hestia/personas/fpga-implementer.md --name fpga-implementer-<suffix> --workdir .hestia/workspaces/fpga-implementer-<suffix>` | ターゲットデバイス（target 並列時のみ） |
+| `fpga-synthesizer` | `fpga-synthesizer-{target}` | `agent-cli run --persona-file ./.hestia/personas/fpga-synthesizer.md --name fpga-synthesizer-<suffix>` | ターゲットデバイス（target 並列時のみ） |
+| `fpga-implementer` | `fpga-implementer-{target}` | `agent-cli run --persona-file ./.hestia/personas/fpga-implementer.md --name fpga-implementer-<suffix>` | ターゲットデバイス（target 並列時のみ） |
 
 サフィックス決定規約:
 

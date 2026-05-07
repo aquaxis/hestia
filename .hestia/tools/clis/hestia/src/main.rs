@@ -169,6 +169,16 @@ enum Commands {
         #[arg(long)]
         name: String,
     },
+    /// Forcefully terminate every hestia-started agent process (SIGKILL).
+    ///
+    /// More aggressive than `stop`: sends SIGKILL to every running
+    /// `agent-cli run ...` child (conductors + sub-agents) and to every
+    /// `hestia mirror ...` helper. Use when `stop` doesn't return cleanly,
+    /// after a crash leaves stale child processes behind, or when an
+    /// immediate full shutdown is required without waiting for graceful
+    /// termination. The current `hestia kill` process is excluded so the
+    /// command can complete and report a summary.
+    Kill,
 }
 
 /// Domain names that have a corresponding conductor.
@@ -601,6 +611,98 @@ async fn stop_conductor(domain: &str) -> Result<()> {
 async fn stop_all_conductors() -> Result<()> {
     for domain in DOMAINS {
         stop_conductor(domain).await?;
+    }
+    Ok(())
+}
+
+/// Patterns that identify processes hestia is responsible for killing.
+/// `pgrep -f <pattern>` is used to enumerate matching PIDs on the host.
+const KILL_PATTERNS: &[&str] = &["agent-cli run", "hestia mirror"];
+
+/// Pure helper: turn a list of `(pattern, pgrep_stdout)` pairs into the ordered
+/// list of `(pattern, pid)` targets to SIGKILL, skipping the caller's own PID
+/// and de-duplicating PIDs that match multiple patterns.
+///
+/// The function is intentionally I/O-free so it can be unit-tested without
+/// spawning real processes. Lines that don't parse to a `u32` are silently
+/// dropped; trailing whitespace and blank lines are tolerated.
+fn select_kill_targets(
+    pgrep_outputs: &[(&str, &str)],
+    self_pid: u32,
+) -> Vec<(String, u32)> {
+    let mut seen: Vec<u32> = Vec::new();
+    let mut targets: Vec<(String, u32)> = Vec::new();
+    for (pattern, stdout) in pgrep_outputs {
+        for line in stdout.lines() {
+            let Ok(pid) = line.trim().parse::<u32>() else {
+                continue;
+            };
+            if pid == self_pid {
+                continue;
+            }
+            if seen.contains(&pid) {
+                continue;
+            }
+            seen.push(pid);
+            targets.push(((*pattern).to_string(), pid));
+        }
+    }
+    targets
+}
+
+/// Force-terminate every hestia-started agent process (SIGKILL).
+///
+/// Implementation:
+/// 1. Run `pgrep -f <pattern>` for each entry in [`KILL_PATTERNS`] and collect
+///    the stdout. A pgrep failure is logged as a warning but doesn't abort the
+///    overall command.
+/// 2. Compute the kill list with [`select_kill_targets`]: own PID excluded,
+///    duplicates removed across patterns.
+/// 3. Send SIGKILL to each target via `libc::kill` and tally success / failure.
+///    Per-PID failures (already exited, permission denied) are logged and
+///    skipped — they don't fail the whole command.
+async fn kill_all_processes() -> Result<()> {
+    let mut outputs: Vec<(&str, String)> = Vec::with_capacity(KILL_PATTERNS.len());
+    for pattern in KILL_PATTERNS {
+        let result = Command::new("pgrep")
+            .arg("-f")
+            .arg(pattern)
+            .output()
+            .await;
+        match result {
+            Ok(out) => {
+                let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+                outputs.push((pattern, stdout));
+            }
+            Err(e) => {
+                eprintln!("[warn] pgrep failed for pattern '{pattern}': {e}");
+                outputs.push((pattern, String::new()));
+            }
+        }
+    }
+
+    let outputs_ref: Vec<(&str, &str)> =
+        outputs.iter().map(|(p, s)| (*p, s.as_str())).collect();
+    let targets = select_kill_targets(&outputs_ref, std::process::id());
+
+    let mut ok: u32 = 0;
+    let mut ng: u32 = 0;
+    for (pattern, pid) in &targets {
+        let r = unsafe { libc::kill(*pid as i32, libc::SIGKILL) };
+        if r == 0 {
+            ok += 1;
+            println!("Killed PID {pid} (matches '{pattern}')");
+        } else {
+            ng += 1;
+            let err = std::io::Error::last_os_error();
+            eprintln!("[warn] failed to kill PID {pid}: {err}");
+        }
+    }
+
+    if targets.is_empty() {
+        println!("No matching hestia processes found.");
+    } else {
+        println!("Killed {ok} process(es) (failed: {ng}).");
     }
     Ok(())
 }
@@ -1337,6 +1439,7 @@ async fn main() -> Result<()> {
             let persona_root = persona.strip_suffix(".md").unwrap_or(&persona);
             spawn_agent_cli(persona_root, &name).await?;
         }
+        Commands::Kill => kill_all_processes().await?,
     }
 
     Ok(())
@@ -1345,8 +1448,8 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        derive_status_from_log, parse_status_events, transform_status_listing, AgentStatus,
-        StatusEvent,
+        derive_status_from_log, parse_status_events, select_kill_targets,
+        transform_status_listing, AgentStatus, StatusEvent,
     };
     use std::collections::HashMap;
     use std::time::Duration;
@@ -1516,5 +1619,46 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, "tool_result");
         assert_eq!(events[0].ok, Some(false));
+    }
+
+    // ─── select_kill_targets ─────────────────────────────────────────────
+
+    #[test]
+    fn select_kill_targets_returns_empty_for_empty_input() {
+        let targets = select_kill_targets(&[], 999);
+        assert!(targets.is_empty());
+    }
+
+    #[test]
+    fn select_kill_targets_excludes_self_pid() {
+        let inputs = [("agent-cli run", "999\n1000\n")];
+        let targets = select_kill_targets(&inputs, 999);
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].0, "agent-cli run");
+        assert_eq!(targets[0].1, 1000);
+    }
+
+    #[test]
+    fn select_kill_targets_dedups_pids_across_patterns() {
+        // PID 100 matches both patterns; should appear only once, paired with
+        // the pattern that found it first.
+        let inputs = [
+            ("agent-cli run", "100\n200\n"),
+            ("hestia mirror", "100\n300\n"),
+        ];
+        let targets = select_kill_targets(&inputs, 999);
+        assert_eq!(targets.len(), 3);
+        assert_eq!(targets[0], ("agent-cli run".to_string(), 100));
+        assert_eq!(targets[1], ("agent-cli run".to_string(), 200));
+        assert_eq!(targets[2], ("hestia mirror".to_string(), 300));
+    }
+
+    #[test]
+    fn select_kill_targets_ignores_non_numeric_lines_and_whitespace() {
+        let inputs = [("agent-cli run", "  300  \nfoo\n\n400\n")];
+        let targets = select_kill_targets(&inputs, 999);
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].1, 300);
+        assert_eq!(targets[1].1, 400);
     }
 }

@@ -116,8 +116,8 @@ ai-conductor から「UART RX/TX FSM の RTL 実装 + シミュレーション�
 
 | サブエージェント | サフィックス形式 | 起動コマンド例 | サフィックス指定対象 |
 |---|---|---|---|
-| `rtl-coder` | `rtl-coder-{module}` | `agent-cli run --persona-file ./.hestia/personas/rtl-coder.md --name rtl-coder-<suffix> --workdir .hestia/workspaces/rtl-coder-<suffix>` | fifo / uart / spi 等のモジュール名 |
-| `rtl-tester` | `rtl-tester-{n}` | `agent-cli run --persona-file ./.hestia/personas/rtl-tester.md --name rtl-tester-<suffix> --workdir .hestia/workspaces/rtl-tester-<suffix>` | 1 / 2 / 3 等の序数 |
+| `rtl-coder` | `rtl-coder-{module}` | `agent-cli run --persona-file ./.hestia/personas/rtl-coder.md --name rtl-coder-<suffix>` | fifo / uart / spi 等のモジュール名 |
+| `rtl-tester` | `rtl-tester-{n}` | `agent-cli run --persona-file ./.hestia/personas/rtl-tester.md --name rtl-tester-<suffix>` | 1 / 2 / 3 等の序数 |
 
 サフィックス決定規約:
 

@@ -116,7 +116,7 @@ ai-conductor から「ARTY-A7 上の UART LED ファームウェア実装 + テ�
 
 | サブエージェント | サフィックス形式 | 起動コマンド例 | サフィックス指定対象 |
 |---|---|---|---|
-| `apps-coder` | `apps-coder-{module}` | `agent-cli run --persona-file ./.hestia/personas/apps-coder.md --name apps-coder-<suffix> --workdir .hestia/workspaces/apps-coder-<suffix>` | task1 / driver / scheduler 等のモジュール名 |
+| `apps-coder` | `apps-coder-{module}` | `agent-cli run --persona-file ./.hestia/personas/apps-coder.md --name apps-coder-<suffix>` | task1 / driver / scheduler 等のモジュール名 |
 
 サフィックス決定規約:
 

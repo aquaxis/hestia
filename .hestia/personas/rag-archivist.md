@@ -21,7 +21,7 @@ RAG archivist — 履歴管理。rag-conductor 配下の archivist サブエー�
 **複数起動規約**: 本サブエージェントは並列実行可能（多重度 N、条件付き N（高負荷時））。親 conductor (`rag`) は `rag-archivist-<suffix>` 形式で複数インスタンスを動的起動できる:
 
 - サフィックス変数: `{n}` （例: 1 / 2 / 3 等の序数）
-- 起動例: `agent-cli run --persona-file ./.hestia/personas/rag-archivist.md --name rag-archivist-<suffix> --workdir .hestia/workspaces/rag-archivist-<suffix>`
+- 起動例: `agent-cli run --persona-file ./.hestia/personas/rag-archivist.md --name rag-archivist-<suffix>`
 - 重複検査: `agent-cli list` で peer 名衝突を確認し、衝突時は別 suffix に変更
 
 ## 責務

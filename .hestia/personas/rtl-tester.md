@@ -22,7 +22,7 @@ RTL tester — テストベンチ実装 + シミュレーション検証。rtl-c
 **複数起動規約**: 本サブエージェントは並列実行可能（多重度 N、条件付き N（必要に応じて並列化可））。親 conductor (`rtl`) は `rtl-tester-<suffix>` 形式で複数インスタンスを動的起動できる:
 
 - サフィックス変数: `{n}` （例: 1 / 2 / 3 等の序数）
-- 起動例: `agent-cli run --persona-file ./.hestia/personas/rtl-tester.md --name rtl-tester-<suffix> --workdir .hestia/workspaces/rtl-tester-<suffix>`
+- 起動例: `agent-cli run --persona-file ./.hestia/personas/rtl-tester.md --name rtl-tester-<suffix>`
 - 重複検査: `agent-cli list` で peer 名衝突を確認し、衝突時は別 suffix に変更
 
 ## 責務

@@ -118,9 +118,9 @@ ai-conductor から「設計仕様書 PDF を index に取込 + 類似タスク�
 
 | サブエージェント | サフィックス形式 | 起動コマンド例 | サフィックス指定対象 |
 |---|---|---|---|
-| `rag-ingest` | `rag-ingest-{source}` | `agent-cli run --persona-file ./.hestia/personas/rag-ingest.md --name rag-ingest-<suffix> --workdir .hestia/workspaces/rag-ingest-<suffix>` | ソース識別子 |
-| `rag-search` | `rag-search-{n}` | `agent-cli run --persona-file ./.hestia/personas/rag-search.md --name rag-search-<suffix> --workdir .hestia/workspaces/rag-search-<suffix>` | 1 / 2 / 3 等の序数（高負荷時のみ） |
-| `rag-archivist` | `rag-archivist-{n}` | `agent-cli run --persona-file ./.hestia/personas/rag-archivist.md --name rag-archivist-<suffix> --workdir .hestia/workspaces/rag-archivist-<suffix>` | 1 / 2 / 3 等の序数（高負荷時のみ） |
+| `rag-ingest` | `rag-ingest-{source}` | `agent-cli run --persona-file ./.hestia/personas/rag-ingest.md --name rag-ingest-<suffix>` | ソース識別子 |
+| `rag-search` | `rag-search-{n}` | `agent-cli run --persona-file ./.hestia/personas/rag-search.md --name rag-search-<suffix>` | 1 / 2 / 3 等の序数（高負荷時のみ） |
+| `rag-archivist` | `rag-archivist-{n}` | `agent-cli run --persona-file ./.hestia/personas/rag-archivist.md --name rag-archivist-<suffix>` | 1 / 2 / 3 等の序数（高負荷時のみ） |
 
 サフィックス決定規約:
 

@@ -22,7 +22,7 @@ RTL coder — HDL コード実装。rtl-conductor 配下の coder サブエー�
 **複数起動規約**: 本サブエージェントは並列実行可能（多重度 N、常時 N（最大 16））。親 conductor (`rtl`) は `rtl-coder-<suffix>` 形式で複数インスタンスを動的起動できる:
 
 - サフィックス変数: `{module}` （例: fifo / uart / spi 等のモジュール名）
-- 起動例: `agent-cli run --persona-file ./.hestia/personas/rtl-coder.md --name rtl-coder-<suffix> --workdir .hestia/workspaces/rtl-coder-<suffix>`
+- 起動例: `agent-cli run --persona-file ./.hestia/personas/rtl-coder.md --name rtl-coder-<suffix>`
 - 重複検査: `agent-cli list` で peer 名衝突を確認し、衝突時は別 suffix に変更
 
 ## 責務

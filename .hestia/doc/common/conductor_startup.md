@@ -15,7 +15,7 @@ ai-conductor を単独起動し、`system.health.v1` が `status="online"` を�
 
 ```bash
 # Group 0
-agent-cli run --persona-file ./.hestia/personas/ai.md --name ai --workdir .hestia/workspaces/ai &
+agent-cli run --persona-file ./.hestia/personas/ai.md --name ai &
 # system.health.v1 が status="online" を返すまで待機
 agent-cli send ai '{"method":"system.health.v1"}'
 ```
@@ -26,14 +26,14 @@ ai-conductor の readiness 確認後、以下 8 conductor を並列起動する�
 
 ```bash
 # Group 1（8 並列）
-agent-cli run --persona-file ./.hestia/personas/rtl.md --name rtl --workdir .hestia/workspaces/rtl &
-agent-cli run --persona-file ./.hestia/personas/fpga.md --name fpga --workdir .hestia/workspaces/fpga &
-agent-cli run --persona-file ./.hestia/personas/asic.md --name asic --workdir .hestia/workspaces/asic &
-agent-cli run --persona-file ./.hestia/personas/pcb.md --name pcb --workdir .hestia/workspaces/pcb &
-agent-cli run --persona-file ./.hestia/personas/hal.md --name hal --workdir .hestia/workspaces/hal &
-agent-cli run --persona-file ./.hestia/personas/apps.md --name apps --workdir .hestia/workspaces/apps &
-agent-cli run --persona-file ./.hestia/personas/debug.md --name debug --workdir .hestia/workspaces/debug &
-agent-cli run --persona-file ./.hestia/personas/rag.md --name rag --workdir .hestia/workspaces/rag &
+agent-cli run --persona-file ./.hestia/personas/rtl.md --name rtl &
+agent-cli run --persona-file ./.hestia/personas/fpga.md --name fpga &
+agent-cli run --persona-file ./.hestia/personas/asic.md --name asic &
+agent-cli run --persona-file ./.hestia/personas/pcb.md --name pcb &
+agent-cli run --persona-file ./.hestia/personas/hal.md --name hal &
+agent-cli run --persona-file ./.hestia/personas/apps.md --name apps &
+agent-cli run --persona-file ./.hestia/personas/debug.md --name debug &
+agent-cli run --persona-file ./.hestia/personas/rag.md --name rag &
 ```
 
 ## systemd ユーザーユニット（推奨）
@@ -50,7 +50,7 @@ systemd ユニットを使用することで、以下を自動化:
 - 障害時の自動再起動
 - ログ管理（journald 連携）
 
-各 systemd ユニットの `ExecStart` は `agent-cli run --persona-file ./.hestia/personas/<conductor>.md --name <conductor> --workdir .hestia/workspaces/<conductor>` を使用する。
+各 systemd ユニットの `ExecStart` は `agent-cli run --persona-file ./.hestia/personas/<conductor>.md --name <conductor>` を使用する。
 
 ## readiness チェック詳細
 

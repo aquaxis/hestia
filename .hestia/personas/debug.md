@@ -118,7 +118,7 @@ ai-conductor から「ARTY-A7 上で UART loopback テスト」を受信 → deb
 
 | サブエージェント | サフィックス形式 | 起動コマンド例 | サフィックス指定対象 |
 |---|---|---|---|
-| `debug-session-manager` | `debug-session-manager-{target}` | `agent-cli run --persona-file ./.hestia/personas/debug-session-manager.md --name debug-session-manager-<suffix> --workdir .hestia/workspaces/debug-session-manager-<suffix>` | ターゲットデバイス（target ごと） |
+| `debug-session-manager` | `debug-session-manager-{target}` | `agent-cli run --persona-file ./.hestia/personas/debug-session-manager.md --name debug-session-manager-<suffix>` | ターゲットデバイス（target ごと） |
 
 サフィックス決定規約:
 

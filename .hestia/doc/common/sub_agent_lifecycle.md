@@ -15,7 +15,7 @@
 agent-cli run \
     --persona-file ./.hestia/personas/<peer>.md \
     --name <peer> \
-    --workdir .hestia/workspaces/<peer>
+   
 ```
 
 ### 終了条件

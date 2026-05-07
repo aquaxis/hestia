@@ -114,7 +114,7 @@ ai-conductor から「UART LED peripheral の HAL 生成 + Rust コード出力�
 
 | サブエージェント | サフィックス形式 | 起動コマンド例 | サフィックス指定対象 |
 |---|---|---|---|
-| `hal-coder` | `hal-coder-{lang}` | `agent-cli run --persona-file ./.hestia/personas/hal-coder.md --name hal-coder-<suffix> --workdir .hestia/workspaces/hal-coder-<suffix>` | c / rust / python / svd 等の出力言語 |
+| `hal-coder` | `hal-coder-{lang}` | `agent-cli run --persona-file ./.hestia/personas/hal-coder.md --name hal-coder-<suffix>` | c / rust / python / svd 等の出力言語 |
 
 サフィックス決定規約:
 
