@@ -9,7 +9,8 @@ BINARIES := hestia \
 	hestia-apps-conductor hestia-debug-conductor hestia-rag-conductor \
 	hestia-ai-cli hestia-rtl-cli hestia-fpga-cli hestia-asic-cli \
 	hestia-pcb-cli hestia-hal-cli hestia-apps-cli hestia-debug-cli \
-	hestia-rag-cli
+	hestia-rag-cli \
+	claude-cli-shim
 
 .PHONY: all build test lint fmt fmt-fix check install clean help
 

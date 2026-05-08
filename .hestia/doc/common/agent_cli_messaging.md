@@ -1,11 +1,13 @@
 # agent-cli 完全メッセージング仕様
 
 **対象領域**: common — 通信基盤
-**ソース**: 設計仕様書 §14, §2.3, §20
+**ソース**: 設計仕様書 §14, §2.3, §20 / Phase 113
 
 ## 概要
 
-HESTIA の全通信は agent-cli ネイティブ IPC に統一されている。本ドキュメントはトランスポート、フレーム、ペイロード形式、判定ロジックの完全な仕様を定義する。
+HESTIA の全通信は agent-cli 互換 IPC に統一されている。本ドキュメントはトランスポート、フレーム、ペイロード形式、判定ロジックの完全な仕様を定義する。
+
+**Phase 113 — Engine 切替の影響**: `.hestia/config.toml` の `[engine] type = "claude_cli_shim"` を選択した場合、peer 駆動バイナリは `claude-cli-shim` に切り替わるが、subcommand (`run` / `list` / `send` / `providers` / `doctor`) と option は agent-cli と完全互換。本仕様書のメッセージング規約 / JSONL log schema (`kind: thinking|tool_call|tool_result|user|assistant`) はそのまま適用される。詳細は [backend_switching.md](backend_switching.md) §「Engine（Phase 113）」参照。
 
 ## トランスポート
 

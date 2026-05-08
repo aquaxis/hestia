@@ -45,7 +45,7 @@ OSS ツールを優先し、プラグインシステムにより任意のベン�
 
 ### 原則8: 統一インターフェース
 
-全 conductor 間およびフロントエンド ↔ ai-conductor の通信を agent-cli ネイティブ IPC に統一する。各 conductor 自身が agent-cli プロセスとして起動された AI エージェントであり、フロントエンドも agent-cli の peer として参加する。
+全 conductor 間およびフロントエンド ↔ ai-conductor の通信を agent-cli 互換 IPC に統一する。各 conductor 自身が agent-cli 互換 engine（`agent-cli` または Phase 113 で追加された `claude-cli-shim` wrapper）プロセスとして起動された AI エージェントであり、フロントエンドも agent-cli の peer として参加する。Engine は `.hestia/config.toml` の `[engine]` セクションで切替可能（[backend_switching.md](common/backend_switching.md) 参照）。
 
 ---
 

@@ -13,7 +13,8 @@ Hestia is an integrated hardware development environment that orchestrates FPGA,
 ## Features
 
 - **9 Conductor Architecture** — Domain-specific AI agents for RTL, FPGA, ASIC, PCB, HAL, Apps, Debug, and RAG
-- **Unified IPC** — All communication via agent-cli native IPC (`agent-cli send <peer> <payload>`)
+- **Unified IPC** — All communication via agent-cli compatible IPC (`agent-cli send <peer> <payload>`)
+- **Engine Selection (Phase 113, 案 C)** — Choose the peer driver between `agent-cli` and `claude-cli-shim` (a wrapper that keeps a `claude` Code process alive) via the `[engine]` section
 - **Spec-Driven Development** — Generate HDL, constraints, and testbenches from natural language specifications
 - **Vendor Abstraction** — Unified `ToolAdapter`/`VendorAdapter` trait layer; add tools via `adapter.toml` with zero code changes
 - **Container & Local Execution** — Podman rootless containers or local execution; reproducible builds via lock files
@@ -83,7 +84,30 @@ hestia status        # Show daemon status
 
 - **Rust** 1.75+ (install via [rustup](https://rustup.rs))
 - **Linux** x86_64 (kernel 5.x+)
-- **agent-cli** (for IPC communication between conductors)
+- **Engine (one of, Phase 113)**:
+  - `agent-cli` (default, drives conductors with 4 LLM backends)
+  - `claude-cli-shim` + `claude` CLI + `ANTHROPIC_API_KEY` (案 C wrapper that uses Claude Code as the peer engine)
+
+### Engine Selection (Phase 113)
+
+Choose the peer driver via `.hestia/config.toml`:
+
+```toml
+[agent_cli]
+backend = "claude"           # agent-cli internal --provider
+model   = "claude-opus-4-7"
+
+[engine]
+# "agent_cli" (default, fully backwards compatible) | "claude_cli_shim"
+type = "claude_cli_shim"
+# binary = "/path/to/claude-cli-shim"   # defaults to type-based name
+# registry_path = "/custom/registry"    # defaults to engine-specific dir
+# log_path      = "/custom/logs"
+```
+
+- When `[engine]` is omitted, `agent-cli` is used (full backwards compatibility).
+- When `claude_cli_shim` is selected, the `claude-cli-shim` binary (and the `claude` CLI plus `ANTHROPIC_API_KEY`) must be available.
+- See `./report_claude.md` (Phase 112 investigation) for the full design rationale.
 
 ## Workspace Structure
 

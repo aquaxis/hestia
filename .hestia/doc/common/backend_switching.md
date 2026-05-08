@@ -1,13 +1,36 @@
-# LLM バックエンド切替
+# LLM バックエンド切替 / Engine 切替
 
-**対象領域**: common — agent-cli エンドポイント
-**ソース**: 設計仕様書 §20
+**対象領域**: common — peer 駆動エンジン
+**ソース**: 設計仕様書 §20 / Phase 113
 
 ## 概要
 
-HESTIA の 9 conductor および各サブエージェントは agent-cli プロセスとして実行される。agent-cli のバックエンド LLM は `config.toml` の `[agent_cli]` セクションで設定し、4 種類のバックエンドから選択可能。
+HESTIA の peer 駆動には 2 段階の切替が存在する:
 
-## 対応バックエンド
+1. **Engine 切替（Phase 113）** — peer を起動するバイナリそのものを `agent-cli` か `claude-cli-shim` から選択。`.hestia/config.toml` の `[engine]` セクションで指定。
+2. **LLM バックエンド切替** — engine が `agent-cli` の場合、agent-cli のバックエンド LLM を 4 種類から選択（`[agent_cli]` セクション）。`claude-cli-shim` engine の場合は Claude Code (Anthropic API) 単一固定。
+
+## Engine（Phase 113）
+
+| Engine | `[engine] type` 値 | バイナリ | 用途 |
+|--------|--------------------|----------|------|
+| agent-cli（既定） | `"agent_cli"` または未設定 | `agent-cli` | 4 種 LLM backend 対応、従来挙動 |
+| claude-cli-shim | `"claude_cli_shim"` | `claude-cli-shim` | Claude Code (`claude` CLI) を子プロセスで保持する wrapper、案 C |
+
+```toml
+[engine]
+# "agent_cli" (既定、後方互換) | "claude_cli_shim"
+type = "agent_cli"
+binary = ""           # 省略時は type に応じた既定 path
+registry_path = ""    # 省略時は engine 既定 (~/.local/share/<engine>/registry)
+log_path = ""         # 省略時は engine 既定 (~/.local/share/<engine>/logs)
+```
+
+`[engine]` 未設定時は `type = "agent_cli"` 既定で従来挙動と完全互換。
+
+`type = "claude_cli_shim"` を選ぶと、hestia は `claude-cli-shim run` を spawn し、shim が内部で `claude --input-format stream-json --output-format stream-json --print` を子プロセスとして保持する。registry / log は agent-cli 互換 schema で別ディレクトリに記録される。
+
+## 対応バックエンド（agent-cli engine 配下のみ）
 
 | バックエンド | `backend` 値 | 特徴 |
 |------------|-------------|------|
@@ -15,6 +38,8 @@ HESTIA の 9 conductor および各サブエージェントは agent-cli プロ�
 | OpenAI Codex | `"codex"` | OpenAI API 互換 |
 | Ollama | `"ollama"` | ローカル実行、オフライン対応 |
 | llama.cpp | `"llama_cpp"` | OpenAI 互換エンドポイント |
+
+**注**: `type = "claude_cli_shim"` の場合、本表は無関係（Claude Code 経由で Anthropic API に直結）。
 
 ## `[agent_cli]` スキーマ
 
@@ -89,6 +114,23 @@ max_tokens = 8192
 - **Codex**: `backend = "codex"` + `model = "gpt-4.1"` + `anthropic_base_url = "https://api.openai.com/v1/"`
 - **llama.cpp**: `backend = "llama_cpp"` + `anthropic_base_url = "http://localhost:8080/v1/"`
 - **LM Studio**: `backend = "llama_cpp"` + `anthropic_base_url = "http://localhost:1234/v1/"`
+
+### claude-cli-shim engine（Phase 113、Claude Code wrapper）
+
+```toml
+[engine]
+type = "claude_cli_shim"
+# binary = "/home/hidemi/.local/bin/claude-cli-shim"   # 省略時 PATH 解決
+# registry_path = "/custom/path"                       # 共有時のみ指定
+# log_path = "/custom/path"
+```
+
+前提:
+- `claude` CLI がインストール済み（`which claude`）
+- `ANTHROPIC_API_KEY` が環境変数に設定済み
+- `claude-cli-shim` バイナリが PATH に存在（`cargo build` 後 `target/debug/claude-cli-shim`）
+
+cross-engine 通信が必要な場合は `[agent_cli]` `[engine] registry_path` を共有 path にして agent-cli と registry を同期させる（peer 名衝突に注意）。
 
 ## テスト戦略
 

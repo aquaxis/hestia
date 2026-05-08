@@ -93,8 +93,9 @@ install_binaries() {
         mkdir -p "${PREFIX}" 2>/dev/null || sudo mkdir -p "${PREFIX}"
     fi
 
+    # Phase 113 — install hestia* および claude-cli-shim (案 C wrapper) の両方を対象とする。
     count=0
-    for bin in "${src}"/hestia*; do
+    for bin in "${src}"/hestia* "${src}"/claude-cli-shim; do
         [ -f "${bin}" ] || continue
         case "${bin}" in *.d) continue ;; esac
         [ -x "${bin}" ] || continue

@@ -11,7 +11,7 @@
 |------|--------|------|
 | adapter.toml | アダプター・トムル | 新規ベンダーツールをコード変更なしで統合するための宣言型設定ファイル（§1.2 原則2）|
 | AdapterRegistry | アダプター・レジストリ | Capability ベースのアダプター登録・解決エンジン（§2.2）|
-| agent-cli | エージェント・クライ | Hestia の各 conductor が AI エージェントとして起動する Rust 製 CLI バイナリ。peer 間 IPC を提供（§20）|
+| agent-cli | エージェント・クライ | Hestia の各 conductor が AI エージェントとして起動する Rust 製 CLI バイナリ（既定 engine）。peer 間 IPC を提供（§20）。Phase 113 以降は `claude-cli-shim` と切替可能。|
 | ai-conductor | AI コンダクター | メタオーケストレーター。全 conductor を統括し、人間との唯一の入口（§3）|
 | apps-conductor | アップス・コンダクター | アプリケーションソフトウェア（FW / RTOS / ベアメタル）開発オーケストレーター（§9）|
 | ASIC | エーシック | Application-Specific Integrated Circuit。特定用途向け集積回路（§6）|
@@ -30,6 +30,7 @@
 |------|--------|------|
 | Capability | ケイパビリティ | アダプターが提供する機能の宣言。AdapterRegistry が Capability ベースでアダプターを解決（§2.2）|
 | CLI | シーエルアイ | Command Line Interface。Hestia は統合 CLI（`hestia`）+ 各 conductor 個別 CLI（10種）を提供（§15）|
+| claude-cli-shim | クロード・クライ・シム | Claude Code (`claude` CLI) を agent-cli 互換 API でラップする wrapper クレート（Phase 113、案 C）。`run` / `list` / `send` / `providers` / `doctor` を提供し、内部で `claude` プロセスを永続 session として保持。`.hestia/config.toml` の `[engine] type = "claude_cli_shim"` で選択。|
 | Conductor | コンダクター | 各設計領域の専用オーケストレーター。Hestia では9種（ai / rtl / fpga / asic / pcb / hal / apps / debug / rag）が存在（§2.2）|
 | ConductorId | コンダクター・アイディ | conductor を一意に識別する文字列。agent-cli の peer 名と同一（`ai` / `rtl` / `fpga` 等）（§2.3）|
 | conductor-sdk | コンダクター・エスディーケー | conductor 共通 SDK クレート（§2.2）|
@@ -50,6 +51,7 @@
 | 用語 | 読み方 | 定義 |
 |------|--------|------|
 | Efinity | エフィニティ | Efinix 社の FPGA 開発ツール。Python API ベース（§5.7）|
+| Engine | エンジン | peer 駆動バイナリの選択（Phase 113）。`agent-cli`（既定）と `claude-cli-shim`（案 C wrapper）の 2 種から `.hestia/config.toml` の `[engine] type` で選択。LLM バックエンド切替（agent-cli 配下の 4 種）とは別レイヤ。|
 
 ## F
 

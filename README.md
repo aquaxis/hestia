@@ -11,7 +11,8 @@ Hestia（ヘスティア）は、FPGA・ASIC・PCB・HAL・組込みソフトウ
 ## 特徴
 
 - **9 Conductor アーキテクチャ** — RTL・FPGA・ASIC・PCB・HAL・Apps・Debug・RAG のドメイン特化 AI エージェント
-- **統一 IPC** — 全 Conductor 間通信を agent-cli ネイティブ IPC で統一（`agent-cli send <peer> <payload>`）
+- **統一 IPC** — 全 Conductor 間通信を agent-cli 互換 IPC で統一（`agent-cli send <peer> <payload>`）
+- **Engine 切替（Phase 113、案 C）** — `[engine] type = "agent_cli" | "claude_cli_shim"` で peer 駆動エンジンを選択可能。後者は Claude Code (`claude` CLI) を子プロセスで保持する `claude-cli-shim` wrapper
 - **仕様書駆動開発** — 自然言語仕様書から HDL コード・制約ファイル・テストベンチを **LLM が動的生成**（テンプレート埋め込み禁止、Phase 42）
 - **ベンダー非依存の抽象化** — `ToolAdapter`/`VendorAdapter` トレイトによる統一インターフェース。`adapter.toml` を書くだけでツール追加可能
 - **コンテナ & ローカル実行** — Podman rootless コンテナまたはローカル実行を選択可能。lock ファイルによるビルド再現性
