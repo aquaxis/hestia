@@ -39,6 +39,10 @@ Hestia システムの最上位 conductor として、人間（フロントエ�
 - (Phase 109) 配下 conductor の自動終了: 監視デーモンは domain conductor のタスクが全て完了し、かつ当該 conductor 配下のサブエージェントが全て終了している場合、当該 conductor に SIGTERM を送り終了させる
 - (Phase 109) ai-conductor 自身は自動終了の対象外（人間ユーザの明示的な `hestia stop ai` / `hestia kill` のみで終了）
 - (Phase 109) 重複 spawn 防止: `hestia start <domain>` は spawn 直前に `agent-cli list` を確認し、同名 peer が既登録なら spawn を skip する（ai-reviewer × N 件 等の累積を防止）
+- (Phase 110) Rescue: 監視デーモンが「再開指示後 timeout 経過 + タスク残存 + status 非稼働」と判定した peer に対し、即時 SIGKILL → 再 spawn → `<root>/.hestia/rules/update_project.md` 読込指示を送る fallback 経路を備える
+- (Phase 110) ai-conductor 自身の rescue: ai-conductor が無応答になった場合も監視デーモン（独立子プロセス）から rescue される。タイムアウトは通常 peer (120s) より長い 180s 既定（NFR-6 慎重化）。Phase 109 自動終了対象には含めない（`MonitorKind::AiConductor` 種別で区別）
+- (Phase 110) Rescue 上限: 同一 peer に対する rescue は最大 3 回 / cooldown 300 秒で抑制し、上限到達時は warn ログのみで以降は人間ユーザの介入待ちとする
+- (Phase 110) `hestia status` の STATUS 列に `THINK`（思考中）と `WAIT`（応答待ち、旧 `WAITING`）を分離表示する。BUSY は tool 実行中のみを意味するように細分化
 
 ## 上位エージェント
 
@@ -110,6 +114,10 @@ Hestia システムの最上位 conductor として、人間（フロントエ�
 - ❌ (Phase 108) cooldown を無視した再開指示の連発
 - ❌ (Phase 109) 配下サブエージェントが残存している状態で domain conductor を終了させること（順序保証違反）
 - ❌ (Phase 109) ai-conductor 自身を自動終了対象に含めること（人間ユーザの明示停止のみ許可）
+- ❌ (Phase 110) rescue 経路で SIGKILL の代わりに SIGTERM を使う（再開指示が既に無視されたコンテキストでは graceful 終了の効果が期待できない）
+- ❌ (Phase 110) rescue 上限（既定 3 回）を無視した kill-respawn の連続実行
+- ❌ (Phase 110) rescue 後に `update_project.md` 読込指示を skip すること（再起動した agent が規約を再認識せずに動き出すと一貫性が崩れる）
+- ❌ (Phase 110) ai-conductor を Phase 109 自動終了の対象に含めること（`MonitorKind::AiConductor` で除外しているため、他経路でも除外を維持する）
 
 ## 関連 path
 

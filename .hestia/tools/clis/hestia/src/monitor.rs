@@ -23,10 +23,14 @@ use super::{collect_agent_statuses, show_status, transform_status_listing, Agent
 /// 監視対象種別。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MonitorKind {
-    /// ai-designer / ai-reviewer などの常駐サブエージェント。
+    /// ai-designer / ai-reviewer などの常駐サブエージェント、または動的 sub-agent
+    /// (`<domain>-coder-*` 等)。
     Subagent,
     /// rtl / fpga / asic / pcb / hal / apps / debug / rag のうち起動中のもの。
     DomainConductor,
+    /// (Phase 110) ai-conductor (peer "ai") 専用。Phase 109 自動終了対象から除外、
+    /// Phase 108 一斉再開指示および Phase 110 rescue 対象には含める。
+    AiConductor,
 }
 
 /// 監視対象 1 件の解決結果。
@@ -108,16 +112,17 @@ pub(crate) fn workspaces_root() -> PathBuf {
         .join(".hestia/workspaces")
 }
 
-/// Phase 109 — peer 名から監視種別と親 conductor を分類する純関数。
+/// Phase 109 / 110 — peer 名から監視種別と親 conductor を分類する純関数。
 ///
 /// 戻り値: `Some((kind, parent_conductor))` または `None`（監視対象外）。
+/// - `ai` → `(AiConductor, None)`（Phase 110 で監視対象に追加）
 /// - `ai-designer` / `ai-reviewer` → `(Subagent, Some("ai"))`
 /// - `rtl` / `fpga` / ... → `(DomainConductor, None)`
 /// - `rtl-coder-uart` / `asic-signoff` 等の `<domain>-*` 形式 → `(Subagent, Some(<domain>))`
-/// - `ai`（自身）/ unknown → `None`
+/// - unknown → `None`
 pub(crate) fn classify_peer(name: &str) -> Option<(MonitorKind, Option<String>)> {
     if name == "ai" {
-        return None;
+        return Some((MonitorKind::AiConductor, None));
     }
     if SUBAGENT_PEERS.contains(&name) {
         return Some((MonitorKind::Subagent, Some("ai".to_string())));
@@ -162,6 +167,8 @@ pub(crate) fn resolve_monitor_targets(stdout: &str) -> Vec<MonitorTarget> {
 }
 
 /// 全停止判定（純関数）。targets が空 = 監視対象不在 = `false`（停止検知扱いとしない）。
+///
+/// Phase 110: `Think` (思考中) は `Busy` / `Waiting` / `Starting` と同じ稼働中扱い。
 pub(crate) fn is_all_stopped(
     targets: &[MonitorTarget],
     statuses: &HashMap<String, AgentStatus>,
@@ -175,8 +182,9 @@ pub(crate) fn is_all_stopped(
         Some(AgentStatus::Idle) => true,
         Some(AgentStatus::Error) => true,
         Some(AgentStatus::Unknown) => true,
-        // BUSY / WAITING は処理中、STARTING は起動直後（誤再開防止）。
+        // BUSY / THINK / WAIT は処理中、STARTING は起動直後（誤再開防止）。
         Some(AgentStatus::Busy) => false,
+        Some(AgentStatus::Think) => false,
         Some(AgentStatus::Waiting) => false,
         Some(AgentStatus::Starting) => false,
     })
@@ -359,11 +367,286 @@ pub(crate) fn clamp_terminate_grace(s: u64) -> u64 {
     s.clamp(0, 60)
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Phase 110 — Rescue 経路（再開指示後タイムアウト → kill → 再 spawn → update_project.md 読込指示）
+// ─────────────────────────────────────────────────────────────────────
+
+/// Phase 110 — peer 単位の再開指示送信履歴。
+#[derive(Debug, Clone)]
+pub(crate) struct ResumeAttempt {
+    /// 直近の `agent-cli send <peer>` 送信時刻。
+    pub last_sent_at: Instant,
+    /// 累積送信回数（rescue 後にリセット）。
+    #[allow(dead_code)]
+    pub attempts: u32,
+    /// 送信時点の `AgentStatus`。
+    #[allow(dead_code)]
+    pub status_at_send: AgentStatus,
+    /// 送信時点の未消化タスク数（task_status.md 上の pending 行数）。
+    pub pending_tasks_at_send: usize,
+}
+
+/// Phase 110 — peer 単位の rescue 試行履歴。
+#[derive(Debug, Clone)]
+pub(crate) struct RescueAttempt {
+    pub last_attempt_at: Instant,
+    pub count: u32,
+}
+
+/// Phase 110 — 当該 peer の `task_status.md` 上の未消化タスク数を返す純関数。
+/// ファイル不在は 0 件扱い。
+pub(crate) fn count_pending_tasks(workspace_root: &Path, peer: &str) -> usize {
+    let path = workspace_root.join(peer).join("task_status.md");
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return 0;
+    };
+    parse_task_status(&content)
+        .iter()
+        .filter(|e| e.is_pending())
+        .count()
+}
+
+/// Phase 110 — Phase 108 の一斉再開指示を出す際、各 peer に対し履歴を更新する。
+pub(crate) fn record_resume(
+    history: &mut HashMap<String, ResumeAttempt>,
+    peer: &str,
+    status: AgentStatus,
+    pending: usize,
+) {
+    let entry = history
+        .entry(peer.to_string())
+        .or_insert_with(|| ResumeAttempt {
+            last_sent_at: Instant::now(),
+            attempts: 0,
+            status_at_send: status,
+            pending_tasks_at_send: pending,
+        });
+    entry.last_sent_at = Instant::now();
+    entry.attempts = entry.attempts.saturating_add(1);
+    entry.status_at_send = status;
+    entry.pending_tasks_at_send = pending;
+}
+
+/// Phase 110 — 当該 peer が rescue 対象（「反応なし」状態）か判定する純関数。
+///
+/// 判定条件 (AND):
+/// 1. 直近送信から `rescue_timeout` 以上経過。
+/// 2. 現 status が `IDLE` / `ERROR` / `UNKNOWN`（= 稼働遷移していない）。
+/// 3. 現 pending 数 == 送信時 pending 数（= タスク状態に進捗なし）。
+pub(crate) fn needs_rescue(
+    attempt: &ResumeAttempt,
+    current_status: AgentStatus,
+    current_pending: usize,
+    rescue_timeout: Duration,
+) -> bool {
+    if attempt.last_sent_at.elapsed() < rescue_timeout {
+        return false;
+    }
+    if !matches!(
+        current_status,
+        AgentStatus::Idle | AgentStatus::Error | AgentStatus::Unknown
+    ) {
+        return false;
+    }
+    if current_pending != attempt.pending_tasks_at_send {
+        return false;
+    }
+    true
+}
+
+/// Phase 110 — rescue を実行してよいか判定する純関数（cooldown + 上限）。
+pub(crate) fn rescue_allowed(
+    history: Option<&RescueAttempt>,
+    cooldown: Duration,
+    max_attempts: u32,
+) -> bool {
+    let Some(h) = history else {
+        return true;
+    };
+    if h.count >= max_attempts {
+        return false;
+    }
+    if h.last_attempt_at.elapsed() < cooldown {
+        return false;
+    }
+    true
+}
+
+/// Phase 110 — peer 名から persona ファイル名（拡張子なし）を解決する純関数。
+///
+/// - `asic-signoff` → `asic-signoff-checker`（既知例外、HD-033）
+/// - `<domain>-coder-<module>` → `<domain>-coder`
+/// - それ以外（`ai` / `ai-designer` / `rtl` / 他）→ peer 名そのまま
+pub(crate) fn resolve_persona_for_peer(peer: &str) -> Option<String> {
+    if peer.is_empty() {
+        return None;
+    }
+    if peer == "asic-signoff" {
+        return Some("asic-signoff-checker".to_string());
+    }
+    for &d in DOMAIN_CONDUCTOR_PEERS {
+        let prefix = format!("{d}-coder-");
+        if peer.starts_with(&prefix) {
+            return Some(format!("{d}-coder"));
+        }
+    }
+    Some(peer.to_string())
+}
+
+/// Phase 110 — rescue 後、再起動された peer に送る指示文を生成する純関数。
+pub(crate) fn build_rescue_message(peer: &str) -> String {
+    format!(
+        "[hestia monitor / Phase 110 rescue] あなた（{p}）はこれまでの再開指示に\
+         反応しなかったため、プロセスを SIGKILL して再起動しました。\
+         プロジェクトルートの `.hestia/rules/update_project.md` を fs_read し、\
+         その AI Update Guidelines および Update Details に従って作業を再開してください。\
+         あわせて `<workspace>/{p}/tasks.md` と `<workspace>/{p}/task_status.md` を\
+         fs_read し、未消化タスク（未着手 / 進行中 / ブロック）から処理を継続してください。",
+        p = peer
+    )
+}
+
+/// Phase 110 — rescue タイムアウト秒数（通常 peer、既定 120、30..=600 にクランプ）。
+pub(crate) fn rescue_timeout_secs() -> u64 {
+    std::env::var("HESTIA_MONITOR_RESCUE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(clamp_rescue_timeout)
+        .unwrap_or(120)
+}
+
+/// Phase 110 — ai-conductor 用 rescue タイムアウト秒数（既定 180、60..=600）。
+pub(crate) fn ai_rescue_timeout_secs() -> u64 {
+    std::env::var("HESTIA_MONITOR_AI_RESCUE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(clamp_ai_rescue_timeout)
+        .unwrap_or(180)
+}
+
+/// Phase 110 — rescue 後 cooldown 秒数（既定 300、60..=3600）。
+pub(crate) fn rescue_cooldown_secs() -> u64 {
+    std::env::var("HESTIA_MONITOR_RESCUE_COOLDOWN_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(clamp_rescue_cooldown)
+        .unwrap_or(300)
+}
+
+/// Phase 110 — 同一 peer の rescue 試行上限（既定 3、1..=10）。
+pub(crate) fn rescue_max_attempts() -> u32 {
+    std::env::var("HESTIA_MONITOR_RESCUE_MAX_ATTEMPTS")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .map(clamp_rescue_max_attempts)
+        .unwrap_or(3)
+}
+
+pub(crate) fn clamp_rescue_timeout(s: u64) -> u64 {
+    s.clamp(30, 600)
+}
+pub(crate) fn clamp_ai_rescue_timeout(s: u64) -> u64 {
+    s.clamp(60, 600)
+}
+pub(crate) fn clamp_rescue_cooldown(s: u64) -> u64 {
+    s.clamp(60, 3600)
+}
+pub(crate) fn clamp_rescue_max_attempts(s: u32) -> u32 {
+    s.clamp(1, 10)
+}
+
+/// Phase 110 — peer の agent-cli プロセスに即時 SIGKILL を送る async ヘルパ。
+/// `terminate_peer` の SIGTERM → 猶予 → SIGKILL とは異なり、即時 SIGKILL のみ。
+async fn kill_peer_now(peer: &str) -> Vec<u32> {
+    let pids = pgrep_agent_cli_pids(peer).await;
+    for &pid in &pids {
+        unsafe {
+            libc::kill(pid as i32, libc::SIGKILL);
+        }
+    }
+    pids
+}
+
+/// Phase 110 — kill 後、`agent-cli list` から当該 peer が消えるまで polling する。
+/// timeout でも以降の処理（再 spawn）には進む（warn のみ）。
+async fn wait_for_deregistration(peer: &str, max_wait: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < max_wait {
+        let stdout = run_agent_cli_list().await.unwrap_or_default();
+        if !crate::registered_peer_names(&stdout).contains(peer) {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    false
+}
+
+/// Phase 110 — rescue 経路の本体。
+///
+/// 1. 即時 SIGKILL で当該 peer の agent-cli プロセスを停止
+/// 2. `agent-cli list` から消えるまで polling（最大 10 秒）
+/// 3. peer 名から persona ファイル名を解決し実在を確認
+/// 4. `spawn_agent_cli` で再起動（既存重複 check 通過）
+/// 5. registry 登録確定を待機（最大 15 秒）
+/// 6. `update_project.md` 読込 + 未消化タスク再開を `agent-cli send` で送信
+pub(crate) async fn rescue_peer(peer: &str) -> anyhow::Result<()> {
+    let killed = kill_peer_now(peer).await;
+    eprintln!(
+        "[monitor/rescue] killed '{peer}' (PIDs: {})",
+        killed
+            .iter()
+            .map(|p| p.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    let deregistered = wait_for_deregistration(peer, Duration::from_secs(10)).await;
+    if !deregistered {
+        eprintln!("[monitor/rescue] '{peer}' did not deregister within 10s — proceeding anyway");
+    }
+
+    let Some(persona_root) = resolve_persona_for_peer(peer) else {
+        anyhow::bail!("could not resolve persona for peer '{peer}'");
+    };
+    let persona_path = std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(".hestia/personas")
+        .join(format!("{persona_root}.md"));
+    if !persona_path.exists() {
+        anyhow::bail!(
+            "persona file '{}' not found for peer '{peer}'",
+            persona_path.display()
+        );
+    }
+
+    crate::spawn_agent_cli(&persona_root, peer).await?;
+    let _ = conductor_sdk::workspace::wait_for_registry(peer, 15_000);
+
+    let msg = build_rescue_message(peer);
+    let status = Command::new("agent-cli")
+        .arg("send")
+        .arg(peer)
+        .arg(&msg)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .map_err(|e| anyhow::anyhow!("agent-cli send {peer} (rescue) failed: {e}"))?;
+    if !status.success() {
+        anyhow::bail!("agent-cli send {peer} (rescue message) exited with {status}");
+    }
+    eprintln!("[monitor/rescue] '{peer}' rescued successfully");
+    Ok(())
+}
+
 /// 状況サマリ（`hestia monitor` のヘッダ表示用）。
+///
+/// Phase 110: `think` フィールドを追加。
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct StatusSummary {
     pub running: usize,
     pub busy: usize,
+    pub think: usize,
     pub idle: usize,
     pub waiting: usize,
     pub error: usize,
@@ -377,6 +660,7 @@ pub(crate) fn summarize_statuses(statuses: &HashMap<String, AgentStatus>) -> Sta
     for v in statuses.values() {
         match v {
             AgentStatus::Busy => s.busy += 1,
+            AgentStatus::Think => s.think += 1,
             AgentStatus::Idle => s.idle += 1,
             AgentStatus::Waiting => s.waiting += 1,
             AgentStatus::Error => s.error += 1,
@@ -394,11 +678,12 @@ pub(crate) fn build_monitor_header(
 ) -> String {
     format!(
         "[Hestia Monitor]  refreshed: {ts}  (every {iv}s, Ctrl+C to exit)\n\
-         Conductors: {run} running   BUSY: {b}   IDLE: {i}   WAITING: {w}   ERROR: {e}   STARTING: {st}   UNKNOWN: {u}\n\n",
+         Conductors: {run} running   BUSY: {b}   THINK: {th}   IDLE: {i}   WAIT: {w}   ERROR: {e}   STARTING: {st}   UNKNOWN: {u}\n\n",
         ts = timestamp,
         iv = interval,
         run = summary.running,
         b = summary.busy,
+        th = summary.think,
         i = summary.idle,
         w = summary.waiting,
         e = summary.error,
@@ -513,13 +798,25 @@ pub(crate) async fn run_monitor_daemon() -> Result<()> {
 
     let interval = Duration::from_secs(monitor_interval_secs());
     let cooldown = Duration::from_secs(monitor_cooldown_secs());
+    let rescue_cooldown = Duration::from_secs(rescue_cooldown_secs());
+    let rescue_max = rescue_max_attempts();
+    let normal_rescue_timeout = Duration::from_secs(rescue_timeout_secs());
+    let ai_rescue_timeout_dur = Duration::from_secs(ai_rescue_timeout_secs());
     let stop = install_signal_handler();
     let mut last_resume_at: Option<Instant> = None;
+    // Phase 110 — peer 単位履歴。
+    let mut resume_history: HashMap<String, ResumeAttempt> = HashMap::new();
+    let mut rescue_history: HashMap<String, RescueAttempt> = HashMap::new();
 
     eprintln!(
-        "[monitor] daemon started (interval={}s, cooldown={}s)",
+        "[monitor] daemon started (interval={}s, cooldown={}s, rescue_timeout={}s, \
+         ai_rescue_timeout={}s, rescue_cooldown={}s, rescue_max={})",
         interval.as_secs(),
-        cooldown.as_secs()
+        cooldown.as_secs(),
+        normal_rescue_timeout.as_secs(),
+        ai_rescue_timeout_dur.as_secs(),
+        rescue_cooldown.as_secs(),
+        rescue_max,
     );
 
     while !stop.load(Ordering::SeqCst) {
@@ -573,7 +870,92 @@ pub(crate) async fn run_monitor_daemon() -> Result<()> {
             }
         }
 
-        // ── Phase 108 ③ 全停止 + タスク残存 → 再開指示 ──
+        // ── Phase 110 ③ 反応なし peer の rescue（kill + 再 spawn + update_project.md 読込指示）──
+        // 履歴クリーンアップ: 稼働遷移済 peer は履歴から削除（再開成功扱い）。
+        let registered_now = crate::registered_peer_names(&stdout);
+        resume_history.retain(|peer, _| {
+            // 1) 既に登録解除されている → エントリ削除
+            if !registered_now.contains(peer) {
+                return false;
+            }
+            // 2) status が稼働中 (BUSY/THINK/WAIT/STARTING) → エントリ削除
+            // ※ MonitorTarget の agent_id を peer 名から逆引きして status を取得
+            let status = targets
+                .iter()
+                .find(|t| t.peer == *peer)
+                .and_then(|t| statuses.get(&t.agent_id).copied())
+                .unwrap_or(AgentStatus::Unknown);
+            !matches!(
+                status,
+                AgentStatus::Busy
+                    | AgentStatus::Think
+                    | AgentStatus::Waiting
+                    | AgentStatus::Starting
+            )
+        });
+
+        // 各 target に対し rescue 判定。peer == "ai" のみ ai_rescue_timeout を使う。
+        let mut to_rescue: Vec<String> = Vec::new();
+        for t in &targets {
+            let Some(attempt) = resume_history.get(&t.peer) else {
+                continue;
+            };
+            let Some(status) = statuses.get(&t.agent_id).copied() else {
+                continue;
+            };
+            let pending = count_pending_tasks(&workspace_root, &t.peer);
+            let timeout = if matches!(t.kind, MonitorKind::AiConductor) {
+                ai_rescue_timeout_dur
+            } else {
+                normal_rescue_timeout
+            };
+            if !needs_rescue(attempt, status, pending, timeout) {
+                continue;
+            }
+            if !rescue_allowed(rescue_history.get(&t.peer), rescue_cooldown, rescue_max) {
+                if let Some(h) = rescue_history.get(&t.peer) {
+                    if h.count >= rescue_max {
+                        eprintln!(
+                            "[monitor/rescue] '{}' has reached the rescue attempt cap ({}); \
+                             leaving for human intervention",
+                            t.peer, rescue_max
+                        );
+                    }
+                }
+                continue;
+            }
+            to_rescue.push(t.peer.clone());
+        }
+
+        for peer in &to_rescue {
+            match rescue_peer(peer).await {
+                Ok(()) => {
+                    let entry = rescue_history
+                        .entry(peer.clone())
+                        .or_insert(RescueAttempt {
+                            last_attempt_at: Instant::now(),
+                            count: 0,
+                        });
+                    entry.last_attempt_at = Instant::now();
+                    entry.count = entry.count.saturating_add(1);
+                    resume_history.remove(peer);
+                }
+                Err(e) => {
+                    eprintln!("[monitor/rescue] '{peer}' failed: {e}");
+                    // 失敗もカウント（無限再試行を抑制するため）
+                    let entry = rescue_history
+                        .entry(peer.clone())
+                        .or_insert(RescueAttempt {
+                            last_attempt_at: Instant::now(),
+                            count: 0,
+                        });
+                    entry.last_attempt_at = Instant::now();
+                    entry.count = entry.count.saturating_add(1);
+                }
+            }
+        }
+
+        // ── Phase 108 ④ 全停止 + タスク残存 → 再開指示 ──
         if !is_all_stopped(&targets, &statuses) {
             continue;
         }
@@ -597,7 +979,17 @@ pub(crate) async fn run_monitor_daemon() -> Result<()> {
         );
         for peer in &peers {
             match send_resume_instruction(peer).await {
-                Ok(()) => eprintln!("[monitor] resume sent to {peer}"),
+                Ok(()) => {
+                    eprintln!("[monitor] resume sent to {peer}");
+                    // Phase 110 — 履歴記録
+                    let status = targets
+                        .iter()
+                        .find(|t| t.peer == *peer)
+                        .and_then(|t| statuses.get(&t.agent_id).copied())
+                        .unwrap_or(AgentStatus::Unknown);
+                    let pending = count_pending_tasks(&workspace_root, peer);
+                    record_resume(&mut resume_history, peer, status, pending);
+                }
                 Err(e) => eprintln!("[monitor] resume to {peer} failed: {e}"),
             }
         }
@@ -677,11 +1069,12 @@ mod tests {
 
     fn target(id: &str, peer: &str, kind: MonitorKind) -> MonitorTarget {
         // テスト用ヘルパ: parent_conductor は kind から自動推定する
-        // （Subagent → "ai" を仮置き、DomainConductor → None）。
+        // （Subagent → "ai" を仮置き、DomainConductor / AiConductor → None）。
         // 動的 sub-agent の親 conductor を別途指定したい場合は target_with_parent を使う。
         let parent = match kind {
             MonitorKind::Subagent => Some("ai".to_string()),
             MonitorKind::DomainConductor => None,
+            MonitorKind::AiConductor => None,
         };
         MonitorTarget {
             agent_id: id.to_string(),
@@ -744,7 +1137,8 @@ mod tests {
         "ID                                NAME          PROVIDER  MODEL          ROLE\n";
 
     #[test]
-    fn resolve_picks_subagents_and_domain_only() {
+    fn resolve_picks_subagents_and_domain_and_ai_phase110() {
+        // Phase 110: ai は MonitorKind::AiConductor で含まれる。
         let body = "agent-AAA  ai          ollama  glm  meta\n\
                     agent-BBB  ai-designer ollama  glm  designer\n\
                     agent-CCC  ai-reviewer ollama  glm  reviewer\n\
@@ -753,9 +1147,10 @@ mod tests {
         let input = format!("{HEADER_LIST}{body}");
         let got = resolve_monitor_targets(&input);
         let names: Vec<&str> = got.iter().map(|t| t.peer.as_str()).collect();
-        assert_eq!(names, vec!["ai-designer", "ai-reviewer", "rtl"]);
-        assert_eq!(got[0].kind, MonitorKind::Subagent);
-        assert_eq!(got[2].kind, MonitorKind::DomainConductor);
+        assert_eq!(names, vec!["ai", "ai-designer", "ai-reviewer", "rtl"]);
+        assert_eq!(got[0].kind, MonitorKind::AiConductor);
+        assert_eq!(got[1].kind, MonitorKind::Subagent);
+        assert_eq!(got[3].kind, MonitorKind::DomainConductor);
     }
 
     #[test]
@@ -958,6 +1353,7 @@ mod tests {
     // ─── summarize_statuses & build_monitor_header ───────────────────────
     #[test]
     fn summarize_counts_all_kinds() {
+        // Phase 110: Think を含む 7 ヴァリアント混在に拡張。
         let s = statuses(&[
             ("agent-A", AgentStatus::Busy),
             ("agent-B", AgentStatus::Idle),
@@ -966,10 +1362,12 @@ mod tests {
             ("agent-E", AgentStatus::Error),
             ("agent-F", AgentStatus::Starting),
             ("agent-G", AgentStatus::Unknown),
+            ("agent-H", AgentStatus::Think),
         ]);
         let sum = summarize_statuses(&s);
-        assert_eq!(sum.running, 7);
+        assert_eq!(sum.running, 8);
         assert_eq!(sum.busy, 1);
+        assert_eq!(sum.think, 1);
         assert_eq!(sum.idle, 2);
         assert_eq!(sum.waiting, 1);
         assert_eq!(sum.error, 1);
@@ -990,6 +1388,7 @@ mod tests {
         let summary = StatusSummary {
             running: 3,
             busy: 1,
+            think: 0,
             idle: 1,
             waiting: 0,
             error: 0,
@@ -1002,6 +1401,7 @@ mod tests {
         assert!(h.contains("every 2s"));
         assert!(h.contains("3 running"));
         assert!(h.contains("BUSY: 1"));
+        assert!(h.contains("THINK: 0"));
         assert!(h.contains("IDLE: 1"));
         assert!(h.contains("STARTING: 1"));
     }
@@ -1068,8 +1468,11 @@ mod tests {
     }
 
     #[test]
-    fn classify_peer_excludes_ai_self() {
-        assert!(classify_peer("ai").is_none());
+    fn classify_peer_includes_ai_as_aiconductor_phase110() {
+        // Phase 110: ai を監視対象に含める（旧 Phase 109 では None を返していた）。
+        let (k, p) = classify_peer("ai").unwrap();
+        assert_eq!(k, MonitorKind::AiConductor);
+        assert_eq!(p, None);
     }
 
     #[test]
@@ -1218,6 +1621,7 @@ mod tests {
     // ─── resolve_monitor_targets (Phase 109 拡張: 動的 sub-agent 採用) ──
     #[test]
     fn resolve_includes_dynamic_subagents() {
+        // Phase 110: ai が AiConductor で含まれる + 動的 sub-agent 採用。
         let body = "agent-AAA  ai          ollama  glm  meta\n\
                     agent-BBB  ai-designer ollama  glm  designer\n\
                     agent-CCC  rtl         ollama  glm  conductor\n\
@@ -1229,12 +1633,290 @@ mod tests {
         let names: Vec<&str> = got.iter().map(|t| t.peer.as_str()).collect();
         assert_eq!(
             names,
-            vec!["ai-designer", "rtl", "rtl-coder-uart", "asic-signoff"]
+            vec!["ai", "ai-designer", "rtl", "rtl-coder-uart", "asic-signoff"]
         );
         // parent_conductor の検証
-        assert_eq!(got[0].parent_conductor.as_deref(), Some("ai"));
-        assert_eq!(got[1].parent_conductor, None);
-        assert_eq!(got[2].parent_conductor.as_deref(), Some("rtl"));
-        assert_eq!(got[3].parent_conductor.as_deref(), Some("asic"));
+        assert_eq!(got[0].parent_conductor, None);
+        assert_eq!(got[0].kind, MonitorKind::AiConductor);
+        assert_eq!(got[1].parent_conductor.as_deref(), Some("ai"));
+        assert_eq!(got[2].parent_conductor, None);
+        assert_eq!(got[3].parent_conductor.as_deref(), Some("rtl"));
+        assert_eq!(got[4].parent_conductor.as_deref(), Some("asic"));
+    }
+
+    // ─── Phase 110 ─ classify_peer 拡張テスト ──────────────────────────
+    #[test]
+    fn classify_peer_dynamic_phase110_unchanged() {
+        // 既存（Phase 109）の動的 sub-agent 解決は維持。
+        let (k, p) = classify_peer("rtl-coder-uart").unwrap();
+        assert_eq!(k, MonitorKind::Subagent);
+        assert_eq!(p, Some("rtl".to_string()));
+    }
+
+    // ─── Phase 110 ─ needs_rescue ─────────────────────────────────────
+    fn make_resume(secs_ago: u64, status: AgentStatus, pending: usize) -> ResumeAttempt {
+        ResumeAttempt {
+            last_sent_at: Instant::now() - Duration::from_secs(secs_ago),
+            attempts: 1,
+            status_at_send: status,
+            pending_tasks_at_send: pending,
+        }
+    }
+
+    #[test]
+    fn needs_rescue_false_when_within_timeout() {
+        let r = make_resume(60, AgentStatus::Idle, 2);
+        // timeout 120s、経過 60s → false
+        assert!(!needs_rescue(&r, AgentStatus::Idle, 2, Duration::from_secs(120)));
+    }
+
+    #[test]
+    fn needs_rescue_false_when_status_busy_or_think() {
+        let r = make_resume(200, AgentStatus::Idle, 2);
+        // timeout 120s 経過済だが status が Busy / Think → false
+        assert!(!needs_rescue(&r, AgentStatus::Busy, 2, Duration::from_secs(120)));
+        assert!(!needs_rescue(&r, AgentStatus::Think, 2, Duration::from_secs(120)));
+        assert!(!needs_rescue(&r, AgentStatus::Waiting, 2, Duration::from_secs(120)));
+    }
+
+    #[test]
+    fn needs_rescue_false_when_pending_decreased() {
+        let r = make_resume(200, AgentStatus::Idle, 5);
+        // timeout 経過 + Idle だが pending が変化 → false（進捗あり）
+        assert!(!needs_rescue(&r, AgentStatus::Idle, 3, Duration::from_secs(120)));
+    }
+
+    #[test]
+    fn needs_rescue_true_when_all_conditions_met() {
+        let r = make_resume(200, AgentStatus::Idle, 3);
+        assert!(needs_rescue(&r, AgentStatus::Idle, 3, Duration::from_secs(120)));
+        assert!(needs_rescue(&r, AgentStatus::Error, 3, Duration::from_secs(120)));
+        assert!(needs_rescue(&r, AgentStatus::Unknown, 3, Duration::from_secs(120)));
+    }
+
+    #[test]
+    fn needs_rescue_respects_ai_timeout() {
+        // 経過 130s、ai_timeout=180s なら false、normal_timeout=120s なら true
+        let r = make_resume(130, AgentStatus::Idle, 2);
+        assert!(!needs_rescue(&r, AgentStatus::Idle, 2, Duration::from_secs(180)));
+        assert!(needs_rescue(&r, AgentStatus::Idle, 2, Duration::from_secs(120)));
+    }
+
+    // ─── Phase 110 ─ rescue_allowed ───────────────────────────────────
+    #[test]
+    fn rescue_allowed_when_no_history() {
+        assert!(rescue_allowed(None, Duration::from_secs(300), 3));
+    }
+
+    #[test]
+    fn rescue_allowed_false_within_cooldown() {
+        let h = RescueAttempt {
+            last_attempt_at: Instant::now() - Duration::from_secs(60),
+            count: 1,
+        };
+        assert!(!rescue_allowed(Some(&h), Duration::from_secs(300), 3));
+    }
+
+    #[test]
+    fn rescue_allowed_false_at_attempt_cap() {
+        let h = RescueAttempt {
+            last_attempt_at: Instant::now() - Duration::from_secs(1000),
+            count: 3,
+        };
+        assert!(!rescue_allowed(Some(&h), Duration::from_secs(300), 3));
+    }
+
+    #[test]
+    fn rescue_allowed_true_after_cooldown_under_cap() {
+        let h = RescueAttempt {
+            last_attempt_at: Instant::now() - Duration::from_secs(1000),
+            count: 1,
+        };
+        assert!(rescue_allowed(Some(&h), Duration::from_secs(300), 3));
+    }
+
+    // ─── Phase 110 ─ clamp ────────────────────────────────────────────
+    #[test]
+    fn clamp_rescue_timeout_bounds() {
+        assert_eq!(clamp_rescue_timeout(0), 30);
+        assert_eq!(clamp_rescue_timeout(120), 120);
+        assert_eq!(clamp_rescue_timeout(600), 600);
+        assert_eq!(clamp_rescue_timeout(10_000), 600);
+    }
+
+    #[test]
+    fn clamp_ai_rescue_timeout_bounds() {
+        assert_eq!(clamp_ai_rescue_timeout(0), 60);
+        assert_eq!(clamp_ai_rescue_timeout(180), 180);
+        assert_eq!(clamp_ai_rescue_timeout(600), 600);
+        assert_eq!(clamp_ai_rescue_timeout(10_000), 600);
+    }
+
+    #[test]
+    fn clamp_rescue_cooldown_bounds() {
+        assert_eq!(clamp_rescue_cooldown(0), 60);
+        assert_eq!(clamp_rescue_cooldown(300), 300);
+        assert_eq!(clamp_rescue_cooldown(3600), 3600);
+        assert_eq!(clamp_rescue_cooldown(10_000), 3600);
+    }
+
+    #[test]
+    fn clamp_rescue_max_attempts_bounds() {
+        assert_eq!(clamp_rescue_max_attempts(0), 1);
+        assert_eq!(clamp_rescue_max_attempts(3), 3);
+        assert_eq!(clamp_rescue_max_attempts(10), 10);
+        assert_eq!(clamp_rescue_max_attempts(100), 10);
+    }
+
+    // ─── Phase 110 ─ resolve_persona_for_peer ─────────────────────────
+    #[test]
+    fn resolve_persona_known_static_peers() {
+        assert_eq!(resolve_persona_for_peer("ai"), Some("ai".to_string()));
+        assert_eq!(
+            resolve_persona_for_peer("ai-designer"),
+            Some("ai-designer".to_string())
+        );
+        assert_eq!(resolve_persona_for_peer("rtl"), Some("rtl".to_string()));
+        assert_eq!(
+            resolve_persona_for_peer("hal-coder"),
+            Some("hal-coder".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_persona_known_exception_asic_signoff() {
+        assert_eq!(
+            resolve_persona_for_peer("asic-signoff"),
+            Some("asic-signoff-checker".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_persona_dynamic_coder_subagents() {
+        assert_eq!(
+            resolve_persona_for_peer("rtl-coder-uart"),
+            Some("rtl-coder".to_string())
+        );
+        assert_eq!(
+            resolve_persona_for_peer("hal-coder-i2c"),
+            Some("hal-coder".to_string())
+        );
+        assert_eq!(
+            resolve_persona_for_peer("apps-coder-firmware"),
+            Some("apps-coder".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_persona_unknown_returns_same_name() {
+        // 未知 peer 名は同名として返す（呼出側で persona ファイル存在確認する）。
+        assert_eq!(
+            resolve_persona_for_peer("bogus-name"),
+            Some("bogus-name".to_string())
+        );
+        assert_eq!(resolve_persona_for_peer(""), None);
+    }
+
+    // ─── Phase 110 ─ count_pending_tasks ──────────────────────────────
+    #[test]
+    fn count_pending_tasks_returns_pending_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("rtl");
+        std::fs::create_dir_all(&p).unwrap();
+        std::fs::write(
+            p.join("task_status.md"),
+            "| タスク ID | 状態 |\n|----|----|\n\
+             | T-001 | 完了 |\n\
+             | T-002 | 進行中 |\n\
+             | T-003 | 未着手 |\n\
+             | T-004 | ブロック |\n",
+        )
+        .unwrap();
+        assert_eq!(count_pending_tasks(dir.path(), "rtl"), 3);
+    }
+
+    #[test]
+    fn count_pending_tasks_zero_when_all_complete() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("rtl");
+        std::fs::create_dir_all(&p).unwrap();
+        std::fs::write(
+            p.join("task_status.md"),
+            "| タスク ID | 状態 |\n|----|----|\n| T-001 | 完了 |\n",
+        )
+        .unwrap();
+        assert_eq!(count_pending_tasks(dir.path(), "rtl"), 0);
+    }
+
+    #[test]
+    fn count_pending_tasks_zero_when_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(count_pending_tasks(dir.path(), "rtl"), 0);
+    }
+
+    // ─── Phase 110 ─ build_rescue_message ─────────────────────────────
+    #[test]
+    fn rescue_message_includes_peer_paths_and_update_project() {
+        let m = build_rescue_message("ai-designer");
+        assert!(m.contains("ai-designer"));
+        assert!(m.contains("update_project.md"));
+        assert!(m.contains("tasks.md"));
+        assert!(m.contains("task_status.md"));
+        assert!(m.contains("SIGKILL"));
+        assert!(m.contains("再起動"));
+        assert!(m.contains("未消化"));
+    }
+
+    // ─── Phase 110 ─ is_all_stopped Think 対応 ────────────────────────
+    #[test]
+    fn is_all_stopped_with_think_returns_false() {
+        // Phase 110: Think は稼働中扱い、停止扱いには入れない。
+        let t = vec![target("agent-A", "ai-designer", MonitorKind::Subagent)];
+        let s = statuses(&[("agent-A", AgentStatus::Think)]);
+        assert!(!is_all_stopped(&t, &s));
+    }
+
+    // ─── Phase 110 ─ is_terminable_status Think 対応 ──────────────────
+    #[test]
+    fn is_terminable_status_excludes_think_phase110() {
+        // Think は終了対象外（Busy / Waiting / Starting と同じ稼働中扱い）。
+        assert!(!is_terminable_status(AgentStatus::Think));
+    }
+
+    // ─── Phase 110 ─ summarize_statuses Think 計上 ────────────────────
+    #[test]
+    fn summarize_counts_think_phase110() {
+        let s = statuses(&[
+            ("agent-A", AgentStatus::Busy),
+            ("agent-B", AgentStatus::Think),
+            ("agent-C", AgentStatus::Think),
+            ("agent-D", AgentStatus::Idle),
+            ("agent-E", AgentStatus::Waiting),
+        ]);
+        let sum = summarize_statuses(&s);
+        assert_eq!(sum.running, 5);
+        assert_eq!(sum.busy, 1);
+        assert_eq!(sum.think, 2);
+        assert_eq!(sum.idle, 1);
+        assert_eq!(sum.waiting, 1);
+    }
+
+    #[test]
+    fn header_includes_think_and_wait_phase110() {
+        let summary = StatusSummary {
+            running: 4,
+            busy: 1,
+            think: 1,
+            idle: 1,
+            waiting: 1,
+            error: 0,
+            starting: 0,
+            unknown: 0,
+        };
+        let h = build_monitor_header(&summary, 2, "2026-05-08T12:00:00Z");
+        assert!(h.contains("THINK: 1"));
+        assert!(h.contains("WAIT: 1"));
+        assert!(h.contains("BUSY: 1"));
+        assert!(h.contains("IDLE: 1"));
     }
 }

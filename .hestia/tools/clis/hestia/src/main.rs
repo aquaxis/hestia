@@ -316,7 +316,8 @@ fn init_hestia_workspace(peer_name: &str) {
 
 /// Phase 109 — `agent-cli list` の stdout から既登録 peer 名集合を抽出する純関数。
 /// NAME 列（2 列目）を完全一致で集める。`agent-XXX` で始まる ID 行のみ対象。
-fn registered_peer_names(stdout: &str) -> std::collections::HashSet<String> {
+/// Phase 110 で monitor.rs から呼び出すため `pub(crate)` 化。
+pub(crate) fn registered_peer_names(stdout: &str) -> std::collections::HashSet<String> {
     let mut out = std::collections::HashSet::new();
     for line in stdout.lines().skip(1) {
         let mut it = line.split_whitespace();
@@ -368,7 +369,8 @@ async fn monitor_daemon_already_running() -> bool {
 ///
 /// Phase 109: 関数冒頭で `agent-cli list` を確認し、対象 peer 名が既登録なら
 /// warn ログのみで no-op return する（重複 spawn を物理的に防ぐ）。
-async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str) -> Result<()> {
+/// Phase 110: monitor.rs の rescue 経路から呼び出すため `pub(crate)` 化。
+pub(crate) async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str) -> Result<()> {
     let persona = persona_path(persona_filename_root);
     if !persona.exists() {
         bail!("persona file not found: {}", persona.display());
@@ -958,13 +960,18 @@ async fn show_status(all: bool) -> Result<()> {
 
 /// Operational status of an agent, derived from its agent-cli structured log
 /// and registry membership. Displayed as a `STATUS` column by `hestia status`.
+///
+/// Phase 110: `Think` ヴァリアントを追加し、`Waiting` の表示を `WAIT` に変更。
+/// `thinking` event を `Busy`（tool 実行中）と区別する。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AgentStatus {
     /// Agent is registered, last activity is a completed assistant reply.
     Idle,
     /// Agent log was modified within the busy window and the last event is
-    /// thinking / tool_call / tool_result (response in progress).
+    /// `tool_call` / `tool_result` (tool 実行中、Phase 110 で thinking と分離).
     Busy,
+    /// (Phase 110) Last event is `thinking` and mtime is recent (思考中).
+    Think,
     /// Agent has accepted a user prompt but no assistant reply has appeared.
     Waiting,
     /// Last tool_result reported `ok = false`.
@@ -980,7 +987,8 @@ impl AgentStatus {
         match self {
             Self::Idle => "IDLE",
             Self::Busy => "BUSY",
-            Self::Waiting => "WAITING",
+            Self::Think => "THINK",
+            Self::Waiting => "WAIT",
             Self::Error => "ERROR",
             Self::Starting => "STARTING",
             Self::Unknown => "UNKNOWN",
@@ -1003,6 +1011,9 @@ struct StatusEvent {
 }
 
 /// Pure status classifier — easy to unit-test without touching the filesystem.
+///
+/// Phase 110: `thinking` event を `Think` に分岐、`tool_call` / `tool_result` のみ
+/// `Busy` を返すよう細分化。
 fn derive_status_from_log(events: &[StatusEvent], mtime_age: Duration) -> AgentStatus {
     let Some(last) = events.last() else {
         return AgentStatus::Starting;
@@ -1012,7 +1023,8 @@ fn derive_status_from_log(events: &[StatusEvent], mtime_age: Duration) -> AgentS
     }
     if mtime_age < Duration::from_secs(30) {
         match last.kind.as_str() {
-            "thinking" | "tool_call" | "tool_result" => return AgentStatus::Busy,
+            "thinking" => return AgentStatus::Think,
+            "tool_call" | "tool_result" => return AgentStatus::Busy,
             _ => {}
         }
     }
@@ -1697,10 +1709,21 @@ mod tests {
 
     #[test]
     fn derive_busy_when_recent_tool_call() {
+        // Phase 110: tool_call は引き続き Busy。
         let events = vec![ev("user", None), ev("thinking", None), ev("tool_call", None)];
         assert_eq!(
             derive_status_from_log(&events, Duration::from_secs(5)),
             AgentStatus::Busy
+        );
+    }
+
+    #[test]
+    fn derive_think_when_recent_thinking() {
+        // Phase 110: 末尾が thinking かつ mtime recent なら Think.
+        let events = vec![ev("user", None), ev("thinking", None)];
+        assert_eq!(
+            derive_status_from_log(&events, Duration::from_secs(5)),
+            AgentStatus::Think
         );
     }
 
@@ -1714,9 +1737,8 @@ mod tests {
     }
 
     #[test]
-    fn derive_busy_overrides_old_assistant_with_recent_tool_use() {
-        // mtime is recent and the very last event is a thinking step, so the
-        // agent is mid-flight even though older events include `assistant`.
+    fn derive_think_overrides_old_assistant_with_recent_thinking() {
+        // Phase 110: mtime recent + 末尾 thinking → Think (旧テストでは Busy だった).
         let events = vec![
             ev("assistant", None),
             ev("user", None),
@@ -1724,8 +1746,20 @@ mod tests {
         ];
         assert_eq!(
             derive_status_from_log(&events, Duration::from_secs(10)),
-            AgentStatus::Busy
+            AgentStatus::Think
         );
+    }
+
+    #[test]
+    fn agent_status_as_str_uses_wait_and_think_phase110() {
+        // Phase 110: Waiting の表記は WAIT / Think は THINK / 他は据え置き。
+        assert_eq!(AgentStatus::Idle.as_str(), "IDLE");
+        assert_eq!(AgentStatus::Busy.as_str(), "BUSY");
+        assert_eq!(AgentStatus::Think.as_str(), "THINK");
+        assert_eq!(AgentStatus::Waiting.as_str(), "WAIT");
+        assert_eq!(AgentStatus::Error.as_str(), "ERROR");
+        assert_eq!(AgentStatus::Starting.as_str(), "STARTING");
+        assert_eq!(AgentStatus::Unknown.as_str(), "UNKNOWN");
     }
 
     // ─── parse_status_events ─────────────────────────────────────────────

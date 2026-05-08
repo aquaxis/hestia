@@ -196,6 +196,78 @@ peer 名 `ai` は本ロジックの対象外。終了は人間ユーザの明示
 - `.hestia/tools/clis/hestia/src/monitor.rs` — `classify_peer` / `peer_tasks_all_complete` / `conductors_ready_to_terminate` / `is_terminable_status` / `terminate_peer` / `pgrep_agent_cli_pids` を新規追加、`MonitorTarget.parent_conductor` フィールドを追加、`run_monitor_daemon` を 3 段階処理に拡張。新規単体テスト 16 件追加。
 - `.hestia/tools/clis/hestia/src/main.rs` — `registered_peer_names` 純関数 / `peer_already_registered` / `monitor_daemon_already_running` ヘルパ追加、`spawn_agent_cli` / `start_conductor` / monitor-daemon spawn の 3 経路に重複 check 追加。新規単体テスト 6 件追加。
 
+## Rescue ロジック（Phase 110）
+
+Phase 108 の「全停止 + 残存 → 一斉再開指示」経路で送信した `agent-cli send` に対し、規定時間内に当該 peer が稼働状態に遷移せず、かつ `task_status.md` の未消化タスク数も変化していない場合、監視デーモンは以下の rescue 経路を実行する。
+
+### Rescue 手順
+
+1. **即時 SIGKILL**: `pgrep -f "agent-cli run.*--name <peer>"` で抽出した全 PID を SIGKILL（Phase 109 の SIGTERM → 猶予 → SIGKILL とは異なる即時 kill）
+2. **登録解除待機**: `agent-cli list` から peer が消えるまで最大 10 秒 polling
+3. **persona 名解決**: peer 名から persona ファイル名を導出
+   - `<peer>.md` 直接（例: `ai` → `ai.md`、`rtl` → `rtl.md`）
+   - `<domain>-coder-<module>` → `<domain>-coder.md`（動的 sub-agent）
+   - `asic-signoff` → `asic-signoff-checker.md`（既知例外、HD-033）
+4. **再 spawn**: `spawn_agent_cli` で peer を再起動（重複 check 通過）
+5. **Registry 登録待機**: 最大 15 秒
+6. **Update Project 指示送信**: `agent-cli send <peer>` で `<root>/.hestia/rules/update_project.md` の fs_read + 規約遵守 + `tasks.md` / `task_status.md` 参照 + 未消化タスク再開を指示
+
+### Rescue 抑制（無限ループ防止）
+
+| 制御 | 既定値 | 環境変数 | 範囲 |
+|------|------|---------|------|
+| 通常 peer タイムアウト | 120 秒 | `HESTIA_MONITOR_RESCUE_TIMEOUT_SECS` | 30..=600 |
+| ai-conductor タイムアウト | 180 秒 | `HESTIA_MONITOR_AI_RESCUE_TIMEOUT_SECS` | 60..=600 |
+| Rescue 後 cooldown | 300 秒 | `HESTIA_MONITOR_RESCUE_COOLDOWN_SECS` | 60..=3600 |
+| 同一 peer 試行上限 | 3 回 | `HESTIA_MONITOR_RESCUE_MAX_ATTEMPTS` | 1..=10 |
+
+上限到達後の peer は warn ログのみで以降の rescue を停止（人間ユーザの介入待ち）。
+
+### ai-conductor の rescue
+
+監視デーモン (`hestia monitor-daemon`) は ai-conductor の子プロセスとして起動された hestia バイナリの **独立プロセス** であるため、ai-conductor が無応答でも監視デーモン自体は生存し続ける。これにより ai-conductor 自身も rescue 対象に含まれる。
+
+- 監視対象判定: `MonitorKind::AiConductor` の新種別で扱う（`classify_peer("ai")` が Phase 110 で Some を返すように変更）
+- Phase 109 自動終了対象: 除外（task 完了時の SIGTERM は適用しない）
+- Phase 108 一斉再開指示対象: 含める
+- Phase 110 rescue 対象: 含める（タイムアウト 180s 既定）
+- ai-conductor の persona 名解決: `resolve_persona_for_peer("ai")` → `Some("ai")` で `.hestia/personas/ai.md` に解決
+
+### `hestia status` STATUS 列の拡張（Phase 110）
+
+`AgentStatus` enum を拡張し、`THINK` / `WAIT` を新表記として導入:
+
+| ヴァリアント | 表記 | 意味 |
+|------|------|------|
+| `Idle` | `IDLE` | 最終 event が `assistant`（応答完了） |
+| `Busy` | `BUSY` | 最終 event が `tool_call` / `tool_result` で recent（tool 実行中） |
+| `Think` | `THINK` | 最終 event が `thinking` で recent（思考中、Phase 110 新設） |
+| `Waiting` | `WAIT` | 最終 event が `user`（user prompt 受信、assistant 未応答、旧 `WAITING`） |
+| `Error` | `ERROR` | 最終 `tool_result` が `ok=false` |
+| `Starting` | `STARTING` | jsonl 未生成 / 起動直後 |
+| `Unknown` | `UNKNOWN` | 解析失敗 |
+
+監視ループ側では `Think` を `Busy` / `Waiting` / `Starting` と同じ **稼働中扱い** とする（`is_all_stopped` で停止扱いから除外、`is_terminable_status` / `needs_rescue` で稼働中扱い）。`hestia monitor` のサマリ行に `THINK: N` カウントを追加。
+
+### 既存 Phase 108 / 109 との排他
+
+| 状態 | 適用 phase |
+|------|----------|
+| タスク完了 + IDLE (DomainConductor / Subagent) | ① / ② SIGTERM |
+| タスク完了 + IDLE (AiConductor) | 何もしない（明示停止のみ） |
+| タスク残存 + IDLE + 再開未送信 | ④ 一斉再開指示 |
+| タスク残存 + IDLE + 再開送信済 + timeout 内 | 何もしない（次周期で再評価） |
+| タスク残存 + IDLE + timeout 超過 + 上限内 | ③ rescue |
+| BUSY / THINK / WAIT | 何もしない（稼働中扱い） |
+
+監視ループ 1 周期内の評価順序は **① → ② → ③ → ④**（Phase 108 / 109 既存に Phase 110 ③ rescue が挿入）。
+
+### 実装（Phase 110）
+
+- `.hestia/tools/clis/hestia/src/monitor.rs` — `MonitorKind::AiConductor` 追加、`ResumeAttempt` / `RescueAttempt` 構造体、`needs_rescue` / `rescue_allowed` / `count_pending_tasks` / `record_resume` / `resolve_persona_for_peer` / `build_rescue_message` 純関数、`kill_peer_now` / `wait_for_deregistration` / `rescue_peer` async 関数、4 つの環境変数 + clamp ヘルパ、`run_monitor_daemon` に Phase 110 ③ rescue 評価ブロックを追加。新規単体テスト 28 件。
+- `.hestia/tools/clis/hestia/src/main.rs` — `AgentStatus::Think` 追加、`Waiting::as_str` を `"WAIT"` に変更、`derive_status_from_log` に thinking 分岐追加、`registered_peer_names` / `spawn_agent_cli` を `pub(crate)` 化（monitor.rs から呼出）。既存テスト修正 + 新規テスト 2 件。
+- `.hestia/personas/ai.md` — Phase 110 責務 4 項 / 禁止事項 4 項 追記。
+
 ## 関連ドキュメント
 
 - [backend_switching.md](backend_switching.md) — LLM バックエンド切替
