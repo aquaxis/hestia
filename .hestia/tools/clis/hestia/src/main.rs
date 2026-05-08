@@ -112,6 +112,27 @@ impl EngineConfig {
         }
     }
 
+    /// Phase 115 — engine type に応じて `--model` 引数を調整する。
+    ///
+    /// - `claude_cli_shim` engine: agent_cli.model (`glm-5.1:cloud` など) は
+    ///   claude が認識しないため None を返し、claude の login default model
+    ///   を使わせる。明示的に claude モデルを使いたい場合は `[agent_cli] model`
+    ///   で `claude-opus-4-7` 等を指定すれば claude が認識する値はそのまま
+    ///   通る — ここで値検証はせず、claude モデル名以外は無視するためにのみ
+    ///   None 返却を選ぶ簡素な実装とする (将来 model 値を見て分岐する余地は
+    ///   残す)。
+    /// - `agent_cli` engine (default): 受け取った `model_arg` をそのまま返す
+    ///   (後方互換)。
+    pub(crate) fn filter_model<'a>(&self, model_arg: Option<&'a str>) -> Option<&'a str> {
+        match self.type_.as_str() {
+            "claude_cli_shim" => match model_arg {
+                Some(m) if m.starts_with("claude-") => Some(m),
+                _ => None,
+            },
+            _ => model_arg,
+        }
+    }
+
     /// engine subprocess に渡すべき env 変数のリストを構築する。
     /// hestia → claude-cli-shim 等への path override 伝達に使用。
     pub(crate) fn subprocess_env(&self) -> Vec<(&'static str, String)> {
@@ -505,11 +526,14 @@ pub(crate) async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str
         .map_err(|e| anyhow::anyhow!("failed to dup log file: {e}"))?;
 
     let config = load_hestia_config();
-    // Phase 115 — claude_cli_shim engine 時は --provider を claude に強制。
+    // Phase 115 — claude_cli_shim engine 時は --provider を claude に強制し、
+    // 非 claude モデル名 (例: glm-5.1:cloud) は claude が認識しないため抑制する。
     let provider = config
         .engine
         .filter_provider(config.agent_cli.provider_arg());
-    let model = config.agent_cli.model.as_deref();
+    let model = config
+        .engine
+        .filter_model(config.agent_cli.model.as_deref());
     let engine_bin = config.engine.binary_name().to_string();
 
     println!(
@@ -630,11 +654,14 @@ async fn start_conductor(domain: &str) -> Result<()> {
             .map_err(|e| anyhow::anyhow!("failed to dup log file: {e}"))?;
 
         let config = load_hestia_config();
-        // Phase 115 — claude_cli_shim engine 時は --provider を claude に強制。
+        // Phase 115 — claude_cli_shim engine 時は --provider を claude に強制し、
+        // 非 claude モデル名は抑制する。
         let provider = config
             .engine
             .filter_provider(config.agent_cli.provider_arg());
-        let model = config.agent_cli.model.as_deref();
+        let model = config
+            .engine
+            .filter_model(config.agent_cli.model.as_deref());
         let engine_bin = config.engine.binary_name().to_string();
 
         let provider_log = provider.as_deref().unwrap_or("(global default)");
