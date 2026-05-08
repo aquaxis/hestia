@@ -125,7 +125,8 @@ agent-cli send pcb-schematic "回路図ドラフト v0.1 をレビューして�
 [microSD] ── (SDIO 4-bit) ── [TZ75]
 [I2C 拡張] ── [RTC DS3231 / EEPROM / sensor] ── [TZ75]
 [8bit LED] / [PWR/FAULT/heartbeat LED] / [GPIO 32本ヘッダ] ── [TZ75]
-[bitstream SPI Flash MX25L25645G] ── (QSPI) ── [TZ75 config / SoC 共用]
+[bitstream SPI Flash MX25L25645G] ── (QSPI) ── [TZ75 config 専用]
+[QSPI 外部ペリフェラル（Flash / EEPROM 等）] ── (QSPI) ── [TZ75 SoC 汎用 QSPI]
 [電源シーケンサ TPS3895/LM3880] ── [DC/DC enable]
 ```
 
@@ -148,7 +149,8 @@ agent-cli send pcb-schematic "回路図ドラフト v0.1 をレビューして�
 | LED（ユーザ） | 8bit 個別制御 | 緑または白、3.3V 経由抵抗 | 必須 |
 | LED（ステータス）（ADD-10）| PWR / FAULT / heartbeat | 3 個、PWR 緑 / FAULT 赤 / heartbeat 黄 | 必須 |
 | JTAG（ADD-1, ADD-8, ADD-17）| FPGA / RISC-V 共用 | オンボード FT2232H + 外部 10pin/20pin ヘッダ | 必須 |
-| QSPI Flash（ADD-2）| bitstream 保存 + SoC 汎用 QSPI（共用） | 32 MB QSPI NOR、`MX25L25645G` | 必須 |
+| QSPI Flash（ADD-2）| bitstream 保存（FPGA config 専用） | 32 MB QSPI NOR、`MX25L25645G` | 必須 |
+| QSPI（SoC 汎用） | SoC からアクセスする外部 QSPI バス | 拡張ヘッダから外部 QSPI Flash / EEPROM を接続可（容量・型番はユーザ選択）、3.3V LVCMOS、最大 50 MHz | 必須 |
 | 電源シーケンサ（ADD-3）| 多レール起動順制御 | `LM3880` または `TPS3895` × 必要数 | 必須 |
 | クロック（ADD-4）| FPGA / Ethernet / MIPI | 25 MHz xtal × 2、27 MHz xtal × 1、または `Si5351A` | 必須 |
 | ESD 保護（ADD-5）| 外部 IO 全て | USB / RJ45 / MIPI / GPIO に TVS | 必須 |
@@ -446,7 +448,7 @@ kicad-cli pcb export step -o hw/mech/board.step hw/pcb/board.kicad_pcb
 │                                                             │
 │  ┌────────────┐  ┌────────────┐  ┌────────────────┐         │
 │  │ RV32IMC    │  │ AXI4 Inter │  │ HyperBus Ctrl  │         │
-│  │ (VexRiscv) │←─│ connect    │─→│ (1.8V/200MHz)  │─→ HyperRAM
+│  │ (RISC-V)   │←─│ connect    │─→│ (1.8V/200MHz)  │─→ HyperRAM
 │  └────────────┘  └─┬─┬─┬─┬─┬──┘  └────────────────┘         │
 │                    │ │ │ │ │                                │
 │           ┌────────┘ │ │ │ └────────┐                       │
@@ -469,7 +471,7 @@ kicad-cli pcb export step -o hw/mech/board.step hw/pcb/board.kicad_pcb
 
 | ブロック | LE | DSP | BRAM | 備考 |
 |--------|----|----|----|------|
-| RV32IMC コア | ~10K | 0〜4 | 4〜8 | VexRiscv standard |
+| RV32IMC コア | ~10K | 0〜4 | 4〜8 | RISC-V standard config |
 | AXI4 interconnect | ~3K | 0 | 0 | 4 master / 8 slave |
 | HyperBus controller | ~5K | 0 | 2 | Cypress HyperBus IP |
 | Ethernet MAC | ~8K | 0 | 4 | RGMII + checksum offload |
@@ -529,17 +531,19 @@ agent-cli send fpga-programmer "FT2232H 経由で hw/fpga/build/board.hex を SP
 
 ### 10.1 ISA / コア選定
 
-| 候補 | 言語 | サイズ | 特徴 |
-|-----|------|------|------|
-| **VexRiscv (SpinalHDL)** ★主候補 | SpinalHDL → Verilog 出力 | ~1500 LUT4 | 構成可変、AXI / Wishbone 対応、Linux 可 |
-| NeoRV32 | VHDL | ~1500 LE | 周辺豊富、教育用充実 |
-| picorv32 | Verilog | ~1000 LUT | 小型、シンプル |
-| Rocket / BOOM | Chisel | 大規模 | Linux 級、TZ75 では overspec |
+本テンプレートでは特定の RISC-V IP を指定しない。以下の要件を満たす任意の
+RISC-V コア（事前生成済 Verilog として提供されるもの）を選定し、SystemVerilog
+wrapper 経由で SoC に統合する:
+
+- **ISA**: RV32IMC（M-mode + U-mode、no MMU、no FPU）
+- **バス**: AXI4-lite（周辺）+ AXI4（HyperRAM 高速側）
+- **割り込み**: PLIC + CLINT 互換
+- **サイズ目安**: TZ75 の 75K LE に対し ~1500〜10000 LUT4 程度（リソース余裕 30% 以上を確保）
+- **言語**: 入力は Verilog（SystemVerilog 互換）。生成元が他の HDL の場合は事前に Verilog 化したものを取り込む。
 
 > **HDL 制約**: rtl-coder が手書きする RTL は **SystemVerilog 単一**とする。
-> VexRiscv は SpinalHDL ソースから事前生成済の Verilog を IP として統合し、
-> Hestia 内では `vex_riscv_wrapper.sv` 経由で SystemVerilog プロジェクトに取り込む。
-> 他候補（NeoRV32 = VHDL、Rocket / BOOM = Chisel）は本テンプレートのスコープ外。
+> RISC-V コア IP は事前生成済の Verilog 形式を採用し、Hestia 内では
+> SystemVerilog wrapper 経由で SoC に統合する。
 
 ### 10.2 SoC 仕様（ADD-9 ウォッチドッグ含む）
 
@@ -592,13 +596,13 @@ agent-cli send rtl-designer "
 章 10 の SoC 仕様（ISA, バス, メモリマップ, ブート）に従い
 <workspace>/rtl-designer/{requirements,design,tasks}.md を作成してください。
 
-参考: VexRiscv の standard config をベースに、AXI4-lite 周辺と AXI4 HyperRAM を統合したトップを設計
+参考: 選定する RISC-V コアの standard config をベースに、AXI4-lite 周辺と AXI4 HyperRAM を統合したトップを設計
 "
 
 agent-cli send rtl-coder "
 rtl/src/ に以下を実装してください:
 - soc_top.sv（トップラッパ）
-- vex_riscv_wrapper.sv（VexRiscv 生成 Verilog ラップ）
+- riscv_core_wrapper.sv（RISC-V コア IP の Verilog ラップ）
 - axi_interconnect.sv
 - bootrom.sv（init コード hex を localparam で）
 - hyperram_ctrl.sv
@@ -1001,7 +1005,6 @@ Efinix Ti75 のパッケージ選択肢:
 - Efinix Titanium 75 Datasheet: <https://www.efinixinc.com/products-titanium-overview-Ti75.html>
 - Cypress / Infineon HyperRAM: <https://www.infineon.com/cms/en/product/memories/hyperram/>
 - USB-PD 3.1 Specification: <https://www.usb.org/document-library/usb-power-delivery>
-- VexRiscv: <https://github.com/SpinalHDL/VexRiscv>
 - FreeRTOS RV32 Port: <https://www.freertos.org/Documentation/03-Libraries/02-FreeRTOS-libraries/00-Overview>
 - KiCad 7+: <https://www.kicad.org/>
 - Hestia persona 一覧: 本リポジトリの `.hestia/personas/*.md`（50 件）
@@ -1018,7 +1021,8 @@ Efinix Ti75 のパッケージ選択肢:
 | Ethernet: 1GbE | 章 4 / 章 5 / 章 9 / 章 11 |
 | 電源: USB-PD | 章 4 / 章 5 / 章 6 |
 | MIPI-CSI: 付けたい | 章 4 / 章 5 / 章 9 |
-| QSPI: bitstream + SoC 共用 | 章 3 / 章 4 / 章 10 |
+| QSPI: 設定用 Flash（FPGA config 専用） | 章 3 / 章 4 |
+| QSPI: SoC 汎用バス（外部 QSPI 接続） | 章 3 / 章 4 / 章 10 |
 | I2C: 主要バス | 章 4 / 章 7 / 章 10 |
 | GPIO: それなりに | 章 4 / 章 7 / 章 9 |
 | LED: 8bit | 章 4 / 章 7 / 章 11 |
