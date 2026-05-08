@@ -71,9 +71,44 @@ pub async fn run(opts: RunOpts) -> Result<()> {
         .stdout
         .take()
         .ok_or_else(|| anyhow!("failed to capture claude stdout"))?;
+    let stderr = claude
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow!("failed to capture claude stderr"))?;
+
+    // Phase 113: claude の stderr を log_dir/<agent_id>/claude_stderr.log に記録。
+    // stream-json の起動失敗（モデル不正、API キー欠如等）を診断するための情報源。
+    let stderr_log_path = log_path
+        .parent()
+        .map(|p| p.join("claude_stderr.log"))
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp/claude_stderr.log"));
+    let stderr_path_for_msg = stderr_log_path.clone();
+    tokio::spawn(async move {
+        let Ok(mut f) = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&stderr_log_path)
+            .await
+        else {
+            return;
+        };
+        let mut lines = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            use tokio::io::AsyncWriteExt as _;
+            let _ = f.write_all(format!("{line}\n").as_bytes()).await;
+            let _ = f.flush().await;
+        }
+    });
 
     // stdout reader task
     let mut log_for_reader = log; // move into task
+    let _ = log_for_reader.write_simple(
+        "system",
+        &format!(
+            "claude spawned, stderr -> {}",
+            stderr_path_for_msg.display()
+        ),
+    );
     let reader_handle = tokio::spawn(async move {
         let mut lines = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = lines.next_line().await {
@@ -195,11 +230,16 @@ fn parse_persona(text: &str) -> PersonaMeta {
 
 async fn spawn_claude(opts: &RunOpts, persona: &PersonaMeta) -> Result<Child> {
     let mut cmd = Command::new("claude");
-    cmd.arg("--input-format")
+    // Phase 113 注: claude の `--input-format stream-json` / `--output-format
+    // stream-json` は `--print` + `--verbose` の組み合わせが必須。stream-json
+    // input は EOF まで複数 message を受け付けるため、shim は stdin を keep open
+    // にしたまま FIFO 経由で input を流し込み、永続 session を実現する。
+    cmd.arg("--print")
+        .arg("--verbose")
+        .arg("--input-format")
         .arg("stream-json")
         .arg("--output-format")
         .arg("stream-json")
-        .arg("--print")
         .arg("--include-partial-messages");
     if opts.auto_approve_tools {
         cmd.arg("--dangerously-skip-permissions");
@@ -207,13 +247,14 @@ async fn spawn_claude(opts: &RunOpts, persona: &PersonaMeta) -> Result<Child> {
     if let Some(model) = &opts.model {
         cmd.arg("--model").arg(model);
     }
-    // persona 本文を `--system-prompt` で渡す
+    // persona 本文を `--append-system-prompt` で渡す
     if !persona.body.is_empty() {
         cmd.arg("--append-system-prompt").arg(&persona.body);
     }
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
+        // Phase 113: stderr は log dir の `claude_stderr.log` に記録して診断容易化。
+        .stderr(Stdio::piped());
     cmd.spawn().context("spawn claude")
 }
 
