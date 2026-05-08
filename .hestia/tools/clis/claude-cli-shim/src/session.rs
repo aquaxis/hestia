@@ -247,9 +247,18 @@ async fn spawn_claude(opts: &RunOpts, persona: &PersonaMeta) -> Result<Child> {
     if let Some(model) = &opts.model {
         cmd.arg("--model").arg(model);
     }
-    // persona 本文を `--append-system-prompt` で渡す
+    // persona 本文を `--append-system-prompt` で渡す。
+    //
+    // Phase 119: persona は dispatch 命令として `agent-cli send <peer>` 等を
+    // ハードコード文字列で含むが、claude-cli-shim engine 環境では `agent-cli`
+    // の独立 registry に peer が無いため、LLM が忠実に Bash で実行しても失敗
+    // する。shim が claude へ persona を渡す直前に `agent-cli` を
+    // `claude-cli-shim` に置換することで、persona ファイル無改修のまま
+    // dispatch 経路が機能する (agent-cli engine では shim 自体が呼ばれない
+    // ため、置換は claude_cli_shim engine 配下でのみ発生する)。
     if !persona.body.is_empty() {
-        cmd.arg("--append-system-prompt").arg(&persona.body);
+        let persona_body = persona.body.replace("agent-cli", "claude-cli-shim");
+        cmd.arg("--append-system-prompt").arg(persona_body);
     }
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
