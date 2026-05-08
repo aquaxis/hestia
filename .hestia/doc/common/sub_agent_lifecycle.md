@@ -83,7 +83,8 @@ agent-cli list    # 稼働中 peer 一覧取得
 .hestia/workspaces/<peer>/
 ├── requirements.md     # setup_ai/update_ai サイクルで agent 自身が fs_write（Phase 89 で改名）
 ├── design.md           # 同上（Phase 89 で改名）
-├── tasks.md            # 同上（Phase 89 で改名）
+├── tasks.md            # 同上、詳細タスク / DAG 専用（Phase 89 改名 / Phase 107 で状態ログを task_status.md に分離）
+├── task_status.md      # exec_job サイクルで自エージェントが状態のみ fs_write（Phase 107 新設）
 ├── agent.log           # agent-cli mirror 経由で自動記録（Phase 49）
 └── （作業生成物）
 ```
@@ -94,6 +95,10 @@ agent-cli list    # 稼働中 peer 一覧取得
 - 起動規約は project root の `.hestia/rules/{setup_project,update_project,exec_job}.md` から参照（Phase 81〜92）
 - `.aiprj/` は project 管理 AI 専有領域で、各 sub-agent workspace には作成しない（Phase 91 規約 / Phase 102 で runtime 整合化）
 - 3 文書 (`requirements.md` / `design.md` / `tasks.md`) は per-agent / 共用ではない（Phase 92 明確化）
+- **Phase 107: `tasks.md` と `task_status.md` の責務分離**
+  - `tasks.md` = setup_ai/update_ai サイクルで agent 自身が書く詳細タスク / DAG 専用、exec_job 中は不変
+  - `task_status.md` = exec_job サイクルで agent 自身が書く担当タスクの状態（「未着手」「進行中」「完了」「ブロック」）専用
+  - Phase 106 で `task.md`（Phase 103 由来 = 状態ログ）と `tasks.md`（Phase 89 由来 = 3 文書）を「意味的に同じ」と誤判定して統合した結果、`tasks.md` の DAG が状態更新で full-overwrite される衝突が発生していた問題を解消
 
 ## ヘルスチェック対象
 
