@@ -96,6 +96,22 @@ impl EngineConfig {
             .unwrap_or(name)
     }
 
+    /// Phase 115 — engine type に応じて `--provider` 引数を調整する。
+    ///
+    /// - `claude_cli_shim` engine: claude 単一 backend なので、`agent_cli.backend`
+    ///   が設定されていれば値に関係なく `"claude"` を強制、未設定なら None
+    ///   (`--provider` を渡さない / shim の default を使う)。これにより
+    ///   `[agent_cli] backend = "ollama"` のような設定が claude-cli-shim の
+    ///   registry に `provider: "ollama"` として誤記録される問題を防ぐ。
+    /// - `agent_cli` engine (default): 受け取った `provider_arg` をそのまま返す
+    ///   (後方互換)。
+    pub(crate) fn filter_provider(&self, provider_arg: Option<String>) -> Option<String> {
+        match self.type_.as_str() {
+            "claude_cli_shim" => provider_arg.map(|_| "claude".to_string()),
+            _ => provider_arg,
+        }
+    }
+
     /// engine subprocess に渡すべき env 変数のリストを構築する。
     /// hestia → claude-cli-shim 等への path override 伝達に使用。
     pub(crate) fn subprocess_env(&self) -> Vec<(&'static str, String)> {
@@ -489,7 +505,10 @@ pub(crate) async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str
         .map_err(|e| anyhow::anyhow!("failed to dup log file: {e}"))?;
 
     let config = load_hestia_config();
-    let provider = config.agent_cli.provider_arg();
+    // Phase 115 — claude_cli_shim engine 時は --provider を claude に強制。
+    let provider = config
+        .engine
+        .filter_provider(config.agent_cli.provider_arg());
     let model = config.agent_cli.model.as_deref();
     let engine_bin = config.engine.binary_name().to_string();
 
@@ -611,7 +630,10 @@ async fn start_conductor(domain: &str) -> Result<()> {
             .map_err(|e| anyhow::anyhow!("failed to dup log file: {e}"))?;
 
         let config = load_hestia_config();
-        let provider = config.agent_cli.provider_arg();
+        // Phase 115 — claude_cli_shim engine 時は --provider を claude に強制。
+        let provider = config
+            .engine
+            .filter_provider(config.agent_cli.provider_arg());
         let model = config.agent_cli.model.as_deref();
         let engine_bin = config.engine.binary_name().to_string();
 
