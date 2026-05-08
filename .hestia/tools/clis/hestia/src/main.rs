@@ -9,6 +9,8 @@ use std::process::Stdio;
 use std::time::{Duration, SystemTime};
 use tokio::process::Command;
 
+mod monitor;
+
 /// Subset of `.hestia/config.toml` consumed by `hestia start`.
 ///
 /// Only the `[agent_cli]` section is read here so we can pass `--provider` /
@@ -179,6 +181,28 @@ enum Commands {
     /// termination. The current `hestia kill` process is excluded so the
     /// command can complete and report a summary.
     Kill,
+    /// (Phase 108) Display the live status of every running conductor and
+    /// sub-agent on a refresh interval. The default mode redraws the screen
+    /// every `--interval` seconds; pass `--once` for a single snapshot
+    /// (equivalent to `hestia status`).
+    Monitor {
+        /// Refresh interval in seconds (clamped to 1..=60).
+        #[arg(long, default_value_t = 2)]
+        interval: u64,
+        /// Print one frame and exit (alias for `hestia status`).
+        #[arg(long, default_value_t = false)]
+        once: bool,
+        /// Include the `SKILLS` column in the output.
+        #[arg(long, default_value_t = false)]
+        all: bool,
+    },
+    /// (Internal, Phase 108) Long-running watchdog spawned by `hestia start ai`.
+    /// Periodically polls every conductor / sub-agent under ai-conductor and,
+    /// when *all* of them are simultaneously stopped with pending tasks
+    /// (per `<workspace>/<peer>/task_status.md`), sends a resume instruction
+    /// via `agent-cli send`. Not intended to be invoked manually.
+    #[command(hide = true, name = "monitor-daemon")]
+    MonitorDaemon,
 }
 
 /// Domain names that have a corresponding conductor.
@@ -290,6 +314,50 @@ fn init_hestia_workspace(peer_name: &str) {
     let _ = peer_name; // peer_name は logging で使われていたが Phase 92 で不要化
 }
 
+/// Phase 109 — `agent-cli list` の stdout から既登録 peer 名集合を抽出する純関数。
+/// NAME 列（2 列目）を完全一致で集める。`agent-XXX` で始まる ID 行のみ対象。
+fn registered_peer_names(stdout: &str) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    for line in stdout.lines().skip(1) {
+        let mut it = line.split_whitespace();
+        let Some(id) = it.next() else { continue };
+        let Some(name) = it.next() else { continue };
+        if id.starts_with("agent-") {
+            out.insert(name.to_string());
+        }
+    }
+    out
+}
+
+/// Phase 109 — `peer_name` が既に `agent-cli list` 上に登録されているかを判定。
+/// agent-cli 子プロセスの実行に失敗した場合は `false`（= 重複なし）を返し、
+/// fallback で従来の spawn 経路に進ませる（誤抑制を避ける）。
+async fn peer_already_registered(peer_name: &str) -> bool {
+    let Ok(out) = Command::new("agent-cli")
+        .arg("list")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+    else {
+        return false;
+    };
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    registered_peer_names(&stdout).contains(peer_name)
+}
+
+/// Phase 109 — `hestia monitor-daemon` 子プロセスが既に走っているかを `pgrep -f`
+/// で判定する。失敗時は `false`（重複なし扱い）。
+async fn monitor_daemon_already_running() -> bool {
+    Command::new("pgrep")
+        .arg("-f")
+        .arg("hestia monitor-daemon")
+        .output()
+        .await
+        .map(|o| !o.stdout.is_empty())
+        .unwrap_or(false)
+}
+
 /// Phase 55 — Spawn an agent-cli process for a given persona file + peer name.
 /// Used by `start_conductor` (for the main conductor and resident sub-agents)
 /// and by the hidden `spawn-subagent` subcommand (for handler-driven dynamic
@@ -297,10 +365,21 @@ fn init_hestia_workspace(peer_name: &str) {
 /// `.hestia/workspaces/<peer>/`, sets up FIFO stdin so the agent doesn't EOF,
 /// redirects stdout/stderr to `agent.log`, and (best-effort) spawns a mirror
 /// helper for log visibility.
+///
+/// Phase 109: 関数冒頭で `agent-cli list` を確認し、対象 peer 名が既登録なら
+/// warn ログのみで no-op return する（重複 spawn を物理的に防ぐ）。
 async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str) -> Result<()> {
     let persona = persona_path(persona_filename_root);
     if !persona.exists() {
         bail!("persona file not found: {}", persona.display());
+    }
+
+    // Phase 109 — 重複 spawn 防止
+    if peer_already_registered(peer_name).await {
+        eprintln!(
+            "[Phase 109] peer '{peer_name}' is already registered — skipping duplicate spawn"
+        );
+        return Ok(());
     }
 
     let workdir = workspace_path(peer_name);
@@ -402,92 +481,109 @@ async fn start_conductor(domain: &str) -> Result<()> {
     // Phase 81 — set up per-peer hestia workspace for the main conductor.
     init_hestia_workspace(domain);
 
-    // Create a FIFO for stdin so agent-cli doesn't exit on EOF.
-    // Opening with O_RDWR means the child is both reader and writer,
-    // so stdin never gets EOF and the process stays alive.
-    let fifo_path = workdir.join("stdin.pipe");
-    let _ = std::fs::remove_file(&fifo_path);
-    let c_path = std::ffi::CString::new(fifo_path.as_os_str().as_bytes())
-        .map_err(|e| anyhow::anyhow!("invalid fifo path: {e}"))?;
-    let mkfifo_result = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
-    if mkfifo_result != 0 {
-        bail!("failed to create FIFO {}: {}", fifo_path.display(), std::io::Error::last_os_error());
+    // Phase 109 — conductor 自身の重複 spawn 防止。
+    // 既登録の場合は agent-cli spawn を skip するが、resident sub-agents の起動と
+    // monitor-daemon spawn は継続する（個別に各 spawn 内で重複 check が走る）。
+    let conductor_already_up = peer_already_registered(domain).await;
+    if conductor_already_up {
+        eprintln!(
+            "[Phase 109] conductor '{domain}' is already registered — \
+             skipping duplicate agent-cli spawn (resident sub-agents will still be checked)"
+        );
     }
 
-    // Open FIFO with O_RDWR — this does NOT block on FIFOs and ensures
-    // the read end never gets EOF (the child itself is the writer).
-    let fd = unsafe {
-        libc::open(c_path.as_ptr(), libc::O_RDWR)
-    };
-    if fd < 0 {
-        bail!("failed to open FIFO {}: {}", fifo_path.display(), std::io::Error::last_os_error());
-    }
-    let fifo_stdin = unsafe { std::fs::File::from_raw_fd(fd) };
-
-    // Redirect stdout/stderr to log file
-    let log_path = workdir.join("agent.log");
-    let log_file = std::fs::File::create(&log_path)
-        .map_err(|e| anyhow::anyhow!("failed to create log file {}: {e}", log_path.display()))?;
-    let log_file_stderr = log_file.try_clone()
-        .map_err(|e| anyhow::anyhow!("failed to dup log file: {e}"))?;
-
-    let config = load_hestia_config();
-    let provider = config.agent_cli.provider_arg();
-    let model = config.agent_cli.model.as_deref();
-
-    let provider_log = provider.as_deref().unwrap_or("(global default)");
-    let model_log = model.unwrap_or("(global default)");
-    println!(
-        "Starting agent-cli --name {} --persona {} --provider {} --model {} ...",
-        domain, persona.display(), provider_log, model_log
-    );
-
-    let mut cmd = Command::new("agent-cli");
-    cmd.arg("run")
-        .arg("--persona")
-        .arg(&persona)
-        .arg("--name")
-        .arg(domain)
-        .arg("--auto-approve-tools");
-    if let Some(p) = provider.as_deref() {
-        cmd.arg("--provider").arg(p);
-    }
-    if let Some(m) = model {
-        cmd.arg("--model").arg(m);
-    }
-    let _child = cmd
-        .current_dir(&workdir)
-        .stdin(Stdio::from(fifo_stdin))
-        .stdout(Stdio::from(log_file))
-        .stderr(Stdio::from(log_file_stderr))
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("failed to spawn agent-cli for {domain}: {e}"))?;
-
-    // Phase 49: spawn the structured-log mirror as a detached background helper.
-    // Resolve hestia's own path (argv[0]) so we always invoke the same binary
-    // that started us, regardless of $PATH ordering. Inherit our cwd (the
-    // project root) — `mirror_agent_log` calls `workspace_path` which derives
-    // the workspace from cwd, so we must NOT change directory here.
+    // Phase 109 — conductor が既登録ならこのブロックをまるごと skip。
+    // 既存挙動の hestia_self だけは下流（mirror / monitor-daemon spawn）でも
+    // 必要なので block 外で resolve する。
     let hestia_self = std::env::current_exe()
         .unwrap_or_else(|_| PathBuf::from("hestia"));
-    let _mirror = Command::new(&hestia_self)
-        .arg("mirror")
-        .arg(domain)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("failed to spawn mirror helper for {domain}: {e}"))?;
+    let log_path = workdir.join("agent.log");
 
-    // Phase 84 — registry 登録確定まで待機（main conductor）。
-    // sub-agent spawn の前に conductor 自身が agent-cli registry に登録済である
-    // ことを保証する。タイムアウト時は warn のみで sub-agent spawn に進む。
-    if !conductor_sdk::workspace::wait_for_registry(domain, 15_000) {
-        eprintln!(
-            "[warn] conductor {domain} did not register within 15s — \
-             check {} for agent-cli startup errors",
-            log_path.display()
+    if !conductor_already_up {
+        // Create a FIFO for stdin so agent-cli doesn't exit on EOF.
+        // Opening with O_RDWR means the child is both reader and writer,
+        // so stdin never gets EOF and the process stays alive.
+        let fifo_path = workdir.join("stdin.pipe");
+        let _ = std::fs::remove_file(&fifo_path);
+        let c_path = std::ffi::CString::new(fifo_path.as_os_str().as_bytes())
+            .map_err(|e| anyhow::anyhow!("invalid fifo path: {e}"))?;
+        let mkfifo_result = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
+        if mkfifo_result != 0 {
+            bail!("failed to create FIFO {}: {}", fifo_path.display(), std::io::Error::last_os_error());
+        }
+
+        // Open FIFO with O_RDWR — this does NOT block on FIFOs and ensures
+        // the read end never gets EOF (the child itself is the writer).
+        let fd = unsafe {
+            libc::open(c_path.as_ptr(), libc::O_RDWR)
+        };
+        if fd < 0 {
+            bail!("failed to open FIFO {}: {}", fifo_path.display(), std::io::Error::last_os_error());
+        }
+        let fifo_stdin = unsafe { std::fs::File::from_raw_fd(fd) };
+
+        // Redirect stdout/stderr to log file
+        let log_file = std::fs::File::create(&log_path)
+            .map_err(|e| anyhow::anyhow!("failed to create log file {}: {e}", log_path.display()))?;
+        let log_file_stderr = log_file.try_clone()
+            .map_err(|e| anyhow::anyhow!("failed to dup log file: {e}"))?;
+
+        let config = load_hestia_config();
+        let provider = config.agent_cli.provider_arg();
+        let model = config.agent_cli.model.as_deref();
+
+        let provider_log = provider.as_deref().unwrap_or("(global default)");
+        let model_log = model.unwrap_or("(global default)");
+        println!(
+            "Starting agent-cli --name {} --persona {} --provider {} --model {} ...",
+            domain, persona.display(), provider_log, model_log
         );
+
+        let mut cmd = Command::new("agent-cli");
+        cmd.arg("run")
+            .arg("--persona")
+            .arg(&persona)
+            .arg("--name")
+            .arg(domain)
+            .arg("--auto-approve-tools");
+        if let Some(p) = provider.as_deref() {
+            cmd.arg("--provider").arg(p);
+        }
+        if let Some(m) = model {
+            cmd.arg("--model").arg(m);
+        }
+        let _child = cmd
+            .current_dir(&workdir)
+            .stdin(Stdio::from(fifo_stdin))
+            .stdout(Stdio::from(log_file))
+            .stderr(Stdio::from(log_file_stderr))
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("failed to spawn agent-cli for {domain}: {e}"))?;
+
+        // Phase 49: spawn the structured-log mirror as a detached background helper.
+        // Resolve hestia's own path (argv[0]) so we always invoke the same binary
+        // that started us, regardless of $PATH ordering. Inherit our cwd (the
+        // project root) — `mirror_agent_log` calls `workspace_path` which derives
+        // the workspace from cwd, so we must NOT change directory here.
+        let _mirror = Command::new(&hestia_self)
+            .arg("mirror")
+            .arg(domain)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("failed to spawn mirror helper for {domain}: {e}"))?;
+
+        // Phase 84 — registry 登録確定まで待機（main conductor）。
+        // sub-agent spawn の前に conductor 自身が agent-cli registry に登録済である
+        // ことを保証する。タイムアウト時は warn のみで sub-agent spawn に進む。
+        if !conductor_sdk::workspace::wait_for_registry(domain, 15_000) {
+            eprintln!(
+                "[warn] conductor {domain} did not register within 15s — \
+                 check {} for agent-cli startup errors",
+                log_path.display()
+            );
+        }
     }
 
     // Phase 55 — launch resident sub-agents (planner / designer) for this
@@ -499,6 +595,32 @@ async fn start_conductor(domain: &str) -> Result<()> {
         for (persona_root, peer_name) in *agents {
             if let Err(e) = spawn_agent_cli(persona_root, peer_name).await {
                 eprintln!("[warn] failed to start sub-agent {peer_name} for {domain}: {e}");
+            }
+        }
+    }
+
+    // Phase 108 — ai conductor 起動時に稼働監視デーモンを子プロセスとして spawn。
+    // mirror helper と同じパターンで `hestia monitor-daemon` を background detach。
+    // ai conductor は LLM peer として独立稼働し、監視デーモンは別プロセスとして
+    // 30 秒周期で配下サブエージェント + 起動中 domain conductor の状態を polling し、
+    // 全停止 + タスク残存時のみ `agent-cli send` で再開指示を発行する。
+    //
+    // Phase 109 — `pgrep` で既存デーモンを確認し、走っていれば spawn を skip する。
+    if domain == "ai" {
+        if monitor_daemon_already_running().await {
+            eprintln!(
+                "[Phase 109] hestia monitor-daemon is already running — skipping duplicate spawn"
+            );
+        } else {
+            let monitor = Command::new(&hestia_self)
+                .arg("monitor-daemon")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+            match monitor {
+                Ok(_) => println!("[Phase 108] hestia monitor-daemon spawned alongside ai-conductor"),
+                Err(e) => eprintln!("[warn] failed to spawn monitor-daemon: {e}"),
             }
         }
     }
@@ -617,7 +739,7 @@ async fn stop_all_conductors() -> Result<()> {
 
 /// Patterns that identify processes hestia is responsible for killing.
 /// `pgrep -f <pattern>` is used to enumerate matching PIDs on the host.
-const KILL_PATTERNS: &[&str] = &["agent-cli run", "hestia mirror"];
+const KILL_PATTERNS: &[&str] = &["agent-cli run", "hestia mirror", "hestia monitor-daemon"];
 
 /// Pure helper: turn a list of `(pattern, pgrep_stdout)` pairs into the ordered
 /// list of `(pattern, pid)` targets to SIGKILL, skipping the caller's own PID
@@ -1440,6 +1562,10 @@ async fn main() -> Result<()> {
             spawn_agent_cli(persona_root, &name).await?;
         }
         Commands::Kill => kill_all_processes().await?,
+        Commands::Monitor { interval, once, all } => {
+            monitor::run_monitor(interval, once, all).await?
+        }
+        Commands::MonitorDaemon => monitor::run_monitor_daemon().await?,
     }
 
     Ok(())
@@ -1448,8 +1574,8 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        derive_status_from_log, parse_status_events, select_kill_targets,
-        transform_status_listing, AgentStatus, StatusEvent,
+        derive_status_from_log, parse_status_events, registered_peer_names,
+        select_kill_targets, transform_status_listing, AgentStatus, StatusEvent,
     };
     use std::collections::HashMap;
     use std::time::Duration;
@@ -1660,5 +1786,73 @@ mod tests {
         assert_eq!(targets.len(), 2);
         assert_eq!(targets[0].1, 300);
         assert_eq!(targets[1].1, 400);
+    }
+
+    // ─── registered_peer_names (Phase 109) ─────────────────────────────────
+
+    #[test]
+    fn registered_peer_names_empty_input() {
+        assert!(registered_peer_names("").is_empty());
+    }
+
+    #[test]
+    fn registered_peer_names_header_only() {
+        let input = "ID  NAME  PROVIDER  MODEL  ROLE\n";
+        assert!(registered_peer_names(input).is_empty());
+    }
+
+    #[test]
+    fn registered_peer_names_picks_agent_rows() {
+        let input = "\
+ID                              NAME         PROVIDER  MODEL          ROLE
+agent-AAA                       ai           ollama    glm-5.1:cloud  meta
+agent-BBB                       ai-designer  ollama    glm-5.1:cloud  designer
+agent-CCC                       ai-reviewer  ollama    glm-5.1:cloud  reviewer
+";
+        let got = registered_peer_names(input);
+        assert_eq!(got.len(), 3);
+        assert!(got.contains("ai"));
+        assert!(got.contains("ai-designer"));
+        assert!(got.contains("ai-reviewer"));
+    }
+
+    #[test]
+    fn registered_peer_names_dedups_repeated_names() {
+        // Phase 109 で防止すべき状態の入力（同名 peer が複数登録）。
+        // 集合化することで重複は 1 件に収束する。
+        let input = "\
+ID                              NAME         PROVIDER  MODEL          ROLE
+agent-AAA                       ai-reviewer  ollama    glm-5.1:cloud  reviewer
+agent-BBB                       ai-reviewer  ollama    glm-5.1:cloud  reviewer
+agent-CCC                       ai-reviewer  ollama    glm-5.1:cloud  reviewer
+";
+        let got = registered_peer_names(input);
+        assert_eq!(got.len(), 1);
+        assert!(got.contains("ai-reviewer"));
+    }
+
+    #[test]
+    fn registered_peer_names_ignores_non_agent_rows() {
+        let input = "\
+ID                              NAME         PROVIDER  MODEL          ROLE
+0001                            ai           ollama    glm-5.1:cloud  meta
+agent-BBB                       ai-designer  ollama    glm-5.1:cloud  designer
+\n
+";
+        let got = registered_peer_names(input);
+        assert_eq!(got.len(), 1);
+        assert!(got.contains("ai-designer"));
+    }
+
+    #[test]
+    fn registered_peer_names_handles_skills_column() {
+        // SKILLS 列があっても NAME (2 列目) のみ拾うので影響なし。
+        let input = "\
+ID                              NAME         PROVIDER  MODEL          ROLE             SKILLS
+agent-AAA                       ai-reviewer  ollama    glm-5.1:cloud  reviewer         a, b, c
+";
+        let got = registered_peer_names(input);
+        assert_eq!(got.len(), 1);
+        assert!(got.contains("ai-reviewer"));
     }
 }

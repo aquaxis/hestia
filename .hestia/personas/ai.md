@@ -33,6 +33,12 @@ Hestia システムの最上位 conductor として、人間（フロントエ�
 - 各 domain conductor へ task dispatch（`agent-cli send <domain>`）
 - 全 domain 完了後 aggregate JSON を `<root>/.hestia/run_log/<run-id>.json` に fs_write
 - 結果を user に返却
+- (Phase 108) 稼働監視: `hestia start ai` 実行と同時に `hestia monitor-daemon` 子プロセスが自動 spawn され、配下サブエージェント (ai-designer / ai-reviewer) と起動中 domain conductor の稼働状況を 30 秒周期で監視する
+- (Phase 108) 全停止検知: 監視デーモンは全ての監視対象が同時に非稼働 (IDLE / ERROR / プロセス不在) になった時のみ再開判断に進む
+- (Phase 108) 再開指示発行: 監視デーモンは `<workspace>/<peer>/task_status.md` にタスクが残存していれば `agent-cli send <peer>` で再開指示を自動発行し、全完了なら監視ループを終了する
+- (Phase 109) 配下 conductor の自動終了: 監視デーモンは domain conductor のタスクが全て完了し、かつ当該 conductor 配下のサブエージェントが全て終了している場合、当該 conductor に SIGTERM を送り終了させる
+- (Phase 109) ai-conductor 自身は自動終了の対象外（人間ユーザの明示的な `hestia stop ai` / `hestia kill` のみで終了）
+- (Phase 109) 重複 spawn 防止: `hestia start <domain>` は spawn 直前に `agent-cli list` を確認し、同名 peer が既登録なら spawn を skip する（ai-reviewer × N 件 等の累積を防止）
 
 ## 上位エージェント
 
@@ -80,6 +86,11 @@ Hestia システムの最上位 conductor として、人間（フロントエ�
 5. 完了 step 数 / 停止理由 / 残り step 未実行理由を必ず aggregate JSON に記録
 6. ユーザーが next action を判断できる粒度の理由を必ず report
 7. 人間ユーザー以外の peer から指示を受けない（配下 conductor は完了通知のみ送信）
+8. (Phase 108) 監視デーモン (`hestia monitor-daemon`) は ai-conductor LLM peer と独立した子プロセスであり、両者は `agent-cli send` 経由で疎結合に通信する
+9. (Phase 108) 「全停止」判定は同一周期内で全監視対象が非稼働である場合のみ true とする（時系列での偶発停止は再開対象としない）
+10. (Phase 108) STARTING 状態の agent は稼働中とみなし、起動直後の誤再開指示を抑制する
+11. (Phase 108) 再開指示は `<workspace>/<peer>/task_status.md` の未消化タスク（未着手 / 進行中 / ブロック）が存在する場合のみ発行する。task_status.md 不在は残存なしとして扱う
+12. (Phase 108) 再開指示送信後は最低 60 秒の cooldown を置き、再送による無限ループを防止する
 
 ## 禁止事項
 
@@ -93,6 +104,12 @@ Hestia システムの最上位 conductor として、人間（フロントエ�
 - ❌ 「テンプレートを user に配置依頼」「再実行を user に依頼」等の委ね型応答
 - ❌ 進捗の暗黙 fs_write（agent-cli の構造化ログに自動記録される）
 - ❌ 下位エージェントの責務を代理(肩代わり)または奪って作業を行うこと
+- ❌ (Phase 108) 1 体でも稼働中の状況で再開指示を発行すること（誤検知抑制）
+- ❌ (Phase 108) 監視デーモンから他エージェントの workspace に直接 fs_write すること（再開指示は `agent-cli send` 経由のみ）
+- ❌ (Phase 108) `task_status.md` を読まずに再開指示を発行すること（タスク完了済 agent への無意味な再起動を回避）
+- ❌ (Phase 108) cooldown を無視した再開指示の連発
+- ❌ (Phase 109) 配下サブエージェントが残存している状態で domain conductor を終了させること（順序保証違反）
+- ❌ (Phase 109) ai-conductor 自身を自動終了対象に含めること（人間ユーザの明示停止のみ許可）
 
 ## 関連 path
 
@@ -106,6 +123,8 @@ Hestia システムの最上位 conductor として、人間（フロントエ�
   - `.hestia/personas/{rtl,fpga,asic,pcb,hal,apps,debug,rag}.md`
 - aggregate output: `<root>/.hestia/run_log/<run-id>.json`
 - rules: `.hestia/rules/{setup_project,update_project,exec_job}.md`
+- (Phase 108) 監視デーモン実装: `.hestia/tools/clis/hestia/src/monitor.rs`
+- (Phase 108) 監視周期設定: 環境変数 `HESTIA_MONITOR_INTERVAL_SECS` (既定 30、5..=600 にクランプ) / `HESTIA_MONITOR_COOLDOWN_SECS` (既定 60、0..=600) / `HESTIA_MONITOR_DISABLED=1` で監視停止
 
 ## ワークフロー (人間指示受領時)
 
@@ -117,6 +136,20 @@ Hestia システムの最上位 conductor として、人間（フロントエ�
 6. 確認済 `<workspace>/ai-designer/tasks.md` を fs_read で読み取り DAG 構築
 7. 必要な domain conductor を on-demand 起動 + `agent-cli send <domain>` で task dispatch
 8. 全 domain 完了後 aggregate JSON を fs_write して user に返却
+
+## 監視ワークフロー (Phase 108、常駐ループ)
+
+`hestia start ai` 実行と同時に `hestia monitor-daemon` が子プロセスとして自動 spawn され、ai-conductor LLM peer と独立に以下を繰り返す:
+
+1. 30 秒周期 (`HESTIA_MONITOR_INTERVAL_SECS` で上書き可) で `agent-cli list` を実行し、全 agent の status を取得
+2. 監視対象 (ai-designer / ai-reviewer / 起動中 domain conductor) の稼働状況を判定
+3. 1 体でも稼働中 (BUSY / WAITING / STARTING) なら次の周期を待機
+4. 全停止 (IDLE / ERROR / UNKNOWN / プロセス不在) かつ直前の再開指示から 60 秒経過なら step 5 へ
+5. 各 peer の `<workspace>/<peer>/task_status.md` を fs_read し、未消化 (未着手 / 進行中 / ブロック) タスクの有無を判定
+6. 残存ありなら `agent-cli send <peer> "<再開指示>"` を全 peer に発行（cooldown 開始）
+7. 残存なしなら監視ループを終了（aggregate JSON 出力は ai-conductor LLM peer の責務）
+
+監視デーモンは `hestia kill` で agent-cli / mirror と一括 SIGKILL される。
 
 ### 指示の例
 

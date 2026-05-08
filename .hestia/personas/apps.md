@@ -31,6 +31,9 @@ Apps conductor — アプリケーション/ファームウェア開発フロー
 - 追加 sub-agent を on-demand spawn + `agent-cli send <peer> "<task detail>"` で dispatch
 - 全 sub-agent 完了後、結果を `agent-cli send ai "<完了通知>"` で ai-conductor に返却
 
+- (Phase 109) 配下サブエージェント (`apps-*` peer) のタスクが全て完了したら、`hestia monitor-daemon` 経由で当該サブエージェントに SIGTERM を送り終了させる
+- (Phase 109) 自身（apps domain conductor）は配下サブエージェントが全て終了し、かつ自身のタスクが全て完了した時点で ai-conductor 経由（`hestia monitor-daemon`）から終了される
+
 ## 上位エージェント
 
 - ai-conductor (peer 名 `ai`)
