@@ -321,9 +321,10 @@ impl ConductorServer {
         }
     }
 
-    /// 自然言語メッセージを agent-cli 経由で LLM に転送する
+    /// 自然言語メッセージを engine binary 経由で LLM に転送する（Phase 113）。
     async fn forward_to_llm(conductor_name: &str, text: &str) -> Option<String> {
-        let output = tokio::process::Command::new("agent-cli")
+        let bin = crate::workspace::engine_binary();
+        let output = tokio::process::Command::new(&bin)
             .arg("send")
             .arg(conductor_name)
             .arg(text)

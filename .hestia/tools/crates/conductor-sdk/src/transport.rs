@@ -44,9 +44,10 @@ impl AgentCliClient {
         &self.registry_dir
     }
 
-    /// 稼働中の peer 一覧を取得（agent-cli list を使用、フォールバックでレジストリ直読み）
+    /// 稼働中の peer 一覧を取得（engine binary 経由、フォールバックでレジストリ直読み）
     pub async fn list_peers(&self) -> Result<Vec<String>, HestiaError> {
-        let output = Command::new("agent-cli")
+        let bin = crate::workspace::engine_binary();
+        let output = Command::new(&bin)
             .arg("list")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -140,14 +141,15 @@ impl AgentCliClient {
         }
     }
 
-    /// 指定 peer へペイロード送信（agent-cli send コマンド経由）
+    /// 指定 peer へペイロード送信（engine binary `send` コマンド経由）
     pub async fn send_via_cli(&self, peer: &str, payload: &Payload) -> Result<String, HestiaError> {
         let payload_str = match payload {
             Payload::Structured(v) => v.to_string(),
             Payload::NaturalLanguage(t) => t.clone(),
         };
 
-        let output = Command::new("agent-cli")
+        let bin = crate::workspace::engine_binary();
+        let output = Command::new(&bin)
             .arg("send")
             .arg(peer)
             .arg(&payload_str)
@@ -155,12 +157,12 @@ impl AgentCliClient {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| HestiaError::Transport(format!("agent-cli send failed: {e}")))?;
+            .map_err(|e| HestiaError::Transport(format!("{bin} send failed: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(HestiaError::Transport(format!(
-                "agent-cli send to {peer} exited with {}: {stderr}",
+                "{bin} send to {peer} exited with {}: {stderr}",
                 output.status
             )));
         }

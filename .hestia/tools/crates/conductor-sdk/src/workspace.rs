@@ -120,6 +120,15 @@ pub fn ensure_artifact_dir(category: &str, subpath: Option<&str>) -> Result<Path
 /// 本修正で whitespace 区切りの 2 列目（NAME 列）を peer 名と比較するよう変更。
 /// ヘッダー行（`ID NAME PROVIDER ...`）は `peer_name == "NAME"` でない限り
 /// マッチしない（NAME という名の peer が存在することは事実上ない）。
+/// Phase 113 — engine binary 名を解決する。
+///
+/// hestia バイナリは subprocess spawn 時に env 変数 `HESTIA_ENGINE_BINARY` を
+/// 設定するため、conductor-sdk はその値を read して engine 抽象化に追従する。
+/// 未設定時は `agent-cli`（後方互換）。
+pub(crate) fn engine_binary() -> String {
+    std::env::var("HESTIA_ENGINE_BINARY").unwrap_or_else(|_| "agent-cli".to_string())
+}
+
 pub fn agent_cli_peer_alive(peer_name: &str) -> bool {
     if let Ok(force) = std::env::var("HESTIA_PEER_ALIVE_FORCE") {
         if force
@@ -133,7 +142,7 @@ pub fn agent_cli_peer_alive(peer_name: &str) -> bool {
         return false;
     }
 
-    let output = std::process::Command::new("agent-cli")
+    let output = std::process::Command::new(engine_binary())
         .arg("list")
         .output();
     let Ok(out) = output else {
@@ -260,16 +269,17 @@ pub fn agent_cli_send(peer_name: &str, text: &str) -> Result<(), String> {
     if std::env::var("HESTIA_PEER_SEND_NOOP").as_deref() == Ok("1") {
         return Ok(());
     }
-    let output = std::process::Command::new("agent-cli")
+    let bin = engine_binary();
+    let output = std::process::Command::new(&bin)
         .arg("send")
         .arg(peer_name)
         .arg(text)
         .output()
-        .map_err(|e| format!("agent-cli send {peer_name}: spawn failed: {e}"))?;
+        .map_err(|e| format!("{bin} send {peer_name}: spawn failed: {e}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
-            "agent-cli send {peer_name}: exit {} stderr={}",
+            "{bin} send {peer_name}: exit {} stderr={}",
             output.status, stderr.trim()
         ));
     }

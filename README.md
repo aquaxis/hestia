@@ -83,7 +83,31 @@ hestia status        # デーモンステータスを表示
 
 - **Rust** 1.75+（[rustup](https://rustup.rs) でインストール）
 - **Linux** x86_64（カーネル 5.x 以降）
-- **agent-cli**（Conductor 間の IPC 通信に使用）
+- **Engine（いずれか 1 種を選択、Phase 113）**:
+  - `agent-cli`（既定、Conductor 間 IPC を 4 backend で駆動）
+  - `claude-cli-shim` + `claude` CLI + `ANTHROPIC_API_KEY`（案 C wrapper、Claude Code を peer 駆動エンジンとして使用）
+
+### Engine 切替（Phase 113）
+
+`.hestia/config.toml` の `[engine]` セクションで peer 駆動エンジンを選択:
+
+```toml
+[agent_cli]
+backend = "claude"           # agent-cli 内部の --provider
+model   = "claude-opus-4-7"
+
+[engine]
+# "agent_cli" (既定、後方互換) | "claude_cli_shim"
+type = "claude_cli_shim"
+# binary = "/path/to/claude-cli-shim"   # 省略時は type 既定
+# registry_path = "/custom/registry"    # 省略時は engine 既定
+# log_path      = "/custom/logs"        # 省略時は engine 既定
+```
+
+- `[engine]` 未設定時は `agent-cli` 既定で従来挙動と完全互換。
+- `claude_cli_shim` 選択時は `~/.local/bin/claude-cli-shim`（または `binary` で指定したパス）が使用される。`claude` バイナリと `ANTHROPIC_API_KEY` が必須。
+- registry / log path を agent-cli と共有する場合は、両 engine の peer 名衝突に注意（`hestia kill` で停止後に切替推奨）。
+- 詳細仕様は [`./report_claude.md`](./report_claude.md)（Phase 112 調査報告）と `.aiprj/AI_PRJ_DESIGN.md` §10〜§12 を参照。
 
 ## ワークスペース構成
 

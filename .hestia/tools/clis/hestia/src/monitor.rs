@@ -339,7 +339,9 @@ async fn terminate_peer(peer: &str) -> anyhow::Result<()> {
 }
 
 async fn pgrep_agent_cli_pids(peer: &str) -> Vec<u32> {
-    let pattern = format!("agent-cli run.*--name {peer}");
+    let cfg = super::load_hestia_config();
+    let bin_basename = cfg.engine.binary_basename();
+    let pattern = format!("{bin_basename} run.*--name {peer}");
     let Ok(out) = Command::new("pgrep")
         .arg("-f")
         .arg(&pattern)
@@ -623,7 +625,9 @@ pub(crate) async fn rescue_peer(peer: &str) -> anyhow::Result<()> {
     let _ = conductor_sdk::workspace::wait_for_registry(peer, 15_000);
 
     let msg = build_rescue_message(peer);
-    let status = Command::new("agent-cli")
+    let cfg = super::load_hestia_config();
+    let engine_bin = cfg.engine.binary_name();
+    let status = Command::new(engine_bin)
         .arg("send")
         .arg(peer)
         .arg(&msg)
@@ -631,9 +635,9 @@ pub(crate) async fn rescue_peer(peer: &str) -> anyhow::Result<()> {
         .stderr(Stdio::null())
         .status()
         .await
-        .map_err(|e| anyhow::anyhow!("agent-cli send {peer} (rescue) failed: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("{engine_bin} send {peer} (rescue) failed: {e}"))?;
     if !status.success() {
-        anyhow::bail!("agent-cli send {peer} (rescue message) exited with {status}");
+        anyhow::bail!("{engine_bin} send {peer} (rescue message) exited with {status}");
     }
     eprintln!("[monitor/rescue] '{peer}' rescued successfully");
     Ok(())
@@ -693,13 +697,15 @@ pub(crate) fn build_monitor_header(
 }
 
 async fn run_agent_cli_list() -> Result<String> {
-    let out = Command::new("agent-cli")
+    let cfg = super::load_hestia_config();
+    let engine_bin = cfg.engine.binary_name();
+    let out = Command::new(engine_bin)
         .arg("list")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
         .await
-        .map_err(|e| anyhow::anyhow!("failed to run agent-cli list: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("failed to run {engine_bin} list: {e}"))?;
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
@@ -715,7 +721,9 @@ fn build_resume_message(peer: &str) -> String {
 
 async fn send_resume_instruction(peer: &str) -> Result<()> {
     let msg = build_resume_message(peer);
-    let status = Command::new("agent-cli")
+    let cfg = super::load_hestia_config();
+    let engine_bin = cfg.engine.binary_name();
+    let status = Command::new(engine_bin)
         .arg("send")
         .arg(peer)
         .arg(&msg)
@@ -723,9 +731,9 @@ async fn send_resume_instruction(peer: &str) -> Result<()> {
         .stderr(Stdio::null())
         .status()
         .await
-        .map_err(|e| anyhow::anyhow!("agent-cli send {peer} failed: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("{engine_bin} send {peer} failed: {e}"))?;
     if !status.success() {
-        bail!("agent-cli send {peer} exited with {status}");
+        bail!("{engine_bin} send {peer} exited with {status}");
     }
     Ok(())
 }

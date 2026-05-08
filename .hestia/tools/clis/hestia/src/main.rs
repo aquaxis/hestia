@@ -18,9 +18,13 @@ mod monitor;
 /// config (`~/.config/agent-cli/config.toml`) from silently overriding the
 /// project's choice (Phase 24).
 #[derive(Debug, Default, Deserialize)]
-struct HestiaConfig {
+pub(crate) struct HestiaConfig {
     #[serde(default)]
     agent_cli: AgentCliConfig,
+    /// Phase 113 — `[engine]` セクション。peer 駆動エンジンを agent-cli /
+    /// claude-cli-shim から選択する。未設定時は `agent_cli` 既定で後方互換。
+    #[serde(default)]
+    pub(crate) engine: EngineConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -42,11 +46,82 @@ impl AgentCliConfig {
     }
 }
 
+/// Phase 113 — Engine 切替設定。
+///
+/// `.hestia/config.toml` の `[engine]` セクションから読込:
+/// ```toml
+/// [engine]
+/// type = "agent_cli"     # "agent_cli" (既定) | "claude_cli_shim"
+/// binary = ""            # 省略時は type に応じた既定 path
+/// registry_path = ""     # 省略時は engine 既定（library 経由は env で別途）
+/// log_path = ""          # 省略時は engine 既定
+/// ```
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct EngineConfig {
+    #[serde(rename = "type", default = "default_engine_type")]
+    pub(crate) type_: String,
+    #[serde(default)]
+    pub(crate) binary: Option<String>,
+    #[serde(default)]
+    pub(crate) registry_path: Option<PathBuf>,
+    #[serde(default)]
+    pub(crate) log_path: Option<PathBuf>,
+}
+
+fn default_engine_type() -> String {
+    "agent_cli".to_string()
+}
+
+impl EngineConfig {
+    /// engine_binary: explicit override > type 既定 (`agent-cli` / `claude-cli-shim`)
+    pub(crate) fn binary_name(&self) -> &str {
+        if let Some(b) = self.binary.as_deref() {
+            if !b.is_empty() {
+                return b;
+            }
+        }
+        match self.type_.as_str() {
+            "claude_cli_shim" => "claude-cli-shim",
+            _ => "agent-cli",
+        }
+    }
+
+    /// pgrep / monitor 用に process 名 (PATH を含まない) を返す。
+    /// `binary_name` が絶対 path の場合は basename を返す。
+    pub(crate) fn binary_basename(&self) -> &str {
+        let name = self.binary_name();
+        std::path::Path::new(name)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(name)
+    }
+
+    /// engine subprocess に渡すべき env 変数のリストを構築する。
+    /// hestia → claude-cli-shim 等への path override 伝達に使用。
+    pub(crate) fn subprocess_env(&self) -> Vec<(&'static str, String)> {
+        let mut out = Vec::new();
+        out.push(("HESTIA_ENGINE_BINARY", self.binary_name().to_string()));
+        if let Some(p) = &self.registry_path {
+            out.push((
+                "CLAUDE_CLI_SHIM_REGISTRY_PATH",
+                p.to_string_lossy().to_string(),
+            ));
+        }
+        if let Some(p) = &self.log_path {
+            out.push((
+                "CLAUDE_CLI_SHIM_LOG_PATH",
+                p.to_string_lossy().to_string(),
+            ));
+        }
+        out
+    }
+}
+
 /// Read `.hestia/config.toml` from the current working directory.
 /// Returns the parsed config, or an empty default if the file is absent or
 /// the section is missing — this preserves backwards compatibility with
 /// installations created before Phase 24.
-fn load_hestia_config() -> HestiaConfig {
+pub(crate) fn load_hestia_config() -> HestiaConfig {
     let path = std::env::current_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join(".hestia/config.toml");
@@ -334,7 +409,8 @@ pub(crate) fn registered_peer_names(stdout: &str) -> std::collections::HashSet<S
 /// agent-cli 子プロセスの実行に失敗した場合は `false`（= 重複なし）を返し、
 /// fallback で従来の spawn 経路に進ませる（誤抑制を避ける）。
 async fn peer_already_registered(peer_name: &str) -> bool {
-    let Ok(out) = Command::new("agent-cli")
+    let cfg = load_hestia_config();
+    let Ok(out) = Command::new(cfg.engine.binary_name())
         .arg("list")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -415,13 +491,14 @@ pub(crate) async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str
     let config = load_hestia_config();
     let provider = config.agent_cli.provider_arg();
     let model = config.agent_cli.model.as_deref();
+    let engine_bin = config.engine.binary_name().to_string();
 
     println!(
-        "Starting agent-cli --name {} --persona {} ...",
-        peer_name, persona.display()
+        "Starting {} --name {} --persona {} ...",
+        engine_bin, peer_name, persona.display()
     );
 
-    let mut cmd = Command::new("agent-cli");
+    let mut cmd = Command::new(&engine_bin);
     cmd.arg("run")
         .arg("--persona")
         .arg(&persona)
@@ -434,13 +511,16 @@ pub(crate) async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str
     if let Some(m) = model {
         cmd.arg("--model").arg(m);
     }
+    for (k, v) in config.engine.subprocess_env() {
+        cmd.env(k, v);
+    }
     let _child = cmd
         .current_dir(&workdir)
         .stdin(Stdio::from(fifo_stdin))
         .stdout(Stdio::from(log_file))
         .stderr(Stdio::from(log_file_stderr))
         .spawn()
-        .map_err(|e| anyhow::anyhow!("failed to spawn agent-cli for {peer_name}: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("failed to spawn {engine_bin} for {peer_name}: {e}"))?;
 
     // Best-effort mirror helper (Phase 49). Mirror walks workspace agent-cli
     // logs by domain name; for sub-agents the mirror still runs against the
@@ -533,15 +613,16 @@ async fn start_conductor(domain: &str) -> Result<()> {
         let config = load_hestia_config();
         let provider = config.agent_cli.provider_arg();
         let model = config.agent_cli.model.as_deref();
+        let engine_bin = config.engine.binary_name().to_string();
 
         let provider_log = provider.as_deref().unwrap_or("(global default)");
         let model_log = model.unwrap_or("(global default)");
         println!(
-            "Starting agent-cli --name {} --persona {} --provider {} --model {} ...",
-            domain, persona.display(), provider_log, model_log
+            "Starting {} --name {} --persona {} --provider {} --model {} ...",
+            engine_bin, domain, persona.display(), provider_log, model_log
         );
 
-        let mut cmd = Command::new("agent-cli");
+        let mut cmd = Command::new(&engine_bin);
         cmd.arg("run")
             .arg("--persona")
             .arg(&persona)
@@ -554,13 +635,16 @@ async fn start_conductor(domain: &str) -> Result<()> {
         if let Some(m) = model {
             cmd.arg("--model").arg(m);
         }
+        for (k, v) in config.engine.subprocess_env() {
+            cmd.env(k, v);
+        }
         let _child = cmd
             .current_dir(&workdir)
             .stdin(Stdio::from(fifo_stdin))
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(log_file_stderr))
             .spawn()
-            .map_err(|e| anyhow::anyhow!("failed to spawn agent-cli for {domain}: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("failed to spawn {engine_bin} for {domain}: {e}"))?;
 
         // Phase 49: spawn the structured-log mirror as a detached background helper.
         // Resolve hestia's own path (argv[0]) so we always invoke the same binary
@@ -634,9 +718,11 @@ async fn wait_for_ai_readiness() -> Result<()> {
     println!("Waiting for ai-conductor readiness ...");
     let timeout = std::time::Duration::from_secs(AI_READINESS_TIMEOUT_SECS);
     let start = std::time::Instant::now();
+    let cfg = load_hestia_config();
+    let engine_bin = cfg.engine.binary_name();
 
     while start.elapsed() < timeout {
-        let output = Command::new("agent-cli")
+        let output = Command::new(engine_bin)
             .arg("list")
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -702,13 +788,15 @@ async fn start_all_conductors() -> Result<()> {
 
 async fn stop_conductor(domain: &str) -> Result<()> {
     println!("Stopping {} conductor ...", domain);
-    let output = Command::new("agent-cli")
+    let cfg = load_hestia_config();
+    let engine_bin = cfg.engine.binary_name();
+    let output = Command::new(engine_bin)
         .arg("list")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
         .await
-        .map_err(|e| anyhow::anyhow!("failed to run agent-cli list: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("failed to run {engine_bin} list: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in stdout.lines() {
@@ -939,13 +1027,15 @@ fn home_share_dir() -> PathBuf {
 }
 
 async fn show_status(all: bool) -> Result<()> {
-    let output = Command::new("agent-cli")
+    let cfg = load_hestia_config();
+    let engine_bin = cfg.engine.binary_name();
+    let output = Command::new(engine_bin)
         .arg("list")
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .output()
         .await
-        .map_err(|e| anyhow::anyhow!("failed to run agent-cli list: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("failed to run {engine_bin} list: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let now = SystemTime::now();
@@ -1299,13 +1389,15 @@ fn cut_before_nth_separator(line: &str, n: usize) -> &str {
 /// `domain` via `agent-cli list`, then locates the most recently modified
 /// `*.jsonl` under `~/.local/share/agent-cli/logs/<agent-id>/`.
 async fn resolve_agent_log_path(domain: &str) -> Result<PathBuf> {
-    let output = Command::new("agent-cli")
+    let cfg = load_hestia_config();
+    let engine_bin = cfg.engine.binary_name();
+    let output = Command::new(engine_bin)
         .arg("list")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
         .await
-        .map_err(|e| anyhow::anyhow!("failed to run agent-cli list: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("failed to run {engine_bin} list: {e}"))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut agent_id: Option<String> = None;
     for line in stdout.lines() {
@@ -1356,7 +1448,9 @@ async fn resolve_agent_log_path(domain: &str) -> Result<PathBuf> {
 
 /// Detect whether an agent for `domain` is registered with agent-cli (Phase 49).
 async fn is_agent_alive(domain: &str) -> bool {
-    let output = Command::new("agent-cli")
+    let cfg = load_hestia_config();
+    let engine_bin = cfg.engine.binary_name();
+    let output = Command::new(engine_bin)
         .arg("list")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
