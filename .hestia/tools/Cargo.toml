@@ -22,6 +22,8 @@ members = [
     "clis/hestia-apps-cli",
     "clis/hestia-debug-cli",
     "clis/hestia-rag-cli",
+    # Phase 113: Claude Code wrapper shim (案 C)
+    "clis/claude-cli-shim",
     # 共通クレート (4)
     "crates/conductor-sdk",
     "crates/adapter-core",
