@@ -137,7 +137,43 @@ fn run_log_dir() -> PathBuf {
         .join(".hestia/run_log")
 }
 
-/// `run --file` 経路: agent-cli send で AI conductor LLM に投函 → 結果ファイル待機
+/// Phase 115 — engine binary 名を解決する。
+///
+/// 優先順位:
+/// 1. env `HESTIA_ENGINE_BINARY`（hestia 親プロセスから export される）
+/// 2. CWD の `.hestia/config.toml` の `[engine]` セクション直読（hestia-ai-cli が
+///    独立に呼ばれた場合の互換性確保）
+/// 3. `agent-cli`（後方互換 fallback）
+fn engine_binary() -> String {
+    if let Ok(v) = std::env::var("HESTIA_ENGINE_BINARY") {
+        if !v.is_empty() {
+            return v;
+        }
+    }
+    if let Some(b) = read_engine_from_config() {
+        return b;
+    }
+    "agent-cli".to_string()
+}
+
+fn read_engine_from_config() -> Option<String> {
+    let path = std::env::current_dir().ok()?.join(".hestia/config.toml");
+    let text = std::fs::read_to_string(&path).ok()?;
+    let v: toml::Value = toml::from_str(&text).ok()?;
+    let engine = v.get("engine")?;
+    if let Some(b) = engine.get("binary").and_then(|x| x.as_str()) {
+        if !b.is_empty() {
+            return Some(b.to_string());
+        }
+    }
+    let typ = engine.get("type").and_then(|x| x.as_str())?;
+    Some(match typ {
+        "claude_cli_shim" => "claude-cli-shim".to_string(),
+        _ => "agent-cli".to_string(),
+    })
+}
+
+/// `run --file` 経路: <engine> send で AI conductor LLM に投函 → 結果ファイル待機
 async fn run_with_orchestrator(
     common: &CommonOpts,
     file_path: &str,
@@ -163,15 +199,19 @@ async fn run_with_orchestrator(
         eprintln!("[ai.run] result_path={result_path_str}");
     }
 
+    // Phase 115 — agent-cli ハードコード解消。hestia 親が設定した
+    // HESTIA_ENGINE_BINARY env、または .hestia/config.toml の [engine] から
+    // 解決した binary を呼ぶ（claude_cli_shim engine 時は claude-cli-shim send）。
+    let engine_bin = engine_binary();
     // tokio::process::Command で非同期実行し、async ランタイムをブロックしない
-    let status = tokio::process::Command::new("agent-cli")
+    let status = tokio::process::Command::new(&engine_bin)
         .args(["send", "ai", &prompt])
         .status()
         .await
-        .map_err(|e| anyhow!("failed to invoke agent-cli send: {e}"))?;
+        .map_err(|e| anyhow!("failed to invoke {engine_bin} send: {e}"))?;
     if !status.success() {
         return Err(anyhow!(
-            "agent-cli send exited with non-zero status: {status}"
+            "{engine_bin} send exited with non-zero status: {status}"
         ));
     }
 
