@@ -83,10 +83,17 @@ pub fn read_all(registry_dir: &Path) -> Result<Vec<PeerEntry>> {
 }
 
 /// `list` subcommand の本体。agent-cli 互換の整形済テキストを stdout に出力。
+///
+/// Phase 115 — `hestia status` の列検出（≥2 spaces を separator とみなす）に
+/// 確実に追従するため、各列間に **2 spaces を literal で挿入** し、ID 列の
+/// 既定幅も `shim-<uuid>` (= 41 chars) に合わせる。1 space 区切り + `{:<36}`
+/// だと shim ID が overflow した時に ID-NAME 間が 1 space に縮退し、hestia の
+/// `nth_separator_end(line, 2)` が separator 1 を取りこぼして STATUS 列を
+/// PROVIDER と MODEL の間に誤挿入していた。
 pub fn list(registry_path: Option<PathBuf>) -> Result<()> {
     let dir = config::registry_dir(registry_path);
     let entries = read_all(&dir)?;
-    println!("ID                                   NAME                 PROVIDER  MODEL                       ROLE          SKILLS");
+    println!("ID                                         NAME                  PROVIDER   MODEL                        ROLE           SKILLS");
     for e in entries {
         let skills = if e.skills.is_empty() {
             String::new()
@@ -94,7 +101,7 @@ pub fn list(registry_path: Option<PathBuf>) -> Result<()> {
             e.skills.join(",")
         };
         println!(
-            "{:<36} {:<20} {:<9} {:<27} {:<13} {}",
+            "{:<41}  {:<20}  {:<9}  {:<27}  {:<13}  {}",
             e.id, e.name, e.provider, e.model, e.role, skills
         );
     }
