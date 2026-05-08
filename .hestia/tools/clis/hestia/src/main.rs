@@ -1638,6 +1638,14 @@ async fn tail_agent_log(domain: &str, path_only: bool) -> Result<()> {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Phase 115 — 親プロセス自身の env にも HESTIA_ENGINE_BINARY を export し、
+    // conductor-sdk の wait_for_registry / agent_cli_peer_alive / agent_cli_send 等が
+    // 正しい engine を呼ぶようにする (subprocess_env() は子プロセスにのみ env を渡すため、
+    // 親プロセス内から conductor-sdk を呼んだ場合の fallback "agent-cli" を防ぐ目的)。
+    // hestia ai run 経由で spawn される hestia-ai-cli にも env が伝搬する。
+    let cfg = load_hestia_config();
+    std::env::set_var("HESTIA_ENGINE_BINARY", cfg.engine.binary_name());
+
     match cli.command {
         Commands::Init => init_hestia_dir()?,
         Commands::Start { domain } => match domain {
