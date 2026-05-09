@@ -487,6 +487,31 @@ enum Commands {
     /// via `agent-cli send`. Not intended to be invoked manually.
     #[command(hide = true, name = "monitor-daemon")]
     MonitorDaemon,
+    /// Upgrade hestia itself by rebuilding from source and reinstalling
+    /// to ~/.local/bin/hestia.
+    ///
+    /// Source resolution order:
+    ///   1. --source <PATH>
+    ///   2. $HESTIA_SOURCE_DIR
+    ///   3. cwd if it has .hestia/tools/Cargo.toml
+    ///   4. ~/hestia
+    ///
+    /// Then runs `git pull --ff-only` (unless --no-pull), `cargo build
+    /// --release --bin hestia`, and copies the new binary in place.
+    Upgrade {
+        /// Hestia source repo path (overrides $HESTIA_SOURCE_DIR / cwd / ~/hestia).
+        #[arg(long)]
+        source: Option<PathBuf>,
+        /// Skip `git pull --ff-only`.
+        #[arg(long, default_value_t = false)]
+        no_pull: bool,
+        /// Print the steps without executing them.
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+        /// Stream cargo / git output verbatim (default: summarized).
+        #[arg(long, default_value_t = false)]
+        verbose: bool,
+    },
 }
 
 /// Domain names that have a corresponding conductor.
@@ -1869,6 +1894,233 @@ async fn mirror_agent_log(domain: &str) -> Result<()> {
     }
 }
 
+// ─── Phase 124: hestia upgrade ────────────────────────────────────────────
+
+/// Phase 124 — Source repo 解決優先順 (純関数)。
+///
+/// I/O フリーにするため `path_has_workspace` クロージャで existence check を
+/// 注入する。実環境では `|p| p.join(".hestia/tools/Cargo.toml").is_file()`。
+///
+/// 解決順:
+///   1. `--source <PATH>` (validation: workspace check も走る)
+///   2. `$HESTIA_SOURCE_DIR`
+///   3. `cwd`
+///   4. `~/hestia`
+///
+/// すべて該当なしなら hint 付きエラー文字列を返す。
+pub(crate) fn resolve_source_path(
+    arg_source: Option<&Path>,
+    env_source: Option<&str>,
+    cwd: &Path,
+    home: Option<&Path>,
+    path_has_workspace: impl Fn(&Path) -> bool,
+) -> std::result::Result<PathBuf, String> {
+    if let Some(p) = arg_source {
+        return if path_has_workspace(p) {
+            Ok(p.to_path_buf())
+        } else {
+            Err(format!(
+                "--source path is not a hestia repo: {}",
+                p.display()
+            ))
+        };
+    }
+    if let Some(s) = env_source {
+        if !s.is_empty() {
+            let p = Path::new(s);
+            if path_has_workspace(p) {
+                return Ok(p.to_path_buf());
+            }
+        }
+    }
+    if path_has_workspace(cwd) {
+        return Ok(cwd.to_path_buf());
+    }
+    if let Some(h) = home {
+        let candidate = h.join("hestia");
+        if path_has_workspace(&candidate) {
+            return Ok(candidate);
+        }
+    }
+    Err("hestia source repo not found.\n  Tried: --source / $HESTIA_SOURCE_DIR / cwd / ~/hestia\n  Hint: clone the repo to ~/hestia or pass --source <path>.".to_string())
+}
+
+/// Phase 124 — install 完了サマリの整形 (純関数)。
+pub(crate) fn format_install_summary(
+    source: &Path,
+    built: &Path,
+    install: &Path,
+    version: &str,
+) -> String {
+    format!(
+        "hestia upgraded successfully.\n  Source:    {}\n  Built:     {}\n  Installed: {}\n  Version:   {}\n",
+        source.display(),
+        built.display(),
+        install.display(),
+        version.trim(),
+    )
+}
+
+/// Phase 124 — `git -C <source> pull --ff-only` を実行する。
+/// 失敗時は warning ログを出して継続 (NFR: ローカル変更があってもユーザを困らせない)。
+async fn run_git_pull(source: &Path, verbose: bool) -> Result<()> {
+    let stdout_cfg = if verbose { Stdio::inherit() } else { Stdio::piped() };
+    let stderr_cfg = if verbose { Stdio::inherit() } else { Stdio::piped() };
+    println!("$ git -C {} pull --ff-only", source.display());
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(source)
+        .arg("pull")
+        .arg("--ff-only")
+        .stdout(stdout_cfg)
+        .stderr(stderr_cfg)
+        .output()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to spawn git: {e}"))?;
+    if !output.status.success() {
+        eprintln!("[warn] git pull failed (continuing with current checkout)");
+        if !verbose {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            for line in stderr.lines().take(5) {
+                eprintln!("[warn]   {line}");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Phase 124 — `cargo build --release --bin hestia` を `<source>/.hestia/tools` で実行。
+/// 失敗時は末尾 stderr を表示して bail。
+async fn run_cargo_build(source: &Path, verbose: bool) -> Result<()> {
+    let workspace = source.join(".hestia/tools");
+    let stdout_cfg = if verbose { Stdio::inherit() } else { Stdio::piped() };
+    let stderr_cfg = if verbose { Stdio::inherit() } else { Stdio::piped() };
+    println!("Rebuilding hestia from {} ...", source.display());
+    let start = std::time::Instant::now();
+    let output = Command::new("cargo")
+        .arg("build")
+        .arg("--release")
+        .arg("--bin")
+        .arg("hestia")
+        .current_dir(&workspace)
+        .stdout(stdout_cfg)
+        .stderr(stderr_cfg)
+        .output()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to spawn cargo: {e}"))?;
+    if !output.status.success() {
+        if !verbose {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let lines: Vec<&str> = stderr.lines().collect();
+            let tail = if lines.len() > 20 { &lines[lines.len() - 20..] } else { &lines[..] };
+            for line in tail {
+                eprintln!("{line}");
+            }
+        }
+        bail!("cargo build failed");
+    }
+    let elapsed = start.elapsed().as_secs_f32();
+    println!("Built in {elapsed:.2} s");
+    Ok(())
+}
+
+/// Phase 124 — built バイナリを install path に置換する。
+///
+/// Phase 123 検証で「Text file busy」(現実行中バイナリの上書きエラー) が発生
+/// したため、まず `remove_file` → `copy` → `set_permissions` の順で確実に置換する。
+fn install_binary(built: &Path, install: &Path) -> Result<()> {
+    if !built.is_file() {
+        bail!("built binary not found at {}", built.display());
+    }
+    if let Some(parent) = install.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    let _ = std::fs::remove_file(install); // 不在 / 失敗は ok 扱い
+    std::fs::copy(built, install).map_err(|e| {
+        anyhow::anyhow!(
+            "failed to copy {} -> {}: {e}",
+            built.display(),
+            install.display()
+        )
+    })?;
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = std::fs::metadata(install) {
+        let mut perm = meta.permissions();
+        perm.set_mode(0o755);
+        let _ = std::fs::set_permissions(install, perm);
+    }
+    Ok(())
+}
+
+/// Phase 124 — install 後の binary から `--version` を取得する。
+async fn fetch_installed_version(install: &Path) -> Result<String> {
+    let out = Command::new(install)
+        .arg("--version")
+        .output()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to run installed hestia --version: {e}"))?;
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Phase 124 — `--dry-run` で各ステップを表示するのみ (実コマンドは投入しない)。
+fn print_dry_run(source: &Path, built: &Path, install: &Path, no_pull: bool) {
+    if !no_pull {
+        println!("$ git -C {} pull --ff-only", source.display());
+    } else {
+        println!("(skip git pull)");
+    }
+    let workspace = source.join(".hestia/tools");
+    println!(
+        "$ (cd {} && cargo build --release --bin hestia)",
+        workspace.display()
+    );
+    println!("$ rm -f {}", install.display());
+    println!("$ cp {} {}", built.display(), install.display());
+    println!("(dry-run: no commands were executed)");
+}
+
+/// Phase 124 — `hestia upgrade` の main handler。
+async fn run_upgrade(
+    source: Option<PathBuf>,
+    no_pull: bool,
+    dry_run: bool,
+    verbose: bool,
+) -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let env_source = std::env::var("HESTIA_SOURCE_DIR").ok();
+    let home = dirs::home_dir();
+    let resolved = resolve_source_path(
+        source.as_deref(),
+        env_source.as_deref(),
+        &cwd,
+        home.as_deref(),
+        |p| p.join(".hestia/tools/Cargo.toml").is_file(),
+    )
+    .map_err(anyhow::Error::msg)?;
+    let built = resolved.join(".hestia/tools/target/release/hestia");
+    let install = home
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("$HOME unresolved"))?
+        .join(".local/bin/hestia");
+
+    if dry_run {
+        print_dry_run(&resolved, &built, &install, no_pull);
+        return Ok(());
+    }
+
+    if !no_pull {
+        run_git_pull(&resolved, verbose).await?;
+    }
+    run_cargo_build(&resolved, verbose).await?;
+    install_binary(&built, &install)?;
+    let version = fetch_installed_version(&install).await?;
+    print!(
+        "{}",
+        format_install_summary(&resolved, &built, &install, &version)
+    );
+    Ok(())
+}
+
 /// Tail an agent's structured log with simple human-readable formatting (Phase 48).
 async fn tail_agent_log(domain: &str, path_only: bool) -> Result<()> {
     let path = resolve_agent_log_path(domain).await?;
@@ -1950,6 +2202,9 @@ async fn main() -> Result<()> {
             monitor::run_monitor(interval, once, all).await?
         }
         Commands::MonitorDaemon => monitor::run_monitor_daemon().await?,
+        Commands::Upgrade { source, no_pull, dry_run, verbose } => {
+            run_upgrade(source, no_pull, dry_run, verbose).await?
+        }
     }
 
     Ok(())
@@ -1959,12 +2214,12 @@ async fn main() -> Result<()> {
 mod tests {
     use super::{
         agent_log_dir, classify_registry_entries, derive_status_from_log, engine_kill_patterns,
-        is_engine_peer_id, is_pid_alive, parse_status_events, registered_peer_names,
-        select_kill_targets, transform_status_listing, AgentStatus, EngineConfig, HestiaConfig,
-        StatusEvent,
+        format_install_summary, is_engine_peer_id, is_pid_alive, parse_status_events,
+        registered_peer_names, resolve_source_path, select_kill_targets, transform_status_listing,
+        AgentStatus, EngineConfig, HestiaConfig, StatusEvent,
     };
     use std::collections::HashMap;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::Duration;
 
     const HEADER: &str =
@@ -2412,5 +2667,116 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
         assert_eq!(dead.len(), 2);
         assert!(dead.contains(&PathBuf::from("/tmp/a.json")));
         assert!(dead.contains(&PathBuf::from("/tmp/b.json")));
+    }
+
+    // ─── Phase 124: hestia upgrade ──────────────────────────────────────
+
+    /// 「該当 path を hestia repo とみなす」mock 用クロージャを生成する。
+    fn workspace_at(allowed: &[&str]) -> impl Fn(&Path) -> bool {
+        let owned: Vec<PathBuf> = allowed.iter().map(PathBuf::from).collect();
+        move |p: &Path| owned.iter().any(|a| a.as_path() == p)
+    }
+
+    #[test]
+    fn resolve_source_path_prefers_arg() {
+        let arg = PathBuf::from("/some/repo");
+        let cwd = PathBuf::from("/tmp/elsewhere");
+        let home = PathBuf::from("/home/user");
+        let got = resolve_source_path(
+            Some(&arg),
+            Some("/env/path"),
+            &cwd,
+            Some(&home),
+            workspace_at(&["/some/repo", "/env/path", "/home/user/hestia"]),
+        );
+        assert_eq!(got.unwrap(), arg);
+    }
+
+    #[test]
+    fn resolve_source_path_falls_back_to_env() {
+        let cwd = PathBuf::from("/tmp/elsewhere");
+        let home = PathBuf::from("/home/user");
+        let got = resolve_source_path(
+            None,
+            Some("/env/path"),
+            &cwd,
+            Some(&home),
+            workspace_at(&["/env/path", "/home/user/hestia"]),
+        );
+        assert_eq!(got.unwrap(), PathBuf::from("/env/path"));
+    }
+
+    #[test]
+    fn resolve_source_path_uses_cwd_if_workspace() {
+        let cwd = PathBuf::from("/work/hestia-checkout");
+        let home = PathBuf::from("/home/user");
+        let got = resolve_source_path(
+            None,
+            None,
+            &cwd,
+            Some(&home),
+            workspace_at(&["/work/hestia-checkout", "/home/user/hestia"]),
+        );
+        assert_eq!(got.unwrap(), cwd);
+    }
+
+    #[test]
+    fn resolve_source_path_uses_home_hestia_default() {
+        let cwd = PathBuf::from("/tmp/elsewhere");
+        let home = PathBuf::from("/home/user");
+        let got = resolve_source_path(
+            None,
+            None,
+            &cwd,
+            Some(&home),
+            workspace_at(&["/home/user/hestia"]),
+        );
+        assert_eq!(got.unwrap(), PathBuf::from("/home/user/hestia"));
+    }
+
+    #[test]
+    fn resolve_source_path_returns_error_when_none() {
+        let cwd = PathBuf::from("/tmp/elsewhere");
+        let home = PathBuf::from("/home/user");
+        let err = resolve_source_path(None, None, &cwd, Some(&home), workspace_at(&[]))
+            .unwrap_err();
+        assert!(err.contains("hestia source repo not found"));
+        assert!(err.contains("--source"));
+        assert!(err.contains("$HESTIA_SOURCE_DIR"));
+    }
+
+    #[test]
+    fn resolve_source_path_arg_validates_existence() {
+        let arg = PathBuf::from("/tmp/nonexistent");
+        let cwd = PathBuf::from("/tmp");
+        let err = resolve_source_path(
+            Some(&arg),
+            None,
+            &cwd,
+            None,
+            workspace_at(&[]),
+        )
+        .unwrap_err();
+        assert!(err.contains("--source path is not a hestia repo"));
+        assert!(err.contains("/tmp/nonexistent"));
+    }
+
+    #[test]
+    fn format_install_summary_contains_all_paths_and_version() {
+        let summary = format_install_summary(
+            Path::new("/home/u/hestia"),
+            Path::new("/home/u/hestia/.hestia/tools/target/release/hestia"),
+            Path::new("/home/u/.local/bin/hestia"),
+            "hestia 0.1.0\n",
+        );
+        assert!(summary.contains("hestia upgraded successfully."));
+        assert!(summary.contains("Source:    /home/u/hestia"));
+        assert!(summary.contains(
+            "Built:     /home/u/hestia/.hestia/tools/target/release/hestia"
+        ));
+        assert!(summary.contains("Installed: /home/u/.local/bin/hestia"));
+        assert!(summary.contains("Version:   hestia 0.1.0"));
+        // 末尾改行なし version でも改行で 5 行構成 (見出し + 4 詳細)。
+        assert_eq!(summary.lines().count(), 5);
     }
 }
