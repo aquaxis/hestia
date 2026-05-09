@@ -567,6 +567,14 @@ stagger_ms = 500
 # LLM バックエンド: claude / codex / ollama / llama_cpp
 backend = "ollama"
 model = "glm-5.1:cloud"
+
+# Phase 126 — サブエージェント並列度の上限。値を増やすほど LLM / PC 負荷が上がる。
+# 各値は対応する環境変数で個別 override 可能。
+[concurrency]
+global_max = 8                       # ai-conductor が把握する全エージェント合計 (HESTIA_GLOBAL_MAX_AGENTS)
+ai_conductor_dispatch_max = 2        # ai-conductor が同時 dispatch する domain conductor 数 (HESTIA_AI_DISPATCH_MAX)
+per_conductor_max = 4                # 各 conductor が同時 spawn できるサブエージェント数 (HESTIA_PER_CONDUCTOR_MAX)
+acquire_timeout_secs = 600           # slot 待機タイムアウト秒（デッドロック検知）(HESTIA_ACQUIRE_TIMEOUT_SECS)
 "#;
 
 fn dispatch_cli(domain: &str, args: &[String]) -> Result<()> {

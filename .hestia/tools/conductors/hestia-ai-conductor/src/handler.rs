@@ -9,6 +9,7 @@ use conductor_sdk::message::{ErrorResultResponse, MessageId, Payload, Request, R
 use conductor_sdk::server::MessageHandler;
 use conductor_sdk::error::ErrorResponse;
 use conductor_sdk::agent::ConductorId;
+use conductor_sdk::concurrency::ConductorLimiter;
 use conductor_sdk::config::HestiaClientConfig;
 use conductor_sdk::transport::AgentCliClient;
 
@@ -30,14 +31,28 @@ pub struct AiHandler {
     config: HestiaClientConfig,
     conductor_mgr: Arc<ConductorManager>,
     agent_mgr: Arc<tokio::sync::Mutex<AgentManager>>,
+    /// Phase 126 — ai-conductor 配下 conductor の同時 dispatch 上限。
+    /// `HESTIA_AI_DISPATCH_MAX` (既定 2) で設定。`acquire_timeout_secs` 経過で
+    /// 当該 step を `dispatch_acquire_timeout` エラーとして記録し次へ進む
+    /// （デッドロック検知）。
+    dispatch_limiter: Arc<ConductorLimiter>,
 }
 
 impl AiHandler {
     pub fn new(config: HestiaClientConfig) -> Self {
+        let dispatch_max = std::env::var("HESTIA_AI_DISPATCH_MAX")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(2);
+        let acquire_to = std::env::var("HESTIA_ACQUIRE_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(600);
         Self {
             config,
             conductor_mgr: Arc::new(ConductorManager::new()),
-            agent_mgr: Arc::new(tokio::sync::Mutex::new(AgentManager::new())),
+            agent_mgr: Arc::new(tokio::sync::Mutex::new(AgentManager::with_default_cap())),
+            dispatch_limiter: Arc::new(ConductorLimiter::new(dispatch_max, acquire_to)),
         }
     }
 
@@ -409,6 +424,29 @@ impl AiHandler {
                 label = %step.label,
                 "ai.exec: executing workflow step"
             );
+
+            // Phase 126 — L2 cap: ai-conductor 同時 dispatch 上限を Semaphore で保護。
+            // 取得順序固定 (L1 → L2 → L3) の L2。timeout で循環待機を破る。
+            let _dispatch_permit = match self.dispatch_limiter.acquire().await {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!(
+                        step = step.step,
+                        conductor = ?step.conductor,
+                        error = %e,
+                        "ai.exec: dispatch_limiter acquire failed; recording step error"
+                    );
+                    results.push(serde_json::json!({
+                        "step": step.step,
+                        "label": step.label,
+                        "conductor": format!("{:?}", step.conductor),
+                        "method": step.method,
+                        "status": "error",
+                        "error": format!("dispatch_acquire_timeout: {e}"),
+                    }));
+                    continue;
+                }
+            };
 
             // Phase 101 — Phase 93 の on-demand spawn 機能の動作開始（G10 修正）。
             // dispatch 直前に必要 conductor を spawn する。既に alive なら no-op。

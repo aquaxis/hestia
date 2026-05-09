@@ -1,11 +1,23 @@
 //! Apps Conductor メッセージハンドラ
 
+use std::sync::OnceLock;
+
+use conductor_sdk::concurrency::ConductorLimiter;
 use conductor_sdk::message::{ErrorResultResponse, Request, Response, SuccessResponse};
 use conductor_sdk::server::MessageHandler;
 use conductor_sdk::error::ErrorResponse;
 
 /// Apps Conductor メッセージハンドラ
 pub struct AppsHandler;
+
+/// Phase 126 — Apps conductor 配下サブエージェント並列度の上限。
+/// `HESTIA_PER_CONDUCTOR_MAX` (既定 4) で設定。`HESTIA_ACQUIRE_TIMEOUT_SECS`
+/// (既定 600) 経過で当該 coder 起動を skip する（デッドロック検知）。
+static APPS_LIMITER: OnceLock<ConductorLimiter> = OnceLock::new();
+
+fn apps_limiter() -> &'static ConductorLimiter {
+    APPS_LIMITER.get_or_init(ConductorLimiter::from_env)
+}
 
 #[async_trait::async_trait]
 impl MessageHandler for AppsHandler {
@@ -141,11 +153,22 @@ impl AppsHandler {
                 "note": "modules array required",
             }));
         }
-        let max_parallel = std::cmp::min(modules.len(), 16);
+        // Phase 126 — hardcode 16 を ConductorLimiter (env 駆動) に置換。
+        let limiter = apps_limiter();
+        let max_parallel = std::cmp::min(modules.len(), limiter.capacity());
         let mut spawned: Vec<String> = Vec::new();
         let mut dispatched_all = true;
         for m in modules.iter().take(max_parallel) {
             let peer = format!("apps-coder-{m}");
+            let _permit = match limiter.acquire().await {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!(peer = %peer, error = %e,
+                        "apps.dispatch_coders.v1: limiter acquire timeout — skipping coder");
+                    dispatched_all = false;
+                    continue;
+                }
+            };
             let r = std::process::Command::new("hestia")
                 .args(["spawn-subagent", "--persona", "apps-coder", "--name", &peer])
                 .output();

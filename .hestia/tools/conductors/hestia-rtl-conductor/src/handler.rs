@@ -2,6 +2,9 @@
 //!
 //! RTL ドメイン固有のメソッドをディスパッチする。
 
+use std::sync::OnceLock;
+
+use conductor_sdk::concurrency::ConductorLimiter;
 use conductor_sdk::message::{ErrorResultResponse, Request, Response, SuccessResponse};
 use conductor_sdk::server::MessageHandler;
 use conductor_sdk::error::ErrorResponse;
@@ -15,6 +18,15 @@ use crate::simulation::SimRunner;
 
 /// RTL Conductor メッセージハンドラ
 pub struct RtlHandler;
+
+/// Phase 126 — RTL conductor 配下サブエージェント並列度の上限。
+/// `HESTIA_PER_CONDUCTOR_MAX` (既定 4) で設定。`HESTIA_ACQUIRE_TIMEOUT_SECS`
+/// (既定 600) 経過で `dispatch_coders.v1` の当該 coder 起動を skip する。
+static RTL_LIMITER: OnceLock<ConductorLimiter> = OnceLock::new();
+
+fn rtl_limiter() -> &'static ConductorLimiter {
+    RTL_LIMITER.get_or_init(ConductorLimiter::from_env)
+}
 
 #[async_trait::async_trait]
 impl MessageHandler for RtlHandler {
@@ -164,12 +176,27 @@ impl RtlHandler {
             }));
         }
 
-        let max_parallel = std::cmp::min(modules.len(), 16); // 設計 §4.8 — 最大 16 並列
+        // Phase 126 — 設計 §4.8 の hardcode 16 を ConductorLimiter (env 駆動) に置換。
+        // L3 cap: per_conductor_max を上限としてモジュール数を絞る。各 spawn は
+        // limiter から permit を取得してから実行し、cap 超過時は acquire timeout で
+        // dispatch_acquire_timeout を返す（デッドロック検知）。
+        let limiter = rtl_limiter();
+        let max_parallel = std::cmp::min(modules.len(), limiter.capacity());
         let mut spawned: Vec<String> = Vec::new();
         let mut dispatched_all = true;
 
         for module in modules.iter().take(max_parallel) {
             let peer = format!("rtl-coder-{module}");
+
+            let _permit = match limiter.acquire().await {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!(peer = %peer, error = %e,
+                        "rtl.dispatch_coders.v1: limiter acquire timeout — skipping coder");
+                    dispatched_all = false;
+                    continue;
+                }
+            };
 
             // hestia spawn-subagent --persona rtl-coder --name rtl-coder-{module}
             let spawn_result = std::process::Command::new("hestia")
