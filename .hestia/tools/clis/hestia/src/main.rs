@@ -154,6 +154,35 @@ impl EngineConfig {
     }
 }
 
+/// Phase 121 — engine-aware peer-row predicate.
+///
+/// `<engine> list` の stdout 1 行が「実 peer 行」かどうかを ID 列の prefix で
+/// 判定する純関数。
+/// - agent-cli engine: `agent-<ULID>` 形式
+/// - claude_cli_shim engine: `shim-<UUID>` 形式
+///
+/// header 行（`ID NAME ...`）/ 区切り行 / 空行は false を返す。
+pub(crate) fn is_engine_peer_id(id: &str) -> bool {
+    id.starts_with("agent-") || id.starts_with("shim-")
+}
+
+/// Phase 121 — engine-aware log directory resolver.
+///
+/// `agent_id` の prefix から engine namespace を推定し、JSONL ログ dir を返す:
+/// - `shim-...` → `~/.local/share/claude-cli-shim/logs/<id>/`
+/// - その他 (`agent-...`) → `~/.local/share/agent-cli/logs/<id>/`（既定）
+///
+/// `dirs::home_dir()` 失敗時は `None`。dir の存在は確認しない（呼び元で対処）。
+pub(crate) fn agent_log_dir(agent_id: &str) -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    let dir = if agent_id.starts_with("shim-") {
+        home.join(".local/share/claude-cli-shim/logs").join(agent_id)
+    } else {
+        home.join(".local/share/agent-cli/logs").join(agent_id)
+    };
+    Some(dir)
+}
+
 /// Read `.hestia/config.toml` from the current working directory.
 /// Returns the parsed config, or an empty default if the file is absent or
 /// the section is missing — this preserves backwards compatibility with
@@ -426,16 +455,17 @@ fn init_hestia_workspace(peer_name: &str) {
     let _ = peer_name; // peer_name は logging で使われていたが Phase 92 で不要化
 }
 
-/// Phase 109 — `agent-cli list` の stdout から既登録 peer 名集合を抽出する純関数。
-/// NAME 列（2 列目）を完全一致で集める。`agent-XXX` で始まる ID 行のみ対象。
-/// Phase 110 で monitor.rs から呼び出すため `pub(crate)` 化。
+/// Phase 109 — `<engine> list` の stdout から既登録 peer 名集合を抽出する純関数。
+/// NAME 列（2 列目）を完全一致で集める。
+/// Phase 121: ID prefix 判定を `is_engine_peer_id` で engine 抽象化
+/// (agent-cli の `agent-`、claude_cli_shim の `shim-` 双方を許容)。
 pub(crate) fn registered_peer_names(stdout: &str) -> std::collections::HashSet<String> {
     let mut out = std::collections::HashSet::new();
     for line in stdout.lines().skip(1) {
         let mut it = line.split_whitespace();
         let Some(id) = it.next() else { continue };
         let Some(name) = it.next() else { continue };
-        if id.starts_with("agent-") {
+        if is_engine_peer_id(id) {
             out.insert(name.to_string());
         }
     }
@@ -1179,10 +1209,12 @@ fn derive_status_from_log(events: &[StatusEvent], mtime_age: Duration) -> AgentS
 /// [`AgentStatus::Starting`] when the directory or jsonl is missing,
 /// [`AgentStatus::Unknown`] only for unexpected I/O errors.
 fn derive_agent_status(agent_id: &str, now: SystemTime) -> AgentStatus {
-    let Some(home) = dirs::home_dir() else {
+    // Phase 121: agent_id prefix から engine 別 log dir を解決
+    // (agent-cli は `~/.local/share/agent-cli/logs/<id>/`、
+    //  claude_cli_shim は `~/.local/share/claude-cli-shim/logs/<id>/session.jsonl`)。
+    let Some(log_dir) = agent_log_dir(agent_id) else {
         return AgentStatus::Unknown;
     };
-    let log_dir = home.join(".local/share/agent-cli/logs").join(agent_id);
     let Ok(entries) = std::fs::read_dir(&log_dir) else {
         return AgentStatus::Starting;
     };
@@ -1257,7 +1289,8 @@ fn collect_agent_statuses(stdout: &str, now: SystemTime) -> HashMap<String, Agen
     let mut out = HashMap::new();
     for line in stdout.lines().skip(1) {
         let id = line.split_whitespace().next().unwrap_or("");
-        if id.starts_with("agent-") && !out.contains_key(id) {
+        // Phase 121: prefix 判定を engine 抽象化 (agent-cli + claude_cli_shim 両対応)
+        if is_engine_peer_id(id) && !out.contains_key(id) {
             let status = derive_agent_status(id, now);
             out.insert(id.to_string(), status);
         }
@@ -1462,14 +1495,13 @@ async fn resolve_agent_log_path(domain: &str) -> Result<PathBuf> {
     }
     let agent_id = agent_id.ok_or_else(|| {
         anyhow::anyhow!(
-            "no running agent named '{domain}' found via 'agent-cli list'. Did you run 'hestia start'?"
+            "no running agent named '{domain}' found via '{engine_bin} list'. Did you run 'hestia start'?"
         )
     })?;
 
-    let log_dir = dirs::home_dir()
-        .ok_or_else(|| anyhow::anyhow!("could not resolve $HOME"))?
-        .join(".local/share/agent-cli/logs")
-        .join(&agent_id);
+    // Phase 121: agent_id prefix から engine 別 log dir を解決。
+    let log_dir = agent_log_dir(&agent_id)
+        .ok_or_else(|| anyhow::anyhow!("could not resolve $HOME"))?;
     if !log_dir.exists() {
         bail!(
             "log directory not found for agent '{domain}' ({agent_id}): {}",
@@ -1623,19 +1655,39 @@ async fn mirror_agent_log(domain: &str) -> Result<()> {
                         }
                     }
                     "tool_call" => {
-                        let name = ev.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                        // Phase 121: agent-cli は `name`、claude-cli-shim は `tool` field を使う
+                        let name = ev
+                            .get("name")
+                            .or_else(|| ev.get("tool"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("?");
                         let args_text = ev.get("args").map(|v| v.to_string()).unwrap_or_default();
                         let args_short: String = args_text.chars().take(160).collect();
                         let _ = writeln!(out, "[mirror][tool_call] {} args={}", name, args_short);
                     }
                     "tool_result" => {
-                        let name = ev.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                        let name = ev
+                            .get("name")
+                            .or_else(|| ev.get("tool"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("?");
                         let ok = ev.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
                         let _ = writeln!(out, "[mirror][tool_result] {} ok={}", name, ok);
                     }
                     "peer_prompt" => {
                         let from = ev.get("from").and_then(|v| v.as_str()).unwrap_or("?");
                         let _ = writeln!(out, "[mirror][peer_prompt] from={}", from);
+                    }
+                    // Phase 121: claude-cli-shim は peer_prompt の代わりに `user` kind を出す
+                    "user" => {
+                        let snippet: String = ev
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .chars()
+                            .take(160)
+                            .collect();
+                        let _ = writeln!(out, "[mirror][user] {}", snippet.trim());
                     }
                     "assistant" => {
                         let snippet: String = ev
@@ -1737,8 +1789,9 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        derive_status_from_log, parse_status_events, registered_peer_names,
-        select_kill_targets, transform_status_listing, AgentStatus, StatusEvent,
+        agent_log_dir, derive_status_from_log, is_engine_peer_id, parse_status_events,
+        registered_peer_names, select_kill_targets, transform_status_listing, AgentStatus,
+        StatusEvent,
     };
     use std::collections::HashMap;
     use std::time::Duration;
@@ -2039,5 +2092,58 @@ agent-AAA                       ai-reviewer  ollama    glm-5.1:cloud  reviewer  
         let got = registered_peer_names(input);
         assert_eq!(got.len(), 1);
         assert!(got.contains("ai-reviewer"));
+    }
+
+    // ─── Phase 121: engine 抽象化ヘルパ ────────────────────────────────
+
+    #[test]
+    fn is_engine_peer_id_accepts_agent_cli_prefix() {
+        assert!(is_engine_peer_id("agent-AAA"));
+        assert!(is_engine_peer_id(
+            "agent-01KQX72WJY3Z59RN77YXB9Z02P"
+        ));
+    }
+
+    #[test]
+    fn is_engine_peer_id_accepts_claude_cli_shim_prefix() {
+        assert!(is_engine_peer_id("shim-aaaa-1111"));
+        assert!(is_engine_peer_id(
+            "shim-e72f954c-18c5-4a83-9b5e-927d721589c2"
+        ));
+    }
+
+    #[test]
+    fn is_engine_peer_id_rejects_header_and_garbage() {
+        assert!(!is_engine_peer_id("ID"));
+        assert!(!is_engine_peer_id(""));
+        assert!(!is_engine_peer_id("0001"));
+        assert!(!is_engine_peer_id("---"));
+        assert!(!is_engine_peer_id("ai"));
+    }
+
+    #[test]
+    fn agent_log_dir_routes_by_prefix() {
+        let agent_dir = agent_log_dir("agent-AAA").expect("$HOME present");
+        assert!(agent_dir
+            .to_string_lossy()
+            .contains(".local/share/agent-cli/logs/agent-AAA"));
+
+        let shim_dir = agent_log_dir("shim-bbbb-2222").expect("$HOME present");
+        assert!(shim_dir
+            .to_string_lossy()
+            .contains(".local/share/claude-cli-shim/logs/shim-bbbb-2222"));
+    }
+
+    #[test]
+    fn registered_peer_names_picks_claude_cli_shim_rows_phase121() {
+        let input = "\
+ID                                         NAME         PROVIDER  MODEL            ROLE
+shim-aaaa-1111                             ai           claude    claude-opus-4-7  meta
+shim-bbbb-2222                             ai-designer  claude    claude-opus-4-7  designer
+";
+        let got = registered_peer_names(input);
+        assert_eq!(got.len(), 2);
+        assert!(got.contains("ai"));
+        assert!(got.contains("ai-designer"));
     }
 }

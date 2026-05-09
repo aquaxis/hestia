@@ -18,7 +18,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::process::Command;
 
-use super::{collect_agent_statuses, show_status, transform_status_listing, AgentStatus};
+use super::{
+    collect_agent_statuses, is_engine_peer_id, show_status, transform_status_listing, AgentStatus,
+};
 
 /// 監視対象種別。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,10 +141,12 @@ pub(crate) fn classify_peer(name: &str) -> Option<(MonitorKind, Option<String>)>
     None
 }
 
-/// `agent-cli list` の stdout から監視対象を抽出する純関数。
+/// `<engine> list` の stdout から監視対象を抽出する純関数。
 ///
 /// `classify_peer()` で監視種別を判定し、対象外なら除外する。Phase 109 で動的
 /// サブエージェント（`<domain>-coder-*` 等）にも対応。
+/// Phase 121: ID prefix 判定を `is_engine_peer_id` で engine 抽象化
+/// (agent-cli の `agent-`、claude_cli_shim の `shim-` 双方を許容)。
 pub(crate) fn resolve_monitor_targets(stdout: &str) -> Vec<MonitorTarget> {
     let mut out = Vec::new();
     for line in stdout.lines().skip(1) {
@@ -150,7 +154,7 @@ pub(crate) fn resolve_monitor_targets(stdout: &str) -> Vec<MonitorTarget> {
         let mut it = line.split_whitespace();
         let Some(id) = it.next() else { continue };
         let Some(name) = it.next() else { continue };
-        if !id.starts_with("agent-") {
+        if !is_engine_peer_id(id) {
             continue;
         }
         let Some((kind, parent_conductor)) = classify_peer(name) else {
@@ -1175,6 +1179,33 @@ mod tests {
     fn resolve_handles_empty_and_header_only() {
         assert!(resolve_monitor_targets("").is_empty());
         assert!(resolve_monitor_targets(HEADER_LIST).is_empty());
+    }
+
+    #[test]
+    fn resolve_picks_claude_cli_shim_peers_phase121() {
+        // Phase 121: claude_cli_shim engine の `shim-<UUID>` ID prefix も認識する。
+        let body = "shim-aaaa-1111  ai           claude  claude-opus-4-7  meta\n\
+                    shim-bbbb-2222  ai-designer  claude  claude-opus-4-7  designer\n\
+                    shim-cccc-3333  ai-reviewer  claude  claude-opus-4-7  reviewer\n\
+                    shim-dddd-4444  rtl          claude  claude-opus-4-7  conductor\n";
+        let input = format!("{HEADER_LIST}{body}");
+        let got = resolve_monitor_targets(&input);
+        let names: Vec<&str> = got.iter().map(|t| t.peer.as_str()).collect();
+        assert_eq!(names, vec!["ai", "ai-designer", "ai-reviewer", "rtl"]);
+        assert_eq!(got[0].kind, MonitorKind::AiConductor);
+        assert_eq!(got[1].kind, MonitorKind::Subagent);
+        assert_eq!(got[3].kind, MonitorKind::DomainConductor);
+    }
+
+    #[test]
+    fn resolve_handles_mixed_engine_prefixes_phase121() {
+        // 移行期に agent-cli と claude-cli-shim を併用する場合も両 prefix を許容。
+        let body = "agent-AAA       ai           ollama  glm              meta\n\
+                    shim-bbbb-2222  ai-designer  claude  claude-opus-4-7  designer\n";
+        let input = format!("{HEADER_LIST}{body}");
+        let got = resolve_monitor_targets(&input);
+        let names: Vec<&str> = got.iter().map(|t| t.peer.as_str()).collect();
+        assert_eq!(names, vec!["ai", "ai-designer"]);
     }
 
     // ─── is_all_stopped ──────────────────────────────────────────────────
