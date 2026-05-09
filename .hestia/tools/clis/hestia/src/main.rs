@@ -183,6 +183,149 @@ pub(crate) fn agent_log_dir(agent_id: &str) -> Option<PathBuf> {
     Some(dir)
 }
 
+/// Phase 123 — engine-aware registry directory resolver.
+///
+/// 各 engine が peer メタデータを書き出す registry dir を返す。
+/// - `claude_cli_shim`: `~/.local/share/claude-cli-shim/registry/`
+/// - `agent_cli` (default): `$XDG_RUNTIME_DIR/agent-cli/`、未設定時は
+///   `/tmp/agent-cli/`（`agent-cli/src/config.rs::registry_dir()` と同一規則）
+///
+/// `EngineConfig::registry_path` で明示 override されていればそれを優先。
+/// `dirs::home_dir()` 失敗時 (`claude_cli_shim` 既定経路) は `None`。
+pub(crate) fn engine_registry_dir(cfg: &HestiaConfig) -> Option<PathBuf> {
+    if let Some(p) = cfg.engine.registry_path.as_ref() {
+        if !p.as_os_str().is_empty() {
+            return Some(p.clone());
+        }
+    }
+    match cfg.engine.type_.as_str() {
+        "claude_cli_shim" => {
+            let home = dirs::home_dir()?;
+            Some(home.join(".local/share/claude-cli-shim/registry"))
+        }
+        _ => {
+            if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
+                if !dir.is_empty() {
+                    return Some(PathBuf::from(dir).join("agent-cli"));
+                }
+            }
+            Some(PathBuf::from("/tmp/agent-cli"))
+        }
+    }
+}
+
+/// Phase 123 — engine-aware kill pattern enumerator.
+///
+/// `pgrep -f <pattern>` で引っかけるべき自エンジン peer プロセスのパターン列を返す。
+/// `cfg.engine.binary_basename()` から動的生成するため、agent_cli / claude_cli_shim
+/// 双方の peer プロセスが `hestia kill` で確実に SIGKILL されるようになる
+/// (Phase 121 で `KILL_PATTERNS` の hardcode が claude_cli_shim 未対応だった漏れを fix)。
+pub(crate) fn engine_kill_patterns(cfg: &HestiaConfig) -> Vec<String> {
+    let bin = cfg.engine.binary_basename();
+    vec![
+        format!("{bin} run"),
+        "hestia mirror".to_string(),
+        "hestia monitor-daemon".to_string(),
+    ]
+}
+
+/// Phase 123 — pid 生死判定。
+///
+/// `kill(pid, 0)` を libc で発行し、戻り値が 0 なら alive とみなす純粋判定。
+/// `EPERM` (権限なし、戻り値 -1) は本実装では dead 扱いにせず alive とみなしたい
+/// ところだが、registry の pid は通常自 uid のプロセスなので発生しない想定。
+///
+/// 防衛的に弾く値:
+/// - `pid == 0` — libc 上 "全プロセスへ送信" の意味になるため。
+/// - `pid > i32::MAX as u32` — `pid_t` は符号付き整数なので、cast すると
+///   負値となり `kill(-N, 0)` が「プロセスグループ送信」として扱われ、
+///   alive と誤判定されうる (`u32::MAX as i32 == -1` で全プロセス対象に)。
+pub(crate) fn is_pid_alive(pid: u32) -> bool {
+    if pid == 0 || pid > i32::MAX as u32 {
+        return false;
+    }
+    unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
+/// Phase 123 — registry エントリの I/O フリー dead 判定 (純関数)。
+///
+/// `(path, pid)` のスライスから、`is_alive(pid) == false` の path を抽出する。
+/// `is_alive` をクロージャ化することで filesystem / libc に依存せず unit-test
+/// 可能にする (`prune_dead_peers` の中核ロジック)。
+pub(crate) fn classify_registry_entries(
+    entries: &[(PathBuf, u32)],
+    is_alive: impl Fn(u32) -> bool,
+) -> Vec<PathBuf> {
+    entries
+        .iter()
+        .filter(|(_, pid)| !is_alive(*pid))
+        .map(|(p, _)| p.clone())
+        .collect()
+}
+
+/// Phase 123 — registry dir 配下の `*.json` を走査し、各エントリの `pid` field を
+/// 抽出して `(path, pid)` のリストを返す純関数寄りヘルパ。
+///
+/// JSON parse / pid 取得失敗のエントリは silent skip (warning も出さない —
+/// 呼び元で件数からズレを推定する)。`read_dir` 失敗時は空配列。
+fn read_registry_pids(dir: &Path) -> Vec<(PathBuf, u32)> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        let Some(pid) = v.get("pid").and_then(|p| p.as_u64()) else {
+            continue;
+        };
+        if pid > u32::MAX as u64 {
+            continue;
+        }
+        out.push((path, pid as u32));
+    }
+    out
+}
+
+/// Phase 123 — `cfg.engine` に応じて registry から dead peer を除去する。
+///
+/// 戻り値は削除した entry 件数。失敗 (registry dir 不在 / 全 entry alive) は 0 を返す。
+/// agent_cli engine では `*.json` に加え対応する `*.sock` も削除する
+/// (`agent-cli/src/ipc/registry.rs::cleanup` と同じ後始末)。
+pub(crate) fn prune_dead_peers(cfg: &HestiaConfig) -> usize {
+    let Some(dir) = engine_registry_dir(cfg) else {
+        return 0;
+    };
+    let pids = read_registry_pids(&dir);
+    let dead = classify_registry_entries(&pids, is_pid_alive);
+    let mut removed = 0;
+    for path in dead {
+        // <agent-id>.json を削除
+        if std::fs::remove_file(&path).is_ok() {
+            removed += 1;
+            // agent_cli engine では同 stem の .sock も後始末する。
+            if cfg.engine.type_ != "claude_cli_shim" {
+                let sock = path.with_extension("sock");
+                let _ = std::fs::remove_file(&sock);
+            }
+        } else {
+            eprintln!(
+                "[warn] failed to remove stale registry entry: {}",
+                path.display()
+            );
+        }
+    }
+    removed
+}
+
 /// Read `.hestia/config.toml` from the current working directory.
 /// Returns the parsed config, or an empty default if the file is absent or
 /// the section is missing — this preserves backwards compatibility with
@@ -906,8 +1049,9 @@ async fn stop_all_conductors() -> Result<()> {
     Ok(())
 }
 
-/// Patterns that identify processes hestia is responsible for killing.
-/// `pgrep -f <pattern>` is used to enumerate matching PIDs on the host.
+/// (Phase 123 廃止) 旧 hardcode 配列 — `engine_kill_patterns(&cfg)` で
+/// engine 抽象化されたため未使用。テスト保護のため定数自体は残す。
+#[allow(dead_code)]
 const KILL_PATTERNS: &[&str] = &["agent-cli run", "hestia mirror", "hestia monitor-daemon"];
 
 /// Pure helper: turn a list of `(pattern, pgrep_stdout)` pairs into the ordered
@@ -944,17 +1088,23 @@ fn select_kill_targets(
 /// Force-terminate every hestia-started agent process (SIGKILL).
 ///
 /// Implementation:
-/// 1. Run `pgrep -f <pattern>` for each entry in [`KILL_PATTERNS`] and collect
-///    the stdout. A pgrep failure is logged as a warning but doesn't abort the
-///    overall command.
+/// 1. Run `pgrep -f <pattern>` for each entry returned by
+///    [`engine_kill_patterns`] (Phase 123: engine 抽象化、agent-cli /
+///    claude-cli-shim 双方を必ずカバー) and collect stdout. A pgrep failure
+///    is logged as a warning but doesn't abort the overall command.
 /// 2. Compute the kill list with [`select_kill_targets`]: own PID excluded,
 ///    duplicates removed across patterns.
 /// 3. Send SIGKILL to each target via `libc::kill` and tally success / failure.
 ///    Per-PID failures (already exited, permission denied) are logged and
 ///    skipped — they don't fail the whole command.
-async fn kill_all_processes() -> Result<()> {
-    let mut outputs: Vec<(&str, String)> = Vec::with_capacity(KILL_PATTERNS.len());
-    for pattern in KILL_PATTERNS {
+/// 4. (Phase 123) 300ms grace 後に [`prune_dead_peers`] で registry から
+///    dead エントリを掃除する。`hestia kill` で peer を SIGKILL したあとも
+///    `<engine> list` (= `hestia monitor` の表示根拠) に行が残り続ける
+///    不具合を解消するため。
+async fn kill_all_processes(cfg: &HestiaConfig) -> Result<()> {
+    let patterns = engine_kill_patterns(cfg);
+    let mut outputs: Vec<(String, String)> = Vec::with_capacity(patterns.len());
+    for pattern in &patterns {
         let result = Command::new("pgrep")
             .arg("-f")
             .arg(pattern)
@@ -963,17 +1113,17 @@ async fn kill_all_processes() -> Result<()> {
         match result {
             Ok(out) => {
                 let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-                outputs.push((pattern, stdout));
+                outputs.push((pattern.clone(), stdout));
             }
             Err(e) => {
                 eprintln!("[warn] pgrep failed for pattern '{pattern}': {e}");
-                outputs.push((pattern, String::new()));
+                outputs.push((pattern.clone(), String::new()));
             }
         }
     }
 
     let outputs_ref: Vec<(&str, &str)> =
-        outputs.iter().map(|(p, s)| (*p, s.as_str())).collect();
+        outputs.iter().map(|(p, s)| (p.as_str(), s.as_str())).collect();
     let targets = select_kill_targets(&outputs_ref, std::process::id());
 
     let mut ok: u32 = 0;
@@ -994,6 +1144,17 @@ async fn kill_all_processes() -> Result<()> {
         println!("No matching hestia processes found.");
     } else {
         println!("Killed {ok} process(es) (failed: {ng}).");
+        // SIGKILL は非同期に届くため、registry 掃除前に短い grace を入れる
+        // (NFR-5: race condition 緩和)。
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+
+    // Phase 123: 死 peer の registry エントリを削除し、`hestia monitor` 表示
+    // から消えるようにする。targets が 0 件でも前回 run の残骸を掃除できる
+    // ように常に呼ぶ。
+    let pruned = prune_dead_peers(cfg);
+    if pruned > 0 {
+        println!("Pruned {pruned} dead peer(s) from registry.");
     }
     Ok(())
 }
@@ -1749,10 +1910,18 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Init => init_hestia_dir()?,
-        Commands::Start { domain } => match domain {
-            Some(d) => start_conductor(&d).await?,
-            None => start_all_conductors().await?,
-        },
+        Commands::Start { domain } => {
+            // Phase 123: 起動前に死 peer registry を掃除し、`hestia monitor` の
+            // 表示が前回 run の残骸を引きずらないようにする。
+            let pruned = prune_dead_peers(&cfg);
+            if pruned > 0 {
+                println!("Pruned {pruned} dead peer(s) before start.");
+            }
+            match domain {
+                Some(d) => start_conductor(&d).await?,
+                None => start_all_conductors().await?,
+            }
+        }
         Commands::Stop { domain } => match domain {
             Some(d) => stop_conductor(&d).await?,
             None => stop_all_conductors().await?,
@@ -1776,7 +1945,7 @@ async fn main() -> Result<()> {
             let persona_root = persona.strip_suffix(".md").unwrap_or(&persona);
             spawn_agent_cli(persona_root, &name).await?;
         }
-        Commands::Kill => kill_all_processes().await?,
+        Commands::Kill => kill_all_processes(&cfg).await?,
         Commands::Monitor { interval, once, all } => {
             monitor::run_monitor(interval, once, all).await?
         }
@@ -1789,11 +1958,13 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        agent_log_dir, derive_status_from_log, is_engine_peer_id, parse_status_events,
-        registered_peer_names, select_kill_targets, transform_status_listing, AgentStatus,
+        agent_log_dir, classify_registry_entries, derive_status_from_log, engine_kill_patterns,
+        is_engine_peer_id, is_pid_alive, parse_status_events, registered_peer_names,
+        select_kill_targets, transform_status_listing, AgentStatus, EngineConfig, HestiaConfig,
         StatusEvent,
     };
     use std::collections::HashMap;
+    use std::path::PathBuf;
     use std::time::Duration;
 
     const HEADER: &str =
@@ -2145,5 +2316,101 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
         assert_eq!(got.len(), 2);
         assert!(got.contains("ai"));
         assert!(got.contains("ai-designer"));
+    }
+
+    // ─── Phase 123: hestia kill 残留 / hestia start cleanup ─────────────
+
+    fn cfg_with_engine(t: &str) -> HestiaConfig {
+        let mut cfg = HestiaConfig::default();
+        cfg.engine = EngineConfig {
+            type_: t.to_string(),
+            binary: None,
+            registry_path: None,
+            log_path: None,
+        };
+        cfg
+    }
+
+    #[test]
+    fn is_pid_alive_returns_true_for_self_pid() {
+        let me = std::process::id();
+        assert!(is_pid_alive(me));
+    }
+
+    #[test]
+    fn is_pid_alive_returns_false_for_zero() {
+        // pid=0 は libc 上「全プロセスへ送信」になるため defensive に false。
+        assert!(!is_pid_alive(0));
+    }
+
+    #[test]
+    fn is_pid_alive_returns_false_for_unlikely_max_pid() {
+        // u32::MAX は実存しない pid 想定。万が一 alive でもテスト環境依存の
+        // 偶然なので skip 扱いで問題ない (CI で再現性を確保できる程度には
+        // u32::MAX が割り当てられないことを前提とする一般的な assumption)。
+        assert!(!is_pid_alive(u32::MAX));
+    }
+
+    #[test]
+    fn engine_kill_patterns_for_agent_cli() {
+        let cfg = cfg_with_engine("agent_cli");
+        let p = engine_kill_patterns(&cfg);
+        assert_eq!(p.len(), 3);
+        assert_eq!(p[0], "agent-cli run");
+        assert_eq!(p[1], "hestia mirror");
+        assert_eq!(p[2], "hestia monitor-daemon");
+    }
+
+    #[test]
+    fn engine_kill_patterns_for_claude_cli_shim() {
+        let cfg = cfg_with_engine("claude_cli_shim");
+        let p = engine_kill_patterns(&cfg);
+        assert_eq!(p.len(), 3);
+        assert_eq!(p[0], "claude-cli-shim run");
+        assert_eq!(p[1], "hestia mirror");
+        assert_eq!(p[2], "hestia monitor-daemon");
+    }
+
+    #[test]
+    fn classify_registry_entries_filters_dead_only() {
+        let entries = vec![
+            (PathBuf::from("/tmp/a.json"), 100u32), // even → alive
+            (PathBuf::from("/tmp/b.json"), 200u32), // even → alive
+            (PathBuf::from("/tmp/c.json"), 301u32), // odd  → dead
+            (PathBuf::from("/tmp/d.json"), 400u32), // even → alive
+        ];
+        // 偶数 pid を alive とみなすクロージャ → 301 のみ dead 扱い。
+        let dead = classify_registry_entries(&entries, |pid| pid % 2 == 0);
+        assert_eq!(dead.len(), 1);
+        assert_eq!(dead[0], PathBuf::from("/tmp/c.json"));
+    }
+
+    #[test]
+    fn classify_registry_entries_empty_input_yields_empty() {
+        let entries: Vec<(PathBuf, u32)> = Vec::new();
+        let dead = classify_registry_entries(&entries, |_| true);
+        assert!(dead.is_empty());
+    }
+
+    #[test]
+    fn classify_registry_entries_all_alive_yields_empty() {
+        let entries = vec![
+            (PathBuf::from("/tmp/a.json"), 1u32),
+            (PathBuf::from("/tmp/b.json"), 2u32),
+        ];
+        let dead = classify_registry_entries(&entries, |_| true);
+        assert!(dead.is_empty());
+    }
+
+    #[test]
+    fn classify_registry_entries_all_dead_returns_all_paths() {
+        let entries = vec![
+            (PathBuf::from("/tmp/a.json"), 10u32),
+            (PathBuf::from("/tmp/b.json"), 20u32),
+        ];
+        let dead = classify_registry_entries(&entries, |_| false);
+        assert_eq!(dead.len(), 2);
+        assert!(dead.contains(&PathBuf::from("/tmp/a.json")));
+        assert!(dead.contains(&PathBuf::from("/tmp/b.json")));
     }
 }
