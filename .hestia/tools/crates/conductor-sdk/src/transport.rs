@@ -17,6 +17,26 @@ use tokio::process::Command;
 /// 識別子としては固定文字列で十分。
 const DEFAULT_FROM_ID: &str = "agent-hestia-cli";
 
+/// Phase 125 — `HESTIA_ENGINE_BINARY` が claude-cli-shim を指しているかを判定する純関数。
+///
+/// `crate::workspace::engine_binary()` の戻り値 (env-driven) を basename match で評価。
+/// claude-cli-shim engine では IPC が FIFO unidirectional のため、Unix socket 経路を
+/// 取らずに `<engine_bin> send` subprocess にルートする必要がある (本 phase の主旨)。
+fn engine_is_claude_cli_shim() -> bool {
+    crate::workspace::engine_binary().contains("claude-cli-shim")
+}
+
+/// Phase 125 — claude-cli-shim engine の registry 既定パスを返す。
+///
+/// `~/.local/share/claude-cli-shim/registry/` 既定。`$HOME` 解決失敗時は
+/// `/tmp/claude-cli-shim/registry` にフォールバック (defensive)。
+fn default_claude_cli_shim_registry_dir() -> PathBuf {
+    match std::env::var("HOME") {
+        Ok(h) if !h.is_empty() => PathBuf::from(h).join(".local/share/claude-cli-shim/registry"),
+        _ => PathBuf::from("/tmp/claude-cli-shim/registry"),
+    }
+}
+
 /// agent-cli IPC クライアント
 pub struct AgentCliClient {
     config: HestiaClientConfig,
@@ -25,12 +45,18 @@ pub struct AgentCliClient {
 
 impl AgentCliClient {
     pub fn new(config: HestiaClientConfig) -> Result<Self, HestiaError> {
-        let registry_dir = if config.agent_cli_registry_dir.is_empty() {
+        // Phase 125: registry_dir 解決を engine 別に分岐。
+        // (1) explicit override (HestiaClientConfig.agent_cli_registry_dir) を最優先。
+        // (2) claude_cli_shim engine 時は ~/.local/share/claude-cli-shim/registry/ 既定。
+        // (3) agent_cli engine (default) は XDG_RUNTIME_DIR/agent-cli (既存挙動)。
+        let registry_dir = if !config.agent_cli_registry_dir.is_empty() {
+            PathBuf::from(&config.agent_cli_registry_dir)
+        } else if engine_is_claude_cli_shim() {
+            default_claude_cli_shim_registry_dir()
+        } else {
             std::env::var("XDG_RUNTIME_DIR")
                 .map(|d| PathBuf::from(d).join("agent-cli"))
                 .unwrap_or_else(|_| PathBuf::from("/tmp/agent-cli"))
-        } else {
-            PathBuf::from(&config.agent_cli_registry_dir)
         };
 
         Ok(Self {
@@ -95,7 +121,26 @@ impl AgentCliClient {
     /// agent-cli の `IpcMessage::Prompt` ワイヤフォーマット
     /// `{"kind":"prompt","from":"<agent-id>","text":"..."}` でラップして送る。
     /// ドメインペイロード（`Payload::Structured`）は JSON 文字列として `text` に詰める。
+    ///
+    /// Phase 125: claude_cli_shim engine 時は IPC が FIFO unidirectional のため
+    /// `send_via_cli` (`<engine_bin> send <peer> <text>` subprocess) にルートする。
+    /// stdout が空なら synthesized OK レスポンスを返し、呼び元の round-trip 期待を
+    /// 満たす (caller は parse 失敗時 `{"raw": ...}` に fallback するが、
+    /// 本 synthesize で structured JSON を提供することで integration を保てる)。
     pub async fn send(&self, peer: &str, payload: &Payload) -> Result<String, HestiaError> {
+        if engine_is_claude_cli_shim() {
+            let raw = self.send_via_cli(peer, payload).await?;
+            if raw.trim().is_empty() {
+                return Ok(serde_json::json!({
+                    "status": "ok",
+                    "transport": "claude-cli-shim",
+                    "peer": peer,
+                    "note": "fire-and-forget send (no synchronous response from FIFO peer)"
+                })
+                .to_string());
+            }
+            return Ok(raw);
+        }
         let socket_path = self.find_peer_socket(peer).await?;
 
         let mut stream = UnixStream::connect(&socket_path).await
@@ -171,7 +216,18 @@ impl AgentCliClient {
     }
 
     /// レジストリから peer のソケットパスを検索
+    ///
+    /// Phase 125: claude_cli_shim engine では FIFO unidirectional のため本関数は
+    /// 適用外 (registry JSON に `socket` field が無く `fifo_path` を持つ)。`send`
+    /// 側で engine ガードして `send_via_cli` にルートしているため通常は呼ばれないが、
+    /// 防衛的に明確エラーを返す。
     async fn find_peer_socket(&self, peer: &str) -> Result<PathBuf, HestiaError> {
+        if engine_is_claude_cli_shim() {
+            return Err(HestiaError::Transport(format!(
+                "find_peer_socket('{peer}') called under claude_cli_shim engine — \
+                 this engine uses FIFO transport, route via send_via_cli instead"
+            )));
+        }
         let entries = std::fs::read_dir(&self.registry_dir)
             .map_err(|e| HestiaError::Transport(format!("failed to read registry dir: {e}")))?;
 
@@ -208,5 +264,71 @@ impl AgentCliClient {
     /// 設定の参照
     pub fn config(&self) -> &HestiaClientConfig {
         &self.config
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Phase 125 — `engine_is_claude_cli_shim` の env 駆動判定。
+    ///
+    /// 注: `std::env::set_var` はプロセス全体に影響するため、複数 env テストの
+    /// race を避けるべく本テストでは「set → assert → restore」の単一テストに
+    /// まとめる。クライアントの new() 経路 + registry_dir 解決の双方を一度に
+    /// 検証する。
+    #[test]
+    fn engine_is_claude_cli_shim_and_registry_dir_branch() {
+        // 元値を保存
+        let original = std::env::var("HESTIA_ENGINE_BINARY").ok();
+
+        // (1) shim engine
+        std::env::set_var("HESTIA_ENGINE_BINARY", "claude-cli-shim");
+        assert!(engine_is_claude_cli_shim());
+        let cfg = HestiaClientConfig::default();
+        let client = AgentCliClient::new(cfg).expect("client::new ok");
+        let dir_str = client.registry_dir().to_string_lossy().to_string();
+        assert!(
+            dir_str.ends_with(".local/share/claude-cli-shim/registry")
+                || dir_str.ends_with("/tmp/claude-cli-shim/registry"),
+            "shim registry_dir must point to claude-cli-shim path, got {dir_str}"
+        );
+
+        // (2) agent_cli engine (default — env 削除)
+        std::env::remove_var("HESTIA_ENGINE_BINARY");
+        assert!(!engine_is_claude_cli_shim());
+        let cfg = HestiaClientConfig::default();
+        let client = AgentCliClient::new(cfg).expect("client::new ok");
+        let dir_str = client.registry_dir().to_string_lossy().to_string();
+        assert!(
+            dir_str.ends_with("agent-cli") || dir_str.ends_with("/tmp/agent-cli"),
+            "default registry_dir must point to agent-cli path, got {dir_str}"
+        );
+
+        // 元値を復元 (race 緩和)
+        match original {
+            Some(v) => std::env::set_var("HESTIA_ENGINE_BINARY", v),
+            None => std::env::remove_var("HESTIA_ENGINE_BINARY"),
+        }
+    }
+
+    /// Phase 125 — explicit override が最優先で engine 既定より勝つこと。
+    #[test]
+    fn explicit_registry_override_wins_over_engine_default() {
+        let original = std::env::var("HESTIA_ENGINE_BINARY").ok();
+
+        std::env::set_var("HESTIA_ENGINE_BINARY", "claude-cli-shim");
+        let mut cfg = HestiaClientConfig::default();
+        cfg.agent_cli_registry_dir = "/tmp/custom-registry".to_string();
+        let client = AgentCliClient::new(cfg).expect("client::new ok");
+        assert_eq!(
+            client.registry_dir().to_string_lossy(),
+            "/tmp/custom-registry"
+        );
+
+        match original {
+            Some(v) => std::env::set_var("HESTIA_ENGINE_BINARY", v),
+            None => std::env::remove_var("HESTIA_ENGINE_BINARY"),
+        }
     }
 }
