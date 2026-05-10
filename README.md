@@ -138,8 +138,18 @@ acquire_timeout_secs = 600           # slot 待機タイムアウト秒（デッ
 - 階層 Semaphore で **L1 → L2 → L3 の取得順序を固定**することで circular wait を排除。
 - `acquire_timeout_secs` 経過で **hold-and-wait を打切**り、デッドロックを検知（`dispatch_acquire_timeout` エラーを記録）。
 - `global_max` のうち 1 slot を **reviewer 用 reserved slot** として予約し、Phase 77 の auto-spawn ai-reviewer が cap 限界下でも起動できるようにする。
-- 各設定は対応する環境変数で個別 override 可能（`HESTIA_PER_CONDUCTOR_MAX=2 hestia ai exec ...`）。
+- 設定の優先順位（Phase 128 で配線追加）: **`hestia start` 親プロセス env > `.hestia/config.toml [concurrency]` > library 既定**。
+  - `hestia start` 起動時に `[concurrency]` の値を子 conductor process の env に export。`config.toml` の値が反映されるには **`hestia kill && hestia start` で再起動が必要**。
+  - 親プロセスに既に `HESTIA_*` env が設定されていれば、それが config.toml より優先される（テスト / CI で一時 override する用途）。
 - 既定値（8 / 2 / 4 / 600s）は中規模ワークロードを想定。LLM rate limit が厳しい環境は `global_max` を下げ、強力な workstation では上げる。
+
+> **既知の制限事項**: `per_conductor_max` は **単一 `dispatch_coders.v1` 呼出内** の同時 spawn 上限であり、
+> 複数 dispatch 呼出を跨いだ累積 alive agent 数の上限ではありません。
+> 例えば `per_conductor_max=1` でも、`dispatch_coders.v1` が 4 回呼ばれると累計 4 個の rtl-coder agent が
+> alive で残り得ます。これは現実装では `ConductorLimiter` の permit が spawn API call (~ms) のみ保持され、
+> agent process lifetime に連動しないためです。累積 cap が必要な場合は `global_max=1` 等で
+> 完全 sequential 化するか、`hestia kill` で定期的に集約してください。agent lifetime 連動の累積 cap
+> 実装は将来 phase の検討事項です。
 
 #### サブエージェント起動数の最小値
 

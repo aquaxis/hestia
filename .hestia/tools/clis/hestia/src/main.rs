@@ -25,6 +25,27 @@ pub(crate) struct HestiaConfig {
     /// claude-cli-shim から選択する。未設定時は `agent_cli` 既定で後方互換。
     #[serde(default)]
     pub(crate) engine: EngineConfig,
+    /// Phase 128 — `[concurrency]` セクション。`hestia start` が子 conductor
+    /// process の env として export することで Phase 126 の
+    /// `ConductorLimiter::from_env` / `AgentManager::with_default_cap` が
+    /// 反映する。親プロセス env が既に設定されている場合は env を優先（後方互換）。
+    #[serde(default)]
+    pub(crate) concurrency: ConcurrencyConfig,
+}
+
+/// Phase 128 — `[concurrency]` セクションの schema。
+/// 全フィールド optional。未指定時は library 既定（global=8 / dispatch=2 /
+/// per_conductor=4 / timeout=600s）が使われる。
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct ConcurrencyConfig {
+    #[serde(default)]
+    pub(crate) global_max: Option<usize>,
+    #[serde(default)]
+    pub(crate) ai_conductor_dispatch_max: Option<usize>,
+    #[serde(default)]
+    pub(crate) per_conductor_max: Option<usize>,
+    #[serde(default)]
+    pub(crate) acquire_timeout_secs: Option<u64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -338,6 +359,51 @@ pub(crate) fn load_hestia_config() -> HestiaConfig {
         return HestiaConfig::default();
     };
     toml::from_str::<HestiaConfig>(&text).unwrap_or_default()
+}
+
+/// Phase 128 — `std::process::Command` と `tokio::process::Command` の双方を
+/// 統一的に env 設定するためのアダプタ trait。
+pub(crate) trait CmdEnvSetter {
+    fn set_env(&mut self, key: &str, val: &str);
+}
+
+impl CmdEnvSetter for std::process::Command {
+    fn set_env(&mut self, key: &str, val: &str) {
+        self.env(key, val);
+    }
+}
+
+impl CmdEnvSetter for tokio::process::Command {
+    fn set_env(&mut self, key: &str, val: &str) {
+        self.env(key, val);
+    }
+}
+
+/// Phase 128 — `.hestia/config.toml` の `[concurrency]` を子プロセスの env に
+/// export する。親プロセス env が既に同 key を持っていればそれを優先（後方互換）。
+///
+/// 優先順位: 親プロセス env > config.toml `[concurrency]` > library 既定。
+pub(crate) fn apply_concurrency_env<C: CmdEnvSetter>(
+    cmd: &mut C,
+    cfg: &ConcurrencyConfig,
+) {
+    fn set_if_unset<C: CmdEnvSetter>(cmd: &mut C, key: &str, val: String) {
+        if std::env::var_os(key).is_none() {
+            cmd.set_env(key, &val);
+        }
+    }
+    if let Some(v) = cfg.global_max {
+        set_if_unset(cmd, "HESTIA_GLOBAL_MAX_AGENTS", v.to_string());
+    }
+    if let Some(v) = cfg.ai_conductor_dispatch_max {
+        set_if_unset(cmd, "HESTIA_AI_DISPATCH_MAX", v.to_string());
+    }
+    if let Some(v) = cfg.per_conductor_max {
+        set_if_unset(cmd, "HESTIA_PER_CONDUCTOR_MAX", v.to_string());
+    }
+    if let Some(v) = cfg.acquire_timeout_secs {
+        set_if_unset(cmd, "HESTIA_ACQUIRE_TIMEOUT_SECS", v.to_string());
+    }
 }
 
 /// Phase 127 — `--version` で表示する version 文字列。
@@ -774,6 +840,8 @@ pub(crate) async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str
     for (k, v) in config.engine.subprocess_env() {
         cmd.env(k, v);
     }
+    // Phase 128 — config.toml の [concurrency] を子プロセス env に export
+    apply_concurrency_env(&mut cmd, &config.concurrency);
     let _child = cmd
         .current_dir(&workdir)
         .stdin(Stdio::from(fifo_stdin))
@@ -904,6 +972,8 @@ async fn start_conductor(domain: &str) -> Result<()> {
         for (k, v) in config.engine.subprocess_env() {
             cmd.env(k, v);
         }
+        // Phase 128 — config.toml の [concurrency] を子プロセス env に export
+        apply_concurrency_env(&mut cmd, &config.concurrency);
         let _child = cmd
             .current_dir(&workdir)
             .stdin(Stdio::from(fifo_stdin))
@@ -2232,10 +2302,11 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        agent_log_dir, classify_registry_entries, derive_status_from_log, engine_kill_patterns,
-        format_install_summary, is_engine_peer_id, is_pid_alive, parse_status_events,
-        registered_peer_names, resolve_source_path, select_kill_targets, transform_status_listing,
-        AgentStatus, EngineConfig, HestiaConfig, StatusEvent,
+        agent_log_dir, apply_concurrency_env, classify_registry_entries, derive_status_from_log,
+        engine_kill_patterns, format_install_summary, is_engine_peer_id, is_pid_alive,
+        parse_status_events, registered_peer_names, resolve_source_path, select_kill_targets,
+        transform_status_listing, AgentStatus, ConcurrencyConfig, EngineConfig, HestiaConfig,
+        StatusEvent,
     };
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
@@ -2797,5 +2868,117 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
         assert!(summary.contains("Version:   hestia 0.1.0"));
         // 末尾改行なし version でも改行で 5 行構成 (見出し + 4 詳細)。
         assert_eq!(summary.lines().count(), 5);
+    }
+
+    // ─── Phase 128: [concurrency] config.toml 連携 ────────────────────────
+
+    #[test]
+    fn concurrency_config_parses_from_toml() {
+        let toml = r#"
+[agent_cli]
+backend = "ollama"
+
+[concurrency]
+global_max = 1
+per_conductor_max = 2
+acquire_timeout_secs = 60
+"#;
+        let cfg: HestiaConfig = toml::from_str(toml).expect("parse ok");
+        assert_eq!(cfg.concurrency.global_max, Some(1));
+        assert_eq!(cfg.concurrency.per_conductor_max, Some(2));
+        assert_eq!(cfg.concurrency.ai_conductor_dispatch_max, None);
+        assert_eq!(cfg.concurrency.acquire_timeout_secs, Some(60));
+    }
+
+    #[test]
+    fn concurrency_config_absent_yields_all_none() {
+        let toml = r#"[agent_cli]
+backend = "ollama"
+"#;
+        let cfg: HestiaConfig = toml::from_str(toml).expect("parse ok");
+        assert!(cfg.concurrency.global_max.is_none());
+        assert!(cfg.concurrency.ai_conductor_dispatch_max.is_none());
+        assert!(cfg.concurrency.per_conductor_max.is_none());
+        assert!(cfg.concurrency.acquire_timeout_secs.is_none());
+    }
+
+    #[test]
+    fn apply_concurrency_env_sets_envs_on_command() {
+        // 親 env を一旦すべて削除（テスト分離。serial 実行が前提）。
+        std::env::remove_var("HESTIA_GLOBAL_MAX_AGENTS");
+        std::env::remove_var("HESTIA_AI_DISPATCH_MAX");
+        std::env::remove_var("HESTIA_PER_CONDUCTOR_MAX");
+        std::env::remove_var("HESTIA_ACQUIRE_TIMEOUT_SECS");
+
+        let cfg = ConcurrencyConfig {
+            global_max: Some(3),
+            ai_conductor_dispatch_max: Some(2),
+            per_conductor_max: Some(1),
+            acquire_timeout_secs: Some(30),
+        };
+        let mut cmd = std::process::Command::new("true");
+        apply_concurrency_env(&mut cmd, &cfg);
+
+        let envs: HashMap<_, _> = cmd
+            .get_envs()
+            .filter_map(|(k, v)| {
+                v.map(|val| (k.to_string_lossy().into_owned(), val.to_string_lossy().into_owned()))
+            })
+            .collect();
+        assert_eq!(envs.get("HESTIA_GLOBAL_MAX_AGENTS").map(String::as_str), Some("3"));
+        assert_eq!(envs.get("HESTIA_AI_DISPATCH_MAX").map(String::as_str), Some("2"));
+        assert_eq!(envs.get("HESTIA_PER_CONDUCTOR_MAX").map(String::as_str), Some("1"));
+        assert_eq!(envs.get("HESTIA_ACQUIRE_TIMEOUT_SECS").map(String::as_str), Some("30"));
+    }
+
+    #[test]
+    fn apply_concurrency_env_does_not_override_parent_env() {
+        std::env::set_var("HESTIA_PER_CONDUCTOR_MAX", "8");
+        std::env::remove_var("HESTIA_GLOBAL_MAX_AGENTS");
+
+        let cfg = ConcurrencyConfig {
+            global_max: Some(3),
+            ai_conductor_dispatch_max: None,
+            per_conductor_max: Some(1),  // 親 env=8 が優先される (set されない)
+            acquire_timeout_secs: None,
+        };
+        let mut cmd = std::process::Command::new("true");
+        apply_concurrency_env(&mut cmd, &cfg);
+
+        let envs: HashMap<_, _> = cmd
+            .get_envs()
+            .filter_map(|(k, v)| {
+                v.map(|val| (k.to_string_lossy().into_owned(), val.to_string_lossy().into_owned()))
+            })
+            .collect();
+        // 親 env がある HESTIA_PER_CONDUCTOR_MAX は Command に追加されない (継承される)
+        assert!(envs.get("HESTIA_PER_CONDUCTOR_MAX").is_none());
+        // 親 env が無い HESTIA_GLOBAL_MAX_AGENTS は config.toml 値が適用される
+        assert_eq!(envs.get("HESTIA_GLOBAL_MAX_AGENTS").map(String::as_str), Some("3"));
+
+        std::env::remove_var("HESTIA_PER_CONDUCTOR_MAX");
+    }
+
+    #[test]
+    fn apply_concurrency_env_skips_none_fields() {
+        std::env::remove_var("HESTIA_GLOBAL_MAX_AGENTS");
+        std::env::remove_var("HESTIA_AI_DISPATCH_MAX");
+        std::env::remove_var("HESTIA_PER_CONDUCTOR_MAX");
+        std::env::remove_var("HESTIA_ACQUIRE_TIMEOUT_SECS");
+
+        let cfg = ConcurrencyConfig::default(); // 全 None
+        let mut cmd = std::process::Command::new("true");
+        apply_concurrency_env(&mut cmd, &cfg);
+
+        let envs: HashMap<_, _> = cmd
+            .get_envs()
+            .filter_map(|(k, v)| {
+                v.map(|val| (k.to_string_lossy().into_owned(), val.to_string_lossy().into_owned()))
+            })
+            .collect();
+        assert!(envs.get("HESTIA_GLOBAL_MAX_AGENTS").is_none());
+        assert!(envs.get("HESTIA_AI_DISPATCH_MAX").is_none());
+        assert!(envs.get("HESTIA_PER_CONDUCTOR_MAX").is_none());
+        assert!(envs.get("HESTIA_ACQUIRE_TIMEOUT_SECS").is_none());
     }
 }
