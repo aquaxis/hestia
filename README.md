@@ -141,6 +141,26 @@ acquire_timeout_secs = 600           # slot 待機タイムアウト秒（デッ
 - 各設定は対応する環境変数で個別 override 可能（`HESTIA_PER_CONDUCTOR_MAX=2 hestia ai exec ...`）。
 - 既定値（8 / 2 / 4 / 600s）は中規模ワークロードを想定。LLM rate limit が厳しい環境は `global_max` を下げ、強力な workstation では上げる。
 
+#### サブエージェント起動数の最小値
+
+各上限値は実装側 (`ConductorLimiter::new` / `AgentManager::with_caps`) で `max(1)` の
+下限ガードがあり、以下の最小値が保証されます。
+
+| 設定 | 最小値 | 実装上の挙動 |
+|------|------|-------------|
+| `global_max` | **1**（一般 spawn 用 1 slot + reviewer 予約 1 slot で実質 2） | `general = global_max.saturating_sub(1).max(1)` で、`global_max=0/1` でも一般 limiter は 1 slot 確保。reviewer 予約 slot は別 Semaphore（capacity 1）で常に 1 slot 確保 |
+| `ai_conductor_dispatch_max` | **1** | `Semaphore::new(max.max(1))` で必ず 1 slot 以上 |
+| `per_conductor_max` | **1** | 同上 |
+| `acquire_timeout_secs` | 任意（推奨 1 秒以上） | 0 設定時は acquire が即時 timeout |
+
+**最小値設定で動かすケース**:
+
+- `HESTIA_GLOBAL_MAX_AGENTS=1 HESTIA_AI_DISPATCH_MAX=1 HESTIA_PER_CONDUCTOR_MAX=1`
+  で実質的に sequential 実行となり、PC / LLM 負荷を最小化できます（一般 1 + reviewer 1 で
+  最大 2 サブエージェント）。
+- 完全 sequential 化により dispatch 単位の I/O 振る舞いがデバッグしやすくなる一方、
+  全体スループットは大きく低下します。CI 等で時系列を再現したい場合に有用。
+
 ## ワークスペース構成
 
 ```text
