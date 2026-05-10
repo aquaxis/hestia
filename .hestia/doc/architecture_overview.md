@@ -132,9 +132,16 @@ OSS ツールを優先し、プラグインシステムにより任意のベン�
 - Capability ベースのアダプター登録・解決エンジン（AdapterRegistry）
 - adapter.toml 宣言方式による拡張（Rust コード変更不要）
 - Podman rootless コンテナ統合（debug-conductor を除く）
-- agent-cli ネイティブ IPC による通信
+- agent-cli ネイティブ IPC による通信（Phase 113 以降は `[engine] type` で `agent_cli` / `claude_cli_shim` を選択可）
 - CLI クライアントバイナリ（`hestia-{conductor}-cli`）
 - conductor-sdk / adapter-core 等の共通クレート利用
+- **サブエージェント並列度制御**（Phase 126）: `conductor_sdk::concurrency::ConductorLimiter`
+  による 3 段階階層 Semaphore (global / ai-dispatch / per-conductor) + acquire timeout
+  で spawn cap を共通化。取得順序固定 + timeout + reviewer 予約 slot で Coffman 4 条件の
+  hold-and-wait と circular wait を破る。`.hestia/config.toml` `[concurrency]` で調整可
+- **version-TAG 同期**（Phase 127）: `clis/hestia/build.rs` が `git describe` 結果を
+  build 時に env 注入。`hestia --version` は GitHub TAG と自動同期し、git 不在環境では
+  `[workspace.package] version` にフォールバック
 
 ---
 

@@ -126,16 +126,22 @@ rtl-conductor は **planner / designer / coder（複数）/ tester** の4種類�
 |----------------|---------|------|-------|
 | **planner** | `rtl-planner` | RTL 開発全体のプランニング（モジュール分割計画、開発順序、検証戦略、coder への作業割当案）| 1 |
 | **designer** | `rtl-designer` | RTL 開発の詳細仕様（モジュールインタフェース、信号定義、ステートマシン、タイミング制約）| 1 |
-| **coder** | `rtl-coder-{module}` | 割り当てられた機能モジュール単位の HDL コード実装 | **N**（モジュール数だけ動的並列起動、最大16） |
+| **coder** | `rtl-coder-{module}` | 割り当てられた機能モジュール単位の HDL コード実装 | **N**（モジュール数だけ動的並列起動、`per_conductor_max` 既定 4 で cap、Phase 126） |
 | **tester** | `rtl-tester` | RTL の検証（lint / シミュレーション / 形式検証 / テストベンチ実行 / カバレッジ集計）| 1（必要に応じて並列化可）|
 
 **並列開発フロー:**
 
 1. planner にプラン作成依頼（モジュール一覧 + 依存関係 + 開発順序）
 2. designer にモジュール詳細仕様作成依頼
-3. モジュール数 N 個の coder を並列起動・割当
+3. モジュール数 N 個の coder を並列起動・割当（実体は `ConductorLimiter` で `per_conductor_max` 件 cap、Phase 126）
 4. tester に検証依頼（モジュール完成後 / 全体統合後）
 5. 全成果物を集約 → ai-conductor へ完了通知 + 下流 conductor へ handoff
+
+> **Phase 126 並列度制御**: 旧仕様の hardcode 16 並列は Phase 126 で
+> `conductor_sdk::concurrency::ConductorLimiter` (env 駆動) に置換されました。
+> `HESTIA_PER_CONDUCTOR_MAX` (既定 4) で上限を変更でき、`HESTIA_ACQUIRE_TIMEOUT_SECS`
+> (既定 600) 経過で acquire timeout により当該 coder 起動を skip します
+> （`dispatched_all = false`）。詳細は [`user_guide.md`](user_guide.md) §3.12 参照。
 
 **起動コマンド例:**
 

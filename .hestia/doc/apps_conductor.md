@@ -131,11 +131,17 @@ apps-conductor は **planner / designer / coder（複数）/ builder / tester** 
 |----------------|---------|------|-------|
 | **planner** | `apps-planner` | アプリ開発プランニング（RTOS 選定、メモリレイアウト、タスク分割、HAL 取り込み戦略）| 1 |
 | **designer** | `apps-designer` | アプリ詳細仕様（タスク構成、IPC プロトコル、状態遷移、エラー処理ポリシー）| 1 |
-| **coder** | `apps-coder-{module}` | 機能モジュール単位のアプリケーションコード（C / C++ / Rust）実装 | **N**（モジュール数だけ動的並列起動、最大16）|
+| **coder** | `apps-coder-{module}` | 機能モジュール単位のアプリケーションコード（C / C++ / Rust）実装 | **N**（モジュール数だけ動的並列起動、`per_conductor_max` 既定 4 で cap、Phase 126）|
 | **builder** | `apps-builder` | クロスコンパイル / リンカスクリプト適用 / バイナリサイズ最適化 | 1 |
 | **tester** | `apps-tester` | SIL（QEMU）/ HIL（実機 + debug-conductor）/ 単体テスト実行 + カバレッジ集計 | 1 |
 
-**フロー**: planner → designer → coder（モジュール並列）→ builder → tester の順次実行。大規模アプリ（モジュール数 >= 4）では coder を最大16並列まで自動拡張。
+**フロー**: planner → designer → coder（モジュール並列）→ builder → tester の順次実行。大規模アプリ（モジュール数 >= 4）では coder を `per_conductor_max` 件まで動的拡張する（旧仕様の hardcode 16 は Phase 126 で env 駆動に置換）。
+
+> **Phase 126 並列度制御**: `apps.dispatch_coders.v1` も rtl と同じく
+> `conductor_sdk::concurrency::ConductorLimiter` で並列度を制御します。
+> 環境変数 `HESTIA_PER_CONDUCTOR_MAX` で上限を変更可、`HESTIA_ACQUIRE_TIMEOUT_SECS`
+> 経過で acquire timeout により当該 coder は skip されます。
+> 詳細は [`user_guide.md`](user_guide.md) §3.12 参照。
 
 ---
 

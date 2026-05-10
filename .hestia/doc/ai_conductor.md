@@ -34,6 +34,7 @@ ai-conductor は以下の4つの中核機能を提供する。
 | DAG ベースワークフロー | トポロジカルソート（Kahn）によるクロス conductor パイプライン、sled で状態永続化 |
 | 仕様書駆動開発 | 自然言語仕様書（`REQ:`/`CON:`/`IF:` プレフィックス）から DesignSpec 生成 → 設計データ自動生成 |
 | LLM バックエンド切替 | Anthropic / Ollama / LM Studio / vLLM の切替対応 |
+| **サブエージェント並列度制御**（Phase 126） | 3 段階階層 Semaphore + acquire timeout で global / ai-dispatch / per-conductor の各段で並列度を cap。reviewer 用 reserved slot で auto-spawn ai-reviewer の starvation を防止。詳細は [`user_guide.md`](user_guide.md) §3.12 参照 |
 
 ---
 
@@ -55,6 +56,18 @@ pub struct ConductorManager {
 1. **意図理解**: 自然言語 → 設計タスク種別判定 / 構造化 JSON → method 名前空間で直接判定
 2. **タスク分解**: 単一 conductor 完結 → そのまま dispatch / 複数 conductor 横断 → workflow-engine に委譲し DAG 化 / 仕様書ベース → spec-driven で DesignSpec 生成
 3. **振り分け**: conductor-router 経由で `agent-cli send <peer> <payload>` により適切な conductor へルーティング
+
+### dispatch 並列度（Phase 126）
+
+`AiHandler::handle_exec` 内の dispatch ループ各 step は L2 limiter
+(`HESTIA_AI_DISPATCH_MAX` 既定 2、`tokio::sync::Semaphore` ベース) から permit を取得してから
+`spawn_conductor_on_demand` + `dispatch_to_conductor` を実行します。`HESTIA_ACQUIRE_TIMEOUT_SECS`
+(既定 600) 経過で permit を取得できなければ当該 step を `dispatch_acquire_timeout` エラーで
+記録し次 step へ進みます（hold-and-wait を打切ってデッドロック検知）。
+
+`AgentManager` (内部の `multi-agent` クレート) も Phase 126 で
+`conductor_sdk::concurrency::ConductorLimiter` ベースに置換され、`HESTIA_GLOBAL_MAX_AGENTS`
+(既定 8) でグローバル cap、うち 1 slot を `ai-reviewer` 用に reserve します。
 
 ---
 

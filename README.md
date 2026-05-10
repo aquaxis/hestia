@@ -17,6 +17,8 @@ Hestia（ヘスティア）は、FPGA・ASIC・PCB・HAL・組込みソフトウ
 - **ベンダー非依存の抽象化** — `ToolAdapter`/`VendorAdapter` トレイトによる統一インターフェース。`adapter.toml` を書くだけでツール追加可能
 - **コンテナ & ローカル実行** — Podman rootless コンテナまたはローカル実行を選択可能。lock ファイルによるビルド再現性
 - **AI エージェントパイプライン** — WatcherAgent → ProbeAgent → PatcherAgent → ValidatorAgent によるツールバージョンアップ自動追従
+- **サブエージェント並列度制御（Phase 126）** — 3 段階階層 Semaphore + acquire timeout（global / ai-dispatch / per-conductor）で spawn 並列度を制御し、reviewer 用 reserved slot で重要 path の starvation を防止。`.hestia/config.toml` `[concurrency]` で調整可能
+- **自己アップデート & version 同期（Phase 124 / 127）** — `hestia upgrade` でソースから再ビルド + `~/.local/bin/` へ install。`build.rs` の `git describe` で `--version` 表示が GitHub TAG と自動同期
 
 > **Hestia 設計原則**: Hestia は AI 駆動システムです。LLM が指示を解析して **HDL / 制約 / TCL を動的に生成** し、handler が処理します。テンプレートを並べて handler に渡すアーキテクチャは禁止です（[WORKFLOWS.md](./WORKFLOWS.md) 参照）。
 
@@ -80,6 +82,16 @@ hestia start         # 全 Conductor デーモンを起動
 hestia status        # デーモンステータスを表示
 ```
 
+### 自己アップデート（Phase 124）
+
+```bash
+hestia upgrade            # git pull → cargo build --release → ~/.local/bin/hestia 更新
+hestia upgrade --no-pull  # 現在の作業ツリーから再ビルドのみ（pull スキップ）
+hestia --version          # 例: "hestia 0.1.5-17-gaf88400" (Phase 127 で git describe 同期)
+```
+
+`hestia --version` は `build.rs` が build 時に `git describe --tags --dirty=-dirty` を取得して埋め込むため、tag 一致 commit なら `0.1.5`、tag からの diff があれば `0.1.5-17-gaf88400[-dirty]` を表示します。配布バイナリ（git 不在環境）では `[workspace.package] version` にフォールバック。
+
 ## 動作要件
 
 - **Rust** 1.75+（[rustup](https://rustup.rs) でインストール）
@@ -109,6 +121,25 @@ type = "claude_cli_shim"
 - `claude_cli_shim` 選択時は `~/.local/bin/claude-cli-shim`（または `binary` で指定したパス）が使用される。`claude` バイナリと `ANTHROPIC_API_KEY` が必須。
 - registry / log path を agent-cli と共有する場合は、両 engine の peer 名衝突に注意（`hestia kill` で停止後に切替推奨）。
 - 詳細仕様は [`./report_claude.md`](./report_claude.md)（Phase 112 調査報告）と `.aiprj/AI_PRJ_DESIGN.md` §10〜§12 を参照。
+
+### サブエージェント並列度の制御（Phase 126）
+
+サブエージェントが立ち上がりすぎることによる PC / LLM の過負荷とデッドロックを防ぐため、
+`.hestia/config.toml` の `[concurrency]` セクションで 3 段階階層の並列度上限を設定できます。
+
+```toml
+[concurrency]
+global_max = 8                       # ai-conductor が把握する全エージェント合計 (HESTIA_GLOBAL_MAX_AGENTS)
+ai_conductor_dispatch_max = 2        # ai-conductor が同時 dispatch する domain conductor 数 (HESTIA_AI_DISPATCH_MAX)
+per_conductor_max = 4                # 各 conductor が同時 spawn できるサブエージェント数 (HESTIA_PER_CONDUCTOR_MAX)
+acquire_timeout_secs = 600           # slot 待機タイムアウト秒（デッドロック検知）(HESTIA_ACQUIRE_TIMEOUT_SECS)
+```
+
+- 階層 Semaphore で **L1 → L2 → L3 の取得順序を固定**することで circular wait を排除。
+- `acquire_timeout_secs` 経過で **hold-and-wait を打切**り、デッドロックを検知（`dispatch_acquire_timeout` エラーを記録）。
+- `global_max` のうち 1 slot を **reviewer 用 reserved slot** として予約し、Phase 77 の auto-spawn ai-reviewer が cap 限界下でも起動できるようにする。
+- 各設定は対応する環境変数で個別 override 可能（`HESTIA_PER_CONDUCTOR_MAX=2 hestia ai exec ...`）。
+- 既定値（8 / 2 / 4 / 600s）は中規模ワークロードを想定。LLM rate limit が厳しい環境は `global_max` を下げ、強力な workstation では上げる。
 
 ## ワークスペース構成
 
@@ -167,6 +198,8 @@ hestia init                    # プロジェクトを初期化
 hestia start fpga              # FPGA Conductor を起動
 hestia status                  # 全 Conductor のステータスを表示
 hestia ai -- exec "review"     # ai-cli にディスパッチ
+hestia upgrade                 # ソースから再ビルド + 再 install (Phase 124)
+hestia kill                    # 全 conductor を停止し registry を cleanup (Phase 123)
 
 # ドメイン別 CLI
 hestia-fpga-cli init           # FPGA プロジェクトを初期化
@@ -191,6 +224,20 @@ make install        # ~/.local/bin にインストール（デフォルト）
 make install PREFIX=/usr/local/bin  # システム全体にインストール
 make clean          # ビルド成果物を削除
 ```
+
+### リリース手順（Phase 127）
+
+`scripts/release.sh` で `[workspace.package] version` の書換 + commit + tag を原子的に実施。
+
+```bash
+./scripts/release.sh 0.1.6                  # version 0.1.6 のリリースを準備
+git push origin main --follow-tags          # main + tag v0.1.6 を push
+```
+
+スクリプトは (1) `Cargo.toml` の workspace version 書換 → (2) `cargo build --release` で
+`Cargo.lock` 再生成 → (3) `git commit "Release vX.Y.Z" + git tag vX.Y.Z` を実行します。
+`build.rs` が tag 作成を `.git/refs/tags` watch 経由で検知し、次回ビルドで `hestia --version`
+が新 tag に追従します。push は安全プロトコル準拠で常に手動。
 
 ## 設計原則
 

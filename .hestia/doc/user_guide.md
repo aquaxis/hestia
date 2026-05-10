@@ -64,7 +64,32 @@ hestia init                     # .hestia/ 構築
 hestia start                    # 全 9 conductor 起動
 hestia start fpga               # 指定 conductor のみ
 hestia status                   # 全 conductor 状態
+hestia kill                     # 全 conductor を停止し、agent-cli/claude-cli-shim
+                                # の registry から残留 peer を cleanup（Phase 123）
+hestia upgrade                  # ソースから cargo build --release → ~/.local/bin
+                                # に再 install（Phase 124）
+hestia upgrade --no-pull        # git pull をスキップして現在の作業ツリーから再ビルド
+hestia --version                # build.rs による git describe ベースの version 表示
+                                # 例: "hestia 0.1.5-17-gaf88400"（Phase 127）
 ```
+
+#### `hestia upgrade` の動作
+
+1. `git pull` でリモートの変更を取り込む（`--no-pull` で skip 可）
+2. `.hestia/tools/` で `cargo build --release` を実行
+3. ビルドした `target/release/hestia` を `~/.local/bin/hestia`（または `--install <path>` で指定したパス）にコピー
+4. インストール後の `hestia --version` で新 version を表示
+
+#### `hestia --version` の version 同期（Phase 127）
+
+`clis/hestia/build.rs` がビルド時に `git describe --tags --always --dirty=-dirty` を実行し、
+`HESTIA_BUILD_VERSION` env として埋め込みます。`main.rs` は以下の fallback chain で表示:
+
+- `option_env!("HESTIA_BUILD_VERSION")` — git 利用可能ならば `git describe` 出力
+- `env!("CARGO_PKG_VERSION")` — git 不在環境（`cargo install` 配布等）では `[workspace.package] version`
+
+これにより GitHub TAG と version 表示が自動同期します。リリース時は `scripts/release.sh <X.Y.Z>` で
+Cargo.toml 書換 + commit + tag を原子的に実施できます。
 
 ### 3.2 RTL 設計フロー
 
@@ -159,7 +184,44 @@ hestia ai review start --project ./my-project --target artix7
 
 `CommonOpts`: `--output (human|json)` / `--timeout` / `--registry` / `--config` / `--verbose`
 
-### 3.12 Exit Code
+### 3.12 サブエージェント並列度の制御（Phase 126）
+
+`.hestia/config.toml` の `[concurrency]` セクションでサブエージェント spawn の上限を設定する。
+3 段階階層 Semaphore + acquire timeout でデッドロックを起こさず PC / LLM 過負荷を防ぐ。
+
+```toml
+[concurrency]
+global_max = 8                       # ai-conductor が把握する全エージェント合計
+ai_conductor_dispatch_max = 2        # ai-conductor が同時 dispatch する domain conductor 数
+per_conductor_max = 4                # 各 conductor が同時 spawn できるサブエージェント数
+acquire_timeout_secs = 600           # slot 待機タイムアウト秒（デッドロック検知）
+```
+
+各設定は対応する環境変数で個別 override 可能（テスト / CI で一時的に下げる用途）:
+
+| 環境変数 | 既定値 | 役割 |
+|---------|------|------|
+| `HESTIA_GLOBAL_MAX_AGENTS` | 8 | ai-conductor の `AgentManager` cap（うち 1 を reviewer 予約 slot） |
+| `HESTIA_AI_DISPATCH_MAX` | 2 | ai-conductor の `dispatch_to_conductor` 同時実行上限 |
+| `HESTIA_PER_CONDUCTOR_MAX` | 4 | 各 conductor の `dispatch_coders.v1` 並列度上限 |
+| `HESTIA_ACQUIRE_TIMEOUT_SECS` | 600 | 全 limiter 共通の acquire タイムアウト |
+
+**デッドロック回避の仕組み**:
+
+- **取得順序固定 (L1 → L2 → L3)**: `AgentManager` global → ai-conductor dispatch → 各 conductor の per-conductor cap の順でのみ permit を取得し、circular wait を排除。
+- **acquire timeout**: timeout 経過で `dispatch_acquire_timeout` エラーを記録して次 step へ進み、hold-and-wait を打切る。
+- **reviewer 予約 slot**: `global_max` のうち 1 を `ai-reviewer` 用に reserve することで、Phase 77 の auto-spawn ai-reviewer が cap 限界下でも起動可能。
+
+**使用例** — 一時的に並列度を 1 に絞ってデバッグ:
+
+```bash
+HESTIA_PER_CONDUCTOR_MAX=1 HESTIA_AI_DISPATCH_MAX=1 \
+  hestia ai exec "RTL を 5 モジュール書いて"
+```
+
+`pgrep -af 'agent-cli|claude-cli-shim' | wc -l` で同時起動数が cap 内であることを確認できる。
+
+### 3.13 Exit Code
 
 | Exit Code | 意味 |
 |-----------|------|

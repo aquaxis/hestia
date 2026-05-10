@@ -253,6 +253,25 @@ registry_dir = ""                             # エージェント間 IPC レジ
 - **ログ出力時の masking**: API キー値そのものを出力せず長さのみ表示
 - **IPC レジストリ**: パーミッション 0700 で他ユーザーからのなりすまし防止
 
+### 6.5 Engine 抽象化（Phase 125）
+
+`conductor_sdk::transport::AgentCliClient` は `HESTIA_ENGINE_BINARY` env を sole source of
+truth として engine 別 transport を選択する:
+
+| Engine | registry path 既定 | send transport |
+|--------|------------------|---------------|
+| `agent-cli` (default) | `$XDG_RUNTIME_DIR/agent-cli/` | Unix socket round-trip |
+| `claude-cli-shim` | `~/.local/share/claude-cli-shim/registry/` | `<engine_bin> send <peer> <text>` subprocess (FIFO unidirectional のため synthesized OK レスポンスを返す) |
+
+`config.agent_cli_registry_dir` で明示指定があればそれを最優先。詳細は
+`.aiprj/AI_PRJ_DESIGN.md` §10〜§12 と Phase 125 commit `af52ffe` を参照。
+
+### 6.6 並列度制御（Phase 126）
+
+ai-conductor の `dispatch_to_conductor` ループおよび各 conductor の `dispatch_coders.v1`
+ハンドラは `conductor_sdk::concurrency::ConductorLimiter` (tokio::sync::Semaphore +
+acquire timeout) で並列度を cap する。詳細は [`user_guide.md`](user_guide.md) §3.12 参照。
+
 ---
 
 ## 7. 実装イメージ
