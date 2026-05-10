@@ -340,9 +340,20 @@ pub(crate) fn load_hestia_config() -> HestiaConfig {
     toml::from_str::<HestiaConfig>(&text).unwrap_or_default()
 }
 
+/// Phase 127 — `--version` で表示する version 文字列。
+///
+/// `build.rs` が `git describe --tags --dirty` の結果を `HESTIA_BUILD_VERSION` に
+/// 注入していればそれを使い (例: `0.1.5-3-gabc1234[-dirty]`)、無ければ
+/// `CARGO_PKG_VERSION` (= `[workspace.package] version`) にフォールバックする。
+/// これによりバイナリ表示が GitHub TAG と自動同期される。
+pub const HESTIA_VERSION: &str = match option_env!("HESTIA_BUILD_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 /// Hestia -- unified runner for domain conductors and CLIs
 #[derive(Parser)]
-#[command(name = "hestia", version, about)]
+#[command(name = "hestia", version = HESTIA_VERSION, about)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
