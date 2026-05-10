@@ -743,6 +743,60 @@ async fn peer_already_registered(peer_name: &str) -> bool {
     registered_peer_names(&stdout).contains(peer_name)
 }
 
+/// Phase 131 — peer 名から alive cap 対象 prefix を推定する純粋関数。
+///
+/// `<conductor>-<role>-<module>` 形式（3 segment 以上）の場合、
+/// `<conductor>-<role>-` を cap prefix として返す。
+/// 2 segment 以下（例: `pcb-layout`、`ai-reviewer`）は単一インスタンス想定で
+/// `None`（cap 対象外）。
+pub(crate) fn cap_prefix_for(peer_name: &str) -> Option<String> {
+    let mut parts = peer_name.splitn(3, '-');
+    let p0 = parts.next()?;
+    let p1 = parts.next()?;
+    let _p2 = parts.next()?; // 3 segment 目が存在することの確認
+    if p0.is_empty() || p1.is_empty() {
+        return None;
+    }
+    Some(format!("{p0}-{p1}-"))
+}
+
+/// Phase 131 — `~/.local/share/hestia/spawn.lock` を `flock(2)` で獲得する RAII guard。
+/// drop 時に fd close → 自動アンロック。lock 獲得失敗時は warn を出して `None` を
+/// 返し、cap check を継続させる（fail-safe）。
+struct SpawnLock {
+    _file: std::fs::File,
+}
+
+fn acquire_spawn_lock() -> Option<SpawnLock> {
+    let home = dirs::home_dir()?;
+    let lock_dir = home.join(".local/share/hestia");
+    if let Err(e) = std::fs::create_dir_all(&lock_dir) {
+        tracing::warn!(error = %e, "Phase 131: failed to create spawn lock dir");
+        return None;
+    }
+    let lock_path = lock_dir.join("spawn.lock");
+    let file = match std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+    {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::warn!(error = %e, path = %lock_path.display(),
+                "Phase 131: failed to open spawn lock file");
+            return None;
+        }
+    };
+    use std::os::unix::io::AsRawFd;
+    let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
+    if rc != 0 {
+        tracing::warn!("Phase 131: flock LOCK_EX failed");
+        return None;
+    }
+    Some(SpawnLock { _file: file })
+}
+
 /// Phase 109 — `hestia monitor-daemon` 子プロセスが既に走っているかを `pgrep -f`
 /// で判定する。失敗時は `false`（重複なし扱い）。
 async fn monitor_daemon_already_running() -> bool {
@@ -772,12 +826,48 @@ pub(crate) async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str
         bail!("persona file not found: {}", persona.display());
     }
 
+    // Phase 131 — file lock で cap check + spawn を原子化（TOCTOU race 防止）。
+    // 並列 `hestia spawn-subagent` 呼出を直列化することで、registry update
+    // propagation 中の race を排除する。lock 獲得失敗時は fail-safe で継続。
+    let _spawn_lock = acquire_spawn_lock();
+
     // Phase 109 — 重複 spawn 防止
     if peer_already_registered(peer_name).await {
         eprintln!(
             "[Phase 109] peer '{peer_name}' is already registered — skipping duplicate spawn"
         );
         return Ok(());
+    }
+
+    // Phase 131 — alive cap 強制（spawn の単一エントリポイントで全経路を網羅）。
+    // peer 名が `<conductor>-<role>-<module>` 形式なら、`<conductor>-<role>-` を
+    // cap prefix として alive 数を engine registry から取得し、`per_conductor_max`
+    // を超えていれば `bail!` で refuse する。これにより persona LLM が直接
+    // `hestia spawn-subagent` を呼ぶ経路（rtl.md / apps.md 等の指示）でも cap が効く。
+    if let Some(prefix) = cap_prefix_for(peer_name) {
+        let limiter = conductor_sdk::concurrency::ConductorLimiter::from_env();
+        let cap = limiter.capacity();
+        let alive = conductor_sdk::workspace::count_alive_peers_with_prefix(&prefix);
+        if alive >= cap {
+            tracing::warn!(
+                peer = %peer_name,
+                prefix = %prefix,
+                alive = alive,
+                cap = cap,
+                "Phase 131: alive cap exhausted — refusing spawn"
+            );
+            bail!(
+                "alive cap exhausted: {alive} >= {cap} for prefix '{prefix}'. \
+                 既存 sub-agent ({prefix}*) の完了を待つか hestia kill で集約してください。"
+            );
+        }
+        tracing::info!(
+            peer = %peer_name,
+            prefix = %prefix,
+            alive = alive,
+            cap = cap,
+            "Phase 131: alive cap check passed — proceeding to spawn"
+        );
     }
 
     let workdir = workspace_path(peer_name);
@@ -2368,11 +2458,11 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        agent_log_dir, apply_concurrency_env, classify_registry_entries, derive_status_from_log,
-        engine_kill_patterns, format_install_summary_multi, is_engine_peer_id, is_pid_alive,
-        parse_status_events, registered_peer_names, resolve_source_path, select_kill_targets,
-        transform_status_listing, AgentStatus, ConcurrencyConfig, EngineConfig, HestiaConfig,
-        StatusEvent, HESTIA_BINARIES,
+        agent_log_dir, apply_concurrency_env, cap_prefix_for, classify_registry_entries,
+        derive_status_from_log, engine_kill_patterns, format_install_summary_multi,
+        is_engine_peer_id, is_pid_alive, parse_status_events, registered_peer_names,
+        resolve_source_path, select_kill_targets, transform_status_listing, AgentStatus,
+        ConcurrencyConfig, EngineConfig, HestiaConfig, StatusEvent, HESTIA_BINARIES,
     };
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
@@ -2951,6 +3041,63 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
         assert!(summary.contains("Version:   hestia 0.1.5-21-g1fe669f"));
         // skipped が空なら Skipped 行は出ない。
         assert!(!summary.contains("Skipped:"));
+    }
+
+    // ─── Phase 131: cap_prefix_for ─────────────────────────────────────
+
+    #[test]
+    fn cap_prefix_for_returns_none_for_single_segment() {
+        assert_eq!(cap_prefix_for("ai"), None);
+        assert_eq!(cap_prefix_for("rtl"), None);
+        assert_eq!(cap_prefix_for("fpga"), None);
+    }
+
+    #[test]
+    fn cap_prefix_for_returns_none_for_two_segments() {
+        // 2 segment は単一インスタンス想定（cap 対象外）
+        assert_eq!(cap_prefix_for("ai-designer"), None);
+        assert_eq!(cap_prefix_for("ai-reviewer"), None);
+        assert_eq!(cap_prefix_for("pcb-layout"), None);
+        assert_eq!(cap_prefix_for("pcb-schematic"), None);
+        assert_eq!(cap_prefix_for("rtl-tester"), None);
+    }
+
+    #[test]
+    fn cap_prefix_for_returns_prefix_for_three_segments() {
+        // 3 segment 以上は <conductor>-<role>- を cap prefix として返す
+        assert_eq!(
+            cap_prefix_for("rtl-coder-axi_interconnect"),
+            Some("rtl-coder-".to_string())
+        );
+        assert_eq!(
+            cap_prefix_for("apps-coder-cli_py"),
+            Some("apps-coder-".to_string())
+        );
+        assert_eq!(
+            cap_prefix_for("rtl-coder-bootrom"),
+            Some("rtl-coder-".to_string())
+        );
+    }
+
+    #[test]
+    fn cap_prefix_for_handles_module_with_hyphens() {
+        // splitn(3) で 3 segment 目以降は連結される（module 名にハイフン含可）
+        assert_eq!(
+            cap_prefix_for("rtl-coder-multi-word-module"),
+            Some("rtl-coder-".to_string())
+        );
+        assert_eq!(
+            cap_prefix_for("apps-coder-some-app-name"),
+            Some("apps-coder-".to_string())
+        );
+    }
+
+    #[test]
+    fn cap_prefix_for_empty_returns_none() {
+        assert_eq!(cap_prefix_for(""), None);
+        // 空 segment（先頭 / 末尾 / 連続ハイフン）は無効
+        assert_eq!(cap_prefix_for("-coder-foo"), None);
+        assert_eq!(cap_prefix_for("rtl--foo"), None);
     }
 
     #[test]

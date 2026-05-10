@@ -217,18 +217,28 @@ acquire_timeout_secs = 600           # slot 待機タイムアウト秒（デッ
 `config.toml` を書き換えた場合は **`hestia kill && hestia start` で再起動** が必要です（既存 conductor
 process は古い env で動作し続けるため）。
 
-> **Phase 129 alive cap セマンティクス**: `per_conductor_max` は
-> **「現在 alive な対象 sub-agent 数の絶対上限」** として強制されます。
-> `dispatch_coders.v1` 呼出時に engine registry を query し、
-> `available_slots = per_conductor_max - alive` で残 slot を計算します。
+> **Phase 131 alive cap セマンティクス（spawn 全経路で強制）**:
+> `per_conductor_max` は「現在 alive な対象 sub-agent 数の絶対上限」として、
+> `hestia spawn-subagent` の **全経路** で強制されます。
 >
-> alive cap に到達している場合、新規 spawn は `status: "cap_exhausted"` で skip され、
-> `tracing::warn!` で観測ログが出力されます。`per_conductor_max=1` で
-> `rtl-coder-axi` が 1 件 alive なら、次の `rtl.dispatch_coders.v1` 呼出は 0 spawn で skip。
-> 既存 coder の完了を待つか `hestia kill` で集約してください。
+> 強制ポイントは `spawn_agent_cli` (= `hestia spawn-subagent` の実装本体)。
+> peer 名が 3 segment 以上の `<conductor>-<role>-<module>` 形式の場合、
+> `<conductor>-<role>-` を cap prefix として engine registry の alive 数を取得し、
+> `alive >= cap` なら **`bail!` で spawn を refuse** します。これにより以下の
+> いずれの経路でも cap が効きます:
 >
-> 旧仕様（Phase 126-128）の「単一 dispatch 呼出内 cap」は本 phase で alive cap に
-> 切り替わりました（Phase 128 で文書化していた副次原因 C を本格修正）。
+> 1. `rtl.dispatch_coders.v1` / `apps.dispatch_coders.v1` RPC 経由
+> 2. persona LLM が `hestia spawn-subagent` を直接呼ぶ経路
+> 3. 手動 `hestia spawn-subagent --persona X --name Y` CLI 実行
+>
+> 並列 `hestia spawn-subagent` 呼出に対しては `~/.local/share/hestia/spawn.lock`
+> （`flock(2)` 経由）で直列化し TOCTOU race も防止します。
+>
+> 2 segment 以下の peer 名（`pcb-layout`、`ai-reviewer` 等）は単一インスタンス想定で
+> cap 対象外。
+>
+> Phase 進化履歴: Phase 126-128（単一呼出 cap）→ Phase 129（handler 内 alive cap）→
+> **Phase 131（spawn 全経路 alive cap、persona 経由 bypass を塞ぐ）**。
 
 **デッドロック回避の仕組み**:
 

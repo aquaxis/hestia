@@ -146,18 +146,35 @@ acquire_timeout_secs = 600           # slot 待機タイムアウト秒（デッ
   - 親プロセスに既に `HESTIA_*` env が設定されていれば、それが config.toml より優先される（テスト / CI で一時 override する用途）。
 - 既定値（8 / 2 / 4 / 600s）は中規模ワークロードを想定。LLM rate limit が厳しい環境は `global_max` を下げ、強力な workstation では上げる。
 
-> **Phase 129 alive cap セマンティクス**: `per_conductor_max` は
-> **「現在 alive な対象 sub-agent 数の絶対上限」** として強制されます。
-> `dispatch_coders.v1` 呼出時に engine registry を query し、
-> `available_slots = per_conductor_max - alive` で残 slot を計算します。
+> **Phase 131 alive cap セマンティクス（spawn 全経路で強制）**: `per_conductor_max` は
+> **「現在 alive な対象 sub-agent 数の絶対上限」** として、`hestia spawn-subagent` の
+> **全経路** で強制されます。peer 名が `<conductor>-<role>-<module>` 形式（3 segment 以上）
+> の場合、`<conductor>-<role>-` を cap prefix として alive 数を engine registry から
+> 取得し、`per_conductor_max - alive` 残 slot 内のみ spawn 許可。
 >
-> alive cap に到達している場合、新規 spawn は `status: "cap_exhausted"` で skip され、
-> `tracing::warn!` で観測ログが出力されます。例: `per_conductor_max=1` で
-> rtl-coder-axi が 1 件 alive の状態で次の `rtl.dispatch_coders.v1` が呼ばれると、
-> 0 spawn で skip されます。既存 coder の完了を待つか `hestia kill` で集約してください。
+> cap 到達時は `spawn_agent_cli` 段階で `bail!` され、以下のいずれの経路でも確実に
+> refuse されます:
 >
-> 旧仕様（Phase 126-128）の「単一 dispatch 呼出内 cap」は本 phase で alive cap に
-> 切り替わりました（Phase 128 で文書化していた副次原因 C を本格修正）。
+> - `rtl.dispatch_coders.v1` / `apps.dispatch_coders.v1` RPC 経由
+> - persona LLM が `hestia spawn-subagent` を直接呼ぶ経路（rtl.md / apps.md 等）
+> - 手動 `hestia spawn-subagent --persona X --name Y` CLI 実行
+>
+> エラーメッセージ例:
+> ```
+> alive cap exhausted: 1 >= 1 for prefix 'rtl-coder-'.
+> 既存 sub-agent (rtl-coder-*) の完了を待つか hestia kill で集約してください。
+> ```
+>
+> 並列 `hestia spawn-subagent` 呼出に対しては `~/.local/share/hestia/spawn.lock`
+> （`flock(2)` 経由）で直列化し TOCTOU race も防止します。
+>
+> 2 segment 以下の peer 名（`pcb-layout`、`ai-reviewer` 等）は単一インスタンス想定で
+> cap 対象外。
+>
+> Phase 履歴:
+> - Phase 126-128: 単一 dispatch 呼出内の cap（複数呼出を跨ぐと bypass）
+> - Phase 129: dispatch_coders.v1 handler 内の alive cap（persona 経由で bypass）
+> - **Phase 131**: spawn 全経路で alive cap 強制（bypass 経路を完全に塞ぐ）
 
 #### サブエージェント起動数の最小値
 
