@@ -82,15 +82,18 @@ hestia start         # 全 Conductor デーモンを起動
 hestia status        # デーモンステータスを表示
 ```
 
-### 自己アップデート（Phase 124）
+### 自己アップデート（Phase 124 / 130）
 
 ```bash
-hestia upgrade            # git pull → cargo build --release → ~/.local/bin/hestia 更新
+hestia upgrade            # git pull → cargo build --release (全 binary) → ~/.local/bin に 20 binary install
 hestia upgrade --no-pull  # 現在の作業ツリーから再ビルドのみ（pull スキップ）
-hestia --version          # 例: "hestia 0.1.5-17-gaf88400" (Phase 127 で git describe 同期)
+hestia upgrade --dry-run  # 実コマンドを発行せず install path のみ表示
+hestia --version          # 例: "hestia 0.1.5-21-g1fe669f" (Phase 127 で git describe 同期)
 ```
 
-`hestia --version` は `build.rs` が build 時に `git describe --tags --dirty=-dirty` を取得して埋め込むため、tag 一致 commit なら `0.1.5`、tag からの diff があれば `0.1.5-17-gaf88400[-dirty]` を表示します。配布バイナリ（git 不在環境）では `[workspace.package] version` にフォールバック。
+Phase 130 で `hestia upgrade` は **`hestia` バイナリ単体だけでなく全 20 binary** (`hestia` / 9 conductor / 10 cli / `claude-cli-shim`) を build + install します。これにより conductor / library 側の修正（例: Phase 129 alive cap）も `hestia upgrade` 一発で反映されます。
+
+`hestia --version` は `build.rs` が build 時に `git describe --tags --dirty=-dirty` を取得して埋め込むため、tag 一致 commit なら `0.1.5`、tag からの diff があれば `0.1.5-21-g1fe669f[-dirty]` を表示します。配布バイナリ（git 不在環境）では `[workspace.package] version` にフォールバック。
 
 ## 動作要件
 

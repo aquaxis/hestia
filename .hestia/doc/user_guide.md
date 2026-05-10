@@ -73,12 +73,14 @@ hestia --version                # build.rs による git describe ベースの v
                                 # 例: "hestia 0.1.5-17-gaf88400"（Phase 127）
 ```
 
-#### `hestia upgrade` の動作
+#### `hestia upgrade` の動作（Phase 124 / 130）
 
-1. `git pull` でリモートの変更を取り込む（`--no-pull` で skip 可）
-2. `.hestia/tools/` で `cargo build --release` を実行
-3. ビルドした `target/release/hestia` を `~/.local/bin/hestia`（または `--install <path>` で指定したパス）にコピー
+1. `git pull --ff-only` でリモートの変更を取り込む（`--no-pull` で skip 可）
+2. `.hestia/tools/` で `cargo build --release` を実行（**Phase 130 で全 binary build に拡張**）
+3. ビルドされた **20 binary すべて**（`hestia` / 9 conductor / 10 cli / `claude-cli-shim`）を `~/.local/bin/` にコピー
 4. インストール後の `hestia --version` で新 version を表示
+
+Phase 130 以前は `hestia` バイナリ単体のみだったため、conductor / library 側の修正が反映されないバグがありました。Phase 130 で全 binary install に変更され、`hestia upgrade` 一発で system 全体が同期されます。
 
 #### `hestia --version` の version 同期（Phase 127）
 

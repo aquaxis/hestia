@@ -2034,20 +2034,34 @@ pub(crate) fn resolve_source_path(
     Err("hestia source repo not found.\n  Tried: --source / $HESTIA_SOURCE_DIR / cwd / ~/hestia\n  Hint: clone the repo to ~/hestia or pass --source <path>.".to_string())
 }
 
-/// Phase 124 — install 完了サマリの整形 (純関数)。
-pub(crate) fn format_install_summary(
+/// Phase 130 — 全 binary install サマリの整形 (純関数)。
+/// Phase 124 の `format_install_summary` (単一 binary 用) を Phase 130 で本関数に置換。
+/// `installed` は実際に install された binary 名のリスト。`skipped` はビルド成果物が
+/// 存在せず skip された binary 名のリスト（部分ビルド失敗の可視化用）。
+pub(crate) fn format_install_summary_multi(
     source: &Path,
-    built: &Path,
-    install: &Path,
+    release_dir: &Path,
+    install_dir: &Path,
+    installed: &[String],
+    skipped: &[String],
     version: &str,
 ) -> String {
-    format!(
-        "hestia upgraded successfully.\n  Source:    {}\n  Built:     {}\n  Installed: {}\n  Version:   {}\n",
+    let mut out = format!(
+        "hestia upgraded successfully.\n  Source:    {}\n  Release:   {}\n  Installed: {} binaries → {}\n  Version:   {}\n",
         source.display(),
-        built.display(),
-        install.display(),
+        release_dir.display(),
+        installed.len(),
+        install_dir.display(),
         version.trim(),
-    )
+    );
+    if !skipped.is_empty() {
+        out.push_str(&format!(
+            "  Skipped:   {} binaries (build artifact missing): {}\n",
+            skipped.len(),
+            skipped.join(", "),
+        ));
+    }
+    out
 }
 
 /// Phase 124 — `git -C <source> pull --ff-only` を実行する。
@@ -2078,19 +2092,45 @@ async fn run_git_pull(source: &Path, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-/// Phase 124 — `cargo build --release --bin hestia` を `<source>/.hestia/tools` で実行。
-/// 失敗時は末尾 stderr を表示して bail。
+/// Phase 130 — `hestia upgrade` で build + install 対象とする全 20 バイナリ。
+/// Makefile の BINARIES と同期維持。新 conductor / cli を追加した際は両方を更新する。
+pub(crate) const HESTIA_BINARIES: &[&str] = &[
+    "hestia",
+    "hestia-ai-conductor",
+    "hestia-rtl-conductor",
+    "hestia-fpga-conductor",
+    "hestia-asic-conductor",
+    "hestia-pcb-conductor",
+    "hestia-hal-conductor",
+    "hestia-apps-conductor",
+    "hestia-debug-conductor",
+    "hestia-rag-conductor",
+    "hestia-ai-cli",
+    "hestia-rtl-cli",
+    "hestia-fpga-cli",
+    "hestia-asic-cli",
+    "hestia-pcb-cli",
+    "hestia-hal-cli",
+    "hestia-apps-cli",
+    "hestia-debug-cli",
+    "hestia-rag-cli",
+    "claude-cli-shim",
+];
+
+/// Phase 130 — `cargo build --release` を `<source>/.hestia/tools` で実行（全 binary）。
+///
+/// Phase 124 の旧仕様 (`--bin hestia` 単体ビルド) を Phase 130 で全 binary 化。
+/// 理由: conductor / cli の挙動変更（例: Phase 129 alive cap）が反映されるためには
+/// 対応する binary を再ビルドする必要があり、`hestia` 単体ビルドでは不足。
 async fn run_cargo_build(source: &Path, verbose: bool) -> Result<()> {
     let workspace = source.join(".hestia/tools");
     let stdout_cfg = if verbose { Stdio::inherit() } else { Stdio::piped() };
     let stderr_cfg = if verbose { Stdio::inherit() } else { Stdio::piped() };
-    println!("Rebuilding hestia from {} ...", source.display());
+    println!("Rebuilding all hestia binaries from {} ...", source.display());
     let start = std::time::Instant::now();
     let output = Command::new("cargo")
         .arg("build")
         .arg("--release")
-        .arg("--bin")
-        .arg("hestia")
         .current_dir(&workspace)
         .stdout(stdout_cfg)
         .stderr(stderr_cfg)
@@ -2151,8 +2191,8 @@ async fn fetch_installed_version(install: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// Phase 124 — `--dry-run` で各ステップを表示するのみ (実コマンドは投入しない)。
-fn print_dry_run(source: &Path, built: &Path, install: &Path, no_pull: bool) {
+/// Phase 124 / 130 — `--dry-run` で各ステップを表示するのみ (実コマンドは投入しない)。
+fn print_dry_run(source: &Path, install_dir: &Path, no_pull: bool) {
     if !no_pull {
         println!("$ git -C {} pull --ff-only", source.display());
     } else {
@@ -2160,11 +2200,15 @@ fn print_dry_run(source: &Path, built: &Path, install: &Path, no_pull: bool) {
     }
     let workspace = source.join(".hestia/tools");
     println!(
-        "$ (cd {} && cargo build --release --bin hestia)",
+        "$ (cd {} && cargo build --release)   # Phase 130: 全 binary",
         workspace.display()
     );
-    println!("$ rm -f {}", install.display());
-    println!("$ cp {} {}", built.display(), install.display());
+    let release_dir = workspace.join("target/release");
+    for bin in HESTIA_BINARIES {
+        let built = release_dir.join(bin);
+        let target = install_dir.join(bin);
+        println!("$ install {} -> {}", built.display(), target.display());
+    }
     println!("(dry-run: no commands were executed)");
 }
 
@@ -2186,14 +2230,14 @@ async fn run_upgrade(
         |p| p.join(".hestia/tools/Cargo.toml").is_file(),
     )
     .map_err(anyhow::Error::msg)?;
-    let built = resolved.join(".hestia/tools/target/release/hestia");
-    let install = home
+    let release_dir = resolved.join(".hestia/tools/target/release");
+    let install_dir = home
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("$HOME unresolved"))?
-        .join(".local/bin/hestia");
+        .join(".local/bin");
 
     if dry_run {
-        print_dry_run(&resolved, &built, &install, no_pull);
+        print_dry_run(&resolved, &install_dir, no_pull);
         return Ok(());
     }
 
@@ -2201,11 +2245,33 @@ async fn run_upgrade(
         run_git_pull(&resolved, verbose).await?;
     }
     run_cargo_build(&resolved, verbose).await?;
-    install_binary(&built, &install)?;
-    let version = fetch_installed_version(&install).await?;
+
+    // Phase 130 — 全 binary を install。リリースに無い binary（例: 部分ビルド失敗）は
+    // skip してログ出力のみ。`hestia` 自体は必須なので、不在ならエラー。
+    let mut installed: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+    for bin in HESTIA_BINARIES {
+        let built = release_dir.join(bin);
+        let target = install_dir.join(bin);
+        if !built.is_file() {
+            skipped.push((*bin).to_string());
+            continue;
+        }
+        install_binary(&built, &target)?;
+        installed.push((*bin).to_string());
+    }
+
+    let hestia_bin = install_dir.join("hestia");
+    if !installed.iter().any(|b| b == "hestia") {
+        bail!(
+            "hestia binary not built at {} — build may have failed silently",
+            release_dir.join("hestia").display()
+        );
+    }
+    let version = fetch_installed_version(&hestia_bin).await?;
     print!(
         "{}",
-        format_install_summary(&resolved, &built, &install, &version)
+        format_install_summary_multi(&resolved, &release_dir, &install_dir, &installed, &skipped, &version)
     );
     Ok(())
 }
@@ -2303,10 +2369,10 @@ async fn main() -> Result<()> {
 mod tests {
     use super::{
         agent_log_dir, apply_concurrency_env, classify_registry_entries, derive_status_from_log,
-        engine_kill_patterns, format_install_summary, is_engine_peer_id, is_pid_alive,
+        engine_kill_patterns, format_install_summary_multi, is_engine_peer_id, is_pid_alive,
         parse_status_events, registered_peer_names, resolve_source_path, select_kill_targets,
         transform_status_listing, AgentStatus, ConcurrencyConfig, EngineConfig, HestiaConfig,
-        StatusEvent,
+        StatusEvent, HESTIA_BINARIES,
     };
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
@@ -2851,23 +2917,58 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
         assert!(err.contains("/tmp/nonexistent"));
     }
 
+    // ─── Phase 130: hestia upgrade の全 binary install ──────────────────
+
     #[test]
-    fn format_install_summary_contains_all_paths_and_version() {
-        let summary = format_install_summary(
+    fn hestia_binaries_list_includes_required_components() {
+        // 主要 binary が漏れていないことを確認。
+        assert!(HESTIA_BINARIES.contains(&"hestia"));
+        assert!(HESTIA_BINARIES.contains(&"hestia-ai-conductor"));
+        assert!(HESTIA_BINARIES.contains(&"hestia-rtl-conductor"));
+        assert!(HESTIA_BINARIES.contains(&"hestia-apps-conductor"));
+        assert!(HESTIA_BINARIES.contains(&"hestia-ai-cli"));
+        assert!(HESTIA_BINARIES.contains(&"claude-cli-shim"));
+        // Makefile の BINARIES と件数一致 (20 binary)。
+        assert_eq!(HESTIA_BINARIES.len(), 20);
+    }
+
+    #[test]
+    fn format_install_summary_multi_includes_count_and_paths() {
+        let installed: Vec<String> = vec!["hestia".into(), "hestia-rtl-conductor".into()];
+        let skipped: Vec<String> = vec![];
+        let summary = format_install_summary_multi(
             Path::new("/home/u/hestia"),
-            Path::new("/home/u/hestia/.hestia/tools/target/release/hestia"),
-            Path::new("/home/u/.local/bin/hestia"),
-            "hestia 0.1.0\n",
+            Path::new("/home/u/hestia/.hestia/tools/target/release"),
+            Path::new("/home/u/.local/bin"),
+            &installed,
+            &skipped,
+            "hestia 0.1.5-21-g1fe669f\n",
         );
         assert!(summary.contains("hestia upgraded successfully."));
         assert!(summary.contains("Source:    /home/u/hestia"));
-        assert!(summary.contains(
-            "Built:     /home/u/hestia/.hestia/tools/target/release/hestia"
-        ));
-        assert!(summary.contains("Installed: /home/u/.local/bin/hestia"));
-        assert!(summary.contains("Version:   hestia 0.1.0"));
-        // 末尾改行なし version でも改行で 5 行構成 (見出し + 4 詳細)。
-        assert_eq!(summary.lines().count(), 5);
+        assert!(summary.contains("Release:   /home/u/hestia/.hestia/tools/target/release"));
+        assert!(summary.contains("Installed: 2 binaries → /home/u/.local/bin"));
+        assert!(summary.contains("Version:   hestia 0.1.5-21-g1fe669f"));
+        // skipped が空なら Skipped 行は出ない。
+        assert!(!summary.contains("Skipped:"));
+    }
+
+    #[test]
+    fn format_install_summary_multi_lists_skipped() {
+        let installed: Vec<String> = vec!["hestia".into()];
+        let skipped: Vec<String> = vec!["hestia-rtl-conductor".into(), "claude-cli-shim".into()];
+        let summary = format_install_summary_multi(
+            Path::new("/src"),
+            Path::new("/src/release"),
+            Path::new("/dst"),
+            &installed,
+            &skipped,
+            "hestia 0.1.5\n",
+        );
+        assert!(summary.contains("Installed: 1 binaries → /dst"));
+        assert!(summary.contains("Skipped:   2 binaries"));
+        assert!(summary.contains("hestia-rtl-conductor"));
+        assert!(summary.contains("claude-cli-shim"));
     }
 
     // ─── Phase 128: [concurrency] config.toml 連携 ────────────────────────
