@@ -12,9 +12,13 @@
 use std::process::Command;
 
 fn main() {
-    // tag 作成 / HEAD 更新で再ビルドが走るよう watch を出力。
+    // tag 作成 / commit / branch 切替で再ビルドが走るよう watch を出力。
+    // - .git/HEAD: branch 切替を検知
+    // - .git/logs/HEAD: 全 commit/checkout 操作で append される (現 branch 不問)
+    // - .git/refs/tags: 新規 tag 作成を検知
     // パスは Cargo の慣例で manifest dir 相対。
     println!("cargo:rerun-if-changed=../../../../.git/HEAD");
+    println!("cargo:rerun-if-changed=../../../../.git/logs/HEAD");
     println!("cargo:rerun-if-changed=../../../../.git/refs/tags");
 
     let output = Command::new("git")
