@@ -166,6 +166,56 @@ pub fn agent_cli_peer_alive(peer_name: &str) -> bool {
     })
 }
 
+/// Phase 129 — `engine_binary() list` 出力の NAME 列を走査し、`prefix` で
+/// 始まる peer 数を返す。registry query 失敗時は 0（保守的な fallback で
+/// 過剰 cap 抑制を避ける）。
+///
+/// 用途: rtl-conductor / apps-conductor が `dispatch_coders.v1` 呼出時に
+/// 既存 alive coder 数を取得し、`per_conductor_max` を **alive cap** として
+/// 強制する（複数 dispatch 呼出を跨いだ累積 alive を抑制）。
+///
+/// engine 抽象化を踏襲し、`engine_binary()` 経由で agent-cli /
+/// claude-cli-shim の双方で動作する。
+///
+/// テスト互換: 既存 `agent_cli_peer_alive` と同様、`HESTIA_PEER_ALIVE_FORCE`
+/// env が設定されていれば、その comma-separated list 内で `prefix` から
+/// 始まるエントリ数を返す（実 engine query をスキップ）。
+pub fn count_alive_peers_with_prefix(prefix: &str) -> usize {
+    if let Ok(force) = std::env::var("HESTIA_PEER_ALIVE_FORCE") {
+        return force
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|p| p.starts_with(prefix))
+            .count();
+    }
+
+    let output = std::process::Command::new(engine_binary())
+        .arg("list")
+        .output();
+    let Ok(out) = output else {
+        return 0;
+    };
+    if !out.status.success() {
+        return 0;
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    count_prefix_matches_in_listing(&stdout, prefix)
+}
+
+/// Phase 129 — `count_alive_peers_with_prefix` の純粋 parse 関数。
+/// 単体テスト可能化のため I/O から分離。
+pub(crate) fn count_prefix_matches_in_listing(stdout: &str, prefix: &str) -> usize {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let _id = fields.next();
+            fields.next()
+        })
+        .filter(|name| name.starts_with(prefix))
+        .count()
+}
+
 /// Phase 84f / Phase 88 — strict subagent モード判定。
 ///
 /// env `HESTIA_STRICT_SUBAGENT` の値で各 conductor の `<domain>.design.v1`
@@ -373,4 +423,51 @@ pub fn find_project_file(category: &str, subpath: Option<&str>, name: &str) -> O
     }
     let path = path.join(name);
     if path.is_file() { Some(path) } else { None }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Phase 129 — `count_prefix_matches_in_listing` の純粋 parse テスト。
+    /// agent-cli / claude-cli-shim どちらの list 出力でも同じパース規約
+    /// （NAME 列 = 2 番目の whitespace token）で動作することを確認する。
+    #[test]
+    fn count_prefix_matches_zero_when_empty() {
+        assert_eq!(count_prefix_matches_in_listing("", "rtl-coder-"), 0);
+    }
+
+    #[test]
+    fn count_prefix_matches_skips_header() {
+        // 通常 1 行目はヘッダで NAME 列に "NAME" 等が入る。prefix で絞れば 0。
+        let stdout = "ID  NAME  PROVIDER\n";
+        assert_eq!(count_prefix_matches_in_listing(stdout, "rtl-coder-"), 0);
+    }
+
+    #[test]
+    fn count_prefix_matches_counts_rtl_coders() {
+        let stdout = "\
+ID                                NAME                       PROVIDER  MODEL
+shim-aaa-1                        ai                         claude    claude-opus-4-7
+shim-bbb-2                        ai-designer                claude    claude-opus-4-7
+shim-ccc-3                        rtl-coder-axi              claude    claude-opus-4-7
+shim-ddd-4                        rtl-coder-bootrom          claude    claude-opus-4-7
+shim-eee-5                        rtl                        claude    claude-opus-4-7
+shim-fff-6                        apps-coder-uart            claude    claude-opus-4-7
+";
+        assert_eq!(count_prefix_matches_in_listing(stdout, "rtl-coder-"), 2);
+        assert_eq!(count_prefix_matches_in_listing(stdout, "apps-coder-"), 1);
+        assert_eq!(count_prefix_matches_in_listing(stdout, "ai-"), 1); // ai-designer のみ
+        assert_eq!(count_prefix_matches_in_listing(stdout, "rtl"), 3); // rtl, rtl-coder-axi, rtl-coder-bootrom
+    }
+
+    #[test]
+    fn count_prefix_matches_handles_agent_cli_format() {
+        // agent-cli の `agent-` prefix 形式でも parse できる
+        let stdout = "\
+agent-01KQX72WJY3Z59RN77YXB9Z02P  rtl-coder-i2c   ollama  glm-5.1:cloud
+agent-01KQX72WT3DY2GKWSDDXA9QK0K  rtl-coder-spi   ollama  glm-5.1:cloud
+";
+        assert_eq!(count_prefix_matches_in_listing(stdout, "rtl-coder-"), 2);
+    }
 }

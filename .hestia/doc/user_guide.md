@@ -215,12 +215,18 @@ acquire_timeout_secs = 600           # slot 待機タイムアウト秒（デッ
 `config.toml` を書き換えた場合は **`hestia kill && hestia start` で再起動** が必要です（既存 conductor
 process は古い env で動作し続けるため）。
 
-> **既知の制限事項**: `per_conductor_max` は **単一 `dispatch_coders.v1` 呼出内** の同時 spawn
-> 上限であり、複数 dispatch 呼出を跨いだ累積 alive agent 数の上限ではありません。`per_conductor_max=1`
-> でも `dispatch_coders.v1` が 4 回呼ばれると累計 4 個の rtl-coder が alive で残り得ます。
-> 現実装では `ConductorLimiter` の permit が spawn API call (~ms) のみ保持され、agent process lifetime
-> に連動しないためです。累積 cap が必要な場合は `global_max=1` 等で完全 sequential 化するか、
-> `hestia kill` で定期的に集約してください（agent lifetime 連動の累積 cap 実装は将来 phase）。
+> **Phase 129 alive cap セマンティクス**: `per_conductor_max` は
+> **「現在 alive な対象 sub-agent 数の絶対上限」** として強制されます。
+> `dispatch_coders.v1` 呼出時に engine registry を query し、
+> `available_slots = per_conductor_max - alive` で残 slot を計算します。
+>
+> alive cap に到達している場合、新規 spawn は `status: "cap_exhausted"` で skip され、
+> `tracing::warn!` で観測ログが出力されます。`per_conductor_max=1` で
+> `rtl-coder-axi` が 1 件 alive なら、次の `rtl.dispatch_coders.v1` 呼出は 0 spawn で skip。
+> 既存 coder の完了を待つか `hestia kill` で集約してください。
+>
+> 旧仕様（Phase 126-128）の「単一 dispatch 呼出内 cap」は本 phase で alive cap に
+> 切り替わりました（Phase 128 で文書化していた副次原因 C を本格修正）。
 
 **デッドロック回避の仕組み**:
 

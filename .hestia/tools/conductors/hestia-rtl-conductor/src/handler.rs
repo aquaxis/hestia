@@ -177,11 +177,47 @@ impl RtlHandler {
         }
 
         // Phase 126 — 設計 §4.8 の hardcode 16 を ConductorLimiter (env 駆動) に置換。
-        // L3 cap: per_conductor_max を上限としてモジュール数を絞る。各 spawn は
-        // limiter から permit を取得してから実行し、cap 超過時は acquire timeout で
-        // dispatch_acquire_timeout を返す（デッドロック検知）。
+        // Phase 129 — per_conductor_max を **alive cap** として強制する。
+        // engine registry を query して既存 alive な rtl-coder-* 数を取得し、
+        // 残 slot だけ spawn する（複数 dispatch 呼出を跨いだ累積 alive 抑制）。
         let limiter = rtl_limiter();
-        let max_parallel = std::cmp::min(modules.len(), limiter.capacity());
+        let cap = limiter.capacity();
+        let alive = conductor_sdk::workspace::count_alive_peers_with_prefix("rtl-coder-");
+        let available_slots = cap.saturating_sub(alive);
+        let max_parallel = std::cmp::min(modules.len(), available_slots);
+
+        if max_parallel == 0 {
+            tracing::warn!(
+                cap = cap,
+                alive = alive,
+                modules_requested = modules.len(),
+                "rtl.dispatch_coders.v1: alive cap exhausted — skipping all spawn (Phase 129)"
+            );
+            return Ok(serde_json::json!({
+                "status": "cap_exhausted",
+                "method": "rtl.dispatch_coders.v1",
+                "phase": "phase129",
+                "alive_coders": alive,
+                "per_conductor_max": cap,
+                "modules_requested": modules.len(),
+                "spawned": serde_json::Value::Array(Vec::new()),
+                "dispatched_all": false,
+                "max_parallel": 0,
+                "auto_review_dispatched": false,
+                "note": "per_conductor_max に到達済の rtl-coder-* が alive のため新規 spawn を skip。\
+                         既存 coder の完了を待つか hestia kill で集約してください。",
+            }));
+        }
+
+        tracing::info!(
+            cap = cap,
+            alive = alive,
+            available = available_slots,
+            requested = modules.len(),
+            will_spawn = max_parallel,
+            "rtl.dispatch_coders.v1: alive cap check (Phase 129)"
+        );
+
         let mut spawned: Vec<String> = Vec::new();
         let mut dispatched_all = true;
 
@@ -236,6 +272,8 @@ impl RtlHandler {
             "dispatched_all": dispatched_all,
             "max_parallel": max_parallel,
             "modules_requested": modules.len(),
+            "alive_coders": alive,
+            "per_conductor_max": cap,
             "auto_review_dispatched": auto_review_dispatched,
         }))
     }

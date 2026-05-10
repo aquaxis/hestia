@@ -137,11 +137,19 @@ rtl-conductor は **planner / designer / coder（複数）/ tester** の4種類�
 4. tester に検証依頼（モジュール完成後 / 全体統合後）
 5. 全成果物を集約 → ai-conductor へ完了通知 + 下流 conductor へ handoff
 
-> **Phase 126 並列度制御**: 旧仕様の hardcode 16 並列は Phase 126 で
-> `conductor_sdk::concurrency::ConductorLimiter` (env 駆動) に置換されました。
-> `HESTIA_PER_CONDUCTOR_MAX` (既定 4) で上限を変更でき、`HESTIA_ACQUIRE_TIMEOUT_SECS`
-> (既定 600) 経過で acquire timeout により当該 coder 起動を skip します
-> （`dispatched_all = false`）。詳細は [`user_guide.md`](user_guide.md) §3.12 参照。
+> **Phase 126 / 128 / 129 並列度制御**: 旧仕様の hardcode 16 並列は Phase 126 で
+> `conductor_sdk::concurrency::ConductorLimiter` (env 駆動) に置換され、
+> Phase 128 で `.hestia/config.toml` `[concurrency]` から env 経由の伝搬が配線され、
+> **Phase 129 で `per_conductor_max` のセマンティクスが「alive cap」に切替** されました。
+>
+> dispatch_coders.v1 呼出時に `count_alive_peers_with_prefix("rtl-coder-")` で
+> 既存 alive coder 数を取得し、`available = per_conductor_max - alive` で残 slot を計算。
+> alive cap 到達時は `status: "cap_exhausted"` で 0 spawn skip され、
+> 既存 coder 完了か `hestia kill` での集約を待つ動作になります。
+>
+> `HESTIA_PER_CONDUCTOR_MAX` (既定 4) で上限変更可、`HESTIA_ACQUIRE_TIMEOUT_SECS`
+> (既定 600) 経過で acquire timeout により当該 coder を skip します。
+> 詳細は [`user_guide.md`](user_guide.md) §3.12 参照。
 
 **起動コマンド例:**
 

@@ -154,8 +154,45 @@ impl AppsHandler {
             }));
         }
         // Phase 126 — hardcode 16 を ConductorLimiter (env 駆動) に置換。
+        // Phase 129 — per_conductor_max を **alive cap** として強制（rtl と同等、prefix=apps-coder-）。
         let limiter = apps_limiter();
-        let max_parallel = std::cmp::min(modules.len(), limiter.capacity());
+        let cap = limiter.capacity();
+        let alive = conductor_sdk::workspace::count_alive_peers_with_prefix("apps-coder-");
+        let available_slots = cap.saturating_sub(alive);
+        let max_parallel = std::cmp::min(modules.len(), available_slots);
+
+        if max_parallel == 0 {
+            tracing::warn!(
+                cap = cap,
+                alive = alive,
+                modules_requested = modules.len(),
+                "apps.dispatch_coders.v1: alive cap exhausted — skipping all spawn (Phase 129)"
+            );
+            return Ok(serde_json::json!({
+                "status": "cap_exhausted",
+                "method": "apps.dispatch_coders.v1",
+                "phase": "phase129",
+                "alive_coders": alive,
+                "per_conductor_max": cap,
+                "modules_requested": modules.len(),
+                "spawned": serde_json::Value::Array(Vec::new()),
+                "dispatched_all": false,
+                "max_parallel": 0,
+                "auto_review_dispatched": false,
+                "note": "per_conductor_max に到達済の apps-coder-* が alive のため新規 spawn を skip。\
+                         既存 coder の完了を待つか hestia kill で集約してください。",
+            }));
+        }
+
+        tracing::info!(
+            cap = cap,
+            alive = alive,
+            available = available_slots,
+            requested = modules.len(),
+            will_spawn = max_parallel,
+            "apps.dispatch_coders.v1: alive cap check (Phase 129)"
+        );
+
         let mut spawned: Vec<String> = Vec::new();
         let mut dispatched_all = true;
         for m in modules.iter().take(max_parallel) {
@@ -194,6 +231,8 @@ impl AppsHandler {
             "dispatched_all": dispatched_all,
             "max_parallel": max_parallel,
             "modules_requested": modules.len(),
+            "alive_coders": alive,
+            "per_conductor_max": cap,
             "auto_review_dispatched": auto_review_dispatched,
         }))
     }

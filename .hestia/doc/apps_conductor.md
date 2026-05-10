@@ -137,9 +137,15 @@ apps-conductor は **planner / designer / coder（複数）/ builder / tester** 
 
 **フロー**: planner → designer → coder（モジュール並列）→ builder → tester の順次実行。大規模アプリ（モジュール数 >= 4）では coder を `per_conductor_max` 件まで動的拡張する（旧仕様の hardcode 16 は Phase 126 で env 駆動に置換）。
 
-> **Phase 126 並列度制御**: `apps.dispatch_coders.v1` も rtl と同じく
-> `conductor_sdk::concurrency::ConductorLimiter` で並列度を制御します。
-> 環境変数 `HESTIA_PER_CONDUCTOR_MAX` で上限を変更可、`HESTIA_ACQUIRE_TIMEOUT_SECS`
+> **Phase 126 / 128 / 129 並列度制御**: `apps.dispatch_coders.v1` も rtl と同じく
+> `conductor_sdk::concurrency::ConductorLimiter` で並列度を制御し、
+> **Phase 129 で `per_conductor_max` のセマンティクスが「alive cap」に切替** されました。
+>
+> dispatch_coders.v1 呼出時に `count_alive_peers_with_prefix("apps-coder-")` で
+> 既存 alive coder 数を取得し、`available = per_conductor_max - alive` で残 slot を計算。
+> alive cap 到達時は `status: "cap_exhausted"` で 0 spawn skip されます。
+>
+> 環境変数 `HESTIA_PER_CONDUCTOR_MAX` で上限変更可、`HESTIA_ACQUIRE_TIMEOUT_SECS`
 > 経過で acquire timeout により当該 coder は skip されます。
 > 詳細は [`user_guide.md`](user_guide.md) §3.12 参照。
 
