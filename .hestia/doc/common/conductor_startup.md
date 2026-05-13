@@ -1,31 +1,31 @@
-# デーモン起動順序
+# Daemon Startup Order
 
-**対象領域**: common — 起動・運用
-**ソース**: 設計仕様書 §15.5
+**Domain**: common — Startup and Operations
+**Source**: Design Specification §15.5
 
-## 概要
+## Overview
 
-HESTIA の 9 conductor は ai-conductor を最優先で起動し、readiness 確認後に残り 8 conductor を並列起動する。この2段階の起動順序により、メタオーケストレータが稼働していることを前提とした残り conductor の初期化が保証される。
+HESTIA's 9 conductors start with ai-conductor as the highest priority. After readiness is confirmed, the remaining 8 conductors start in parallel. This two-phase startup order guarantees that the meta-orchestrator is running before the remaining conductors initialize.
 
-## 起動グループ
+## Startup Groups
 
-### Group 0（直列・最高優先度）
+### Group 0 (Serial, Highest Priority)
 
-ai-conductor を単独起動し、`system.health.v1` が `status="online"` を返すまで待機する。
+Start ai-conductor alone and wait until `system.health.v1` returns `status="online"`.
 
 ```bash
 # Group 0
 agent-cli run --persona-file ./.hestia/personas/ai.md --name ai &
-# system.health.v1 が status="online" を返すまで待機
+# Wait until system.health.v1 returns status="online"
 agent-cli send ai '{"method":"system.health.v1"}'
 ```
 
-### Group 1（8 並列）
+### Group 1 (8 Parallel)
 
-ai-conductor の readiness 確認後、以下 8 conductor を並列起動する。
+After ai-conductor readiness is confirmed, start the following 8 conductors in parallel.
 
 ```bash
-# Group 1（8 並列）
+# Group 1 (8 parallel)
 agent-cli run --persona-file ./.hestia/personas/rtl.md --name rtl &
 agent-cli run --persona-file ./.hestia/personas/fpga.md --name fpga &
 agent-cli run --persona-file ./.hestia/personas/asic.md --name asic &
@@ -36,7 +36,7 @@ agent-cli run --persona-file ./.hestia/personas/debug.md --name debug &
 agent-cli run --persona-file ./.hestia/personas/rag.md --name rag &
 ```
 
-## systemd ユーザーユニット（推奨）
+## systemd User Units (Recommended)
 
 ```bash
 # /etc/systemd/user/hestia-{ai,rtl,fpga,asic,pcb,hal,apps,debug,rag}.service
@@ -44,23 +44,23 @@ systemctl --user start hestia-ai hestia-rtl hestia-fpga hestia-asic \
   hestia-pcb hestia-hal hestia-apps hestia-debug hestia-rag
 ```
 
-systemd ユニットを使用することで、以下を自動化:
+Using systemd units automates the following:
 
-- 起動依存関係の宣言（ai-conductor → 残り 8 conductor）
-- 障害時の自動再起動
-- ログ管理（journald 連携）
+- Declaration of startup dependencies (ai-conductor -> remaining 8 conductors)
+- Automatic restart on failure
+- Log management (journald integration)
 
-各 systemd ユニットの `ExecStart` は `agent-cli run --persona-file ./.hestia/personas/<conductor>.md --name <conductor>` を使用する。
+Each systemd unit's `ExecStart` uses `agent-cli run --persona-file ./.hestia/personas/<conductor>.md --name <conductor>`.
 
-## readiness チェック詳細
+## Readiness Check Details
 
-ai-conductor が起動完了したかどうかは以下で判定:
+Whether ai-conductor has finished starting is determined by:
 
 ```bash
 agent-cli send ai '{"method":"system.health.v1"}'
 ```
 
-応答例:
+Response example:
 
 ```json
 {
@@ -73,10 +73,10 @@ agent-cli send ai '{"method":"system.health.v1"}'
 }
 ```
 
-3 秒以内に `"online"` 応答がなければ待機を継続。
+If an `"online"` response is not received within 3 seconds, continue waiting.
 
-## 関連ドキュメント
+## Related Documents
 
-- [health_check_orchestration.md](health_check_orchestration.md) — ヘルスチェック詳細
-- [installation.md](installation.md) — ビルド手順
-- [sub_agent_lifecycle.md](sub_agent_lifecycle.md) — サブエージェント起動・終了管理
+- [health_check_orchestration.md](health_check_orchestration.md) — Health check details
+- [installation.md](installation.md) — Build procedure
+- [sub_agent_lifecycle.md](sub_agent_lifecycle.md) — Sub-agent startup and shutdown management

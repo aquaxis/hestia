@@ -1,8 +1,8 @@
-//! ai-conductor 設定モデル（container.toml / upgrade.toml）
+//! ai-conductor configuration model (container.toml / upgrade.toml)
 
 use serde::{Deserialize, Serialize};
 
-/// container.toml（§3.8）
+/// container.toml (section 3.8)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContainerToml {
     pub container: ContainerSection,
@@ -83,7 +83,7 @@ pub struct ContainerUpdate {
     pub rollback_on_failure: Option<bool>,
 }
 
-/// upgrade.toml（§3.9）
+/// upgrade.toml (section 3.9)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpgradeToml {
     pub upgrade: UpgradeSection,

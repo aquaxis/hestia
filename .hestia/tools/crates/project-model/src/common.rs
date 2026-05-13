@@ -1,8 +1,8 @@
-//! 共通プロジェクト設定モデル
+//! Common project configuration model
 
 use serde::{Deserialize, Serialize};
 
-/// 共通プロジェクト情報
+/// Common project information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectCommon {
     pub name: String,

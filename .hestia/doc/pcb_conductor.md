@@ -1,160 +1,160 @@
-# PCB 設計フローオーケストレーター
+# PCB Design Flow Orchestrator
 
-**対象領域**: pcb-conductor
-**ソース**: 設計仕様書 §7（1982-2174行目）
-
----
-
-## 概要
-
-pcb-conductor は PCB（プリント基板）設計フローを統合管理するオーケストレーターである。最大の特徴は AI 駆動回路図設計パイプラインであり、自然言語仕様から知識グラフを構築し、Chain-of-Thought プロンプトで回路図を自動合成する。KiCad を主要ツールとして統合し、SKiDL / Freerouting との連携により設計から製造出力までを一貫して支援する。
+**Target Domain**: pcb-conductor
+**Source**: Design specification §7 (lines 1982-2174)
 
 ---
 
-## クレート構成
+## Overview
+
+pcb-conductor is an orchestrator that manages the PCB (printed circuit board) design flow. Its most distinctive feature is the AI-driven schematic design pipeline, which constructs a knowledge graph from natural language specifications and auto-synthesizes schematics using Chain-of-Thought prompting. It integrates KiCad as the primary tool and collaborates with SKiDL / Freerouting to provide end-to-end support from design to manufacturing output.
+
+---
+
+## Crate Structure
 
 ```
 pcb-conductor/
 ├── Cargo.toml
 ├── crates/
-│   ├── conductor-core/             # agent-cli persona・main.rs
-│   ├── project-model/              # pcb.toml パーサー
-│   ├── plugin-registry/            # ツール登録・解決
-│   ├── adapter-kicad/              # KiCad 統合
-│   ├── schematic-ai/               # AI 回路図設計エンジン (Rust)
+│   ├── conductor-core/             # agent-cli persona, main.rs
+│   ├── project-model/              # pcb.toml parser
+│   ├── plugin-registry/            # Tool registration and resolution
+│   ├── adapter-kicad/              # KiCad integration
+│   ├── schematic-ai/               # AI schematic design engine (Rust)
 │   │   └── src/
 │   │       ├── lib.rs              # SchematicAiEngine
-│   │       ├── cot_prompt.rs       # Chain-of-Thought プロンプト生成
-│   │       └── requirements.rs     # CircuitRequirements パーサー
-│   ├── knowledge-graph/            # データシート知識グラフ
+│   │       ├── cot_prompt.rs       # Chain-of-Thought prompt generation
+│   │       └── requirements.rs     # CircuitRequirements parser
+│   ├── knowledge-graph/            # Datasheet knowledge graph
 │   │   └── src/
 │   │       ├── lib.rs              # KnowledgeGraph
-│   │       ├── node.rs             # IC/ピン/外部部品ノード
-│   │       └── edge.rs             # 接続制約エッジ
-│   ├── constraint-verifier/        # 多段階検証エンジン
+│   │       ├── node.rs             # IC/pin/external component nodes
+│   │       └── edge.rs             # Connection constraint edges
+│   ├── constraint-verifier/        # Multi-level verification engine
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── syntax.rs           # Level 1: 構文検証
+│   │       ├── syntax.rs           # Level 1: Syntax verification
 │   │       ├── erc.rs              # Level 2: ERC
-│   │       ├── kg_intra.rs         # Level 3: KG ベース検証（ピン内）
-│   │       ├── kg_inter.rs         # Level 4: KG ベース検証（ピン間）
-│   │       └── topology.rs         # Level 5: トポロジー検証
-│   └── podman-runtime/             # コンテナ管理
+│   │       ├── kg_intra.rs         # Level 3: KG-based verification (intra-pin)
+│   │       ├── kg_inter.rs         # Level 4: KG-based verification (inter-pin)
+│   │       └── topology.rs         # Level 5: Topology verification
+│   └── podman-runtime/             # Container management
 ├── packages/
-│   └── pcb-ai/                     # LangChain 統合 (TypeScript)
+│   └── pcb-ai/                     # LangChain integration (TypeScript)
 │       └── src/
-│           └── schematic_synthesizer.ts  # LLM 回路図合成
-├── pcb-cli/                        # Rust 製 CLI
+│           └── schematic_synthesizer.ts  # LLM schematic synthesis
+├── pcb-cli/                        # Rust CLI
 └── conductor-sdk/
 ```
 
 ---
 
-## AI 駆動回路図設計パイプライン
+## AI-Driven Schematic Design Pipeline
 
 ```
-自然言語仕様入力
-    │  「STM32F103 + BME280 + USB Type-C の温湿度センサボード」
+Natural language specification input
+    │  "STM32F103 + BME280 + USB Type-C temperature/humidity sensor board"
     ↓
-[Step 1] Requirements Parser (要件パーサー)
-    │  自然言語 → 構造化要件 (CircuitRequirements)
+[Step 1] Requirements Parser
+    │  Natural language → structured requirements (CircuitRequirements)
     ↓
-[Step 2] BOM Generator (BOM 生成器)
-    │  要件 → 部品リスト (型番・数量・メーカー)
+[Step 2] BOM Generator
+    │  Requirements → component list (part number, quantity, manufacturer)
     ↓
-[Step 3] Datasheet Fetcher (データシート取得・解析)
-    │  各 IC のデータシートをダウンロード・解析
+[Step 3] Datasheet Fetcher
+    │  Download and parse datasheets for each IC
     ↓
-[Step 4] Knowledge Graph Builder (知識グラフ構築)
-    │  データシート → KG (IC ノード + ピンノード + エッジ)
+[Step 4] Knowledge Graph Builder
+    │  Datasheets → KG (IC nodes + pin nodes + edges)
     ↓
-[Step 5] Schematic Synthesizer (回路図合成) ← LLM コア
-    │  Chain-of-Thought (CoT) 6ステージ:
-    │    Stage 1: RequirementsAnalysis — 回路目的・入出力・電源・制約を分析
-    │    Stage 2: BlockDiagram — 機能ブロックと信号フローを定義
-    │    Stage 3: ComponentSelection — 入手性・コスト・性能バランスで部品選定
-    │    Stage 4: CircuitTopology — バイパスCap/プルアップ/ESD保護含む詳細回路設計
-    │    Stage 5: NetlistGeneration — KiCad 互換ネットリスト出力
-    │    Stage 6: Verification — 電源/GND/デカップリング/信号整合性検証
+[Step 5] Schematic Synthesizer ← LLM core
+    │  Chain-of-Thought (CoT) 6 stages:
+    │    Stage 1: RequirementsAnalysis — Analyze circuit purpose, I/O, power, constraints
+    │    Stage 2: BlockDiagram — Define functional blocks and signal flow
+    │    Stage 3: ComponentSelection — Select components balancing availability, cost, performance
+    │    Stage 4: CircuitTopology — Detailed circuit design including bypass caps/pull-ups/ESD protection
+    │    Stage 5: NetlistGeneration — KiCad-compatible netlist output
+    │    Stage 6: Verification — Power/GND/decoupling/signal integrity verification
     ↓
-[Step 6] Constraint Verifier (多段階検証)
-    │  Level 1: Python / SKiDL 構文チェック、ライブラリ存在確認
-    │  Level 2: ERC — 未接続ピン、電源接続、ドライバ競合、ショート検出
-    │  Level 3: KG ベース検証 (ピン内) — VDD/VSS 接続、バイパスコンデンサ
-    │  Level 4: KG ベース検証 (ピン間) — IC 間インターフェース整合性
-    │  Level 5: トポロジー検証 — サブグラフ同型性、信号パス完全性
-    ↓  ← フィードバックループ（不合格時は Step 5 へ戻る、最大3回）
-[Step 7] Output Generator (出力生成)
-    │  KiCad / Altium 形式のネットリスト出力
+[Step 6] Constraint Verifier (multi-level verification)
+    │  Level 1: Python / SKiDL syntax check, library existence verification
+    │  Level 2: ERC — unconnected pins, power connections, driver conflicts, short detection
+    │  Level 3: KG-based verification (intra-pin) — VDD/VSS connections, bypass capacitors
+    │  Level 4: KG-based verification (inter-pin) — inter-IC interface consistency
+    │  Level 5: Topology verification — subgraph isomorphism, signal path completeness
+    ↓  ← Feedback loop (returns to Step 5 on failure, up to 3 attempts)
+[Step 7] Output Generator
+    │  Netlist output in KiCad / Altium format
     ↓
-設計完了
+Design complete
 ```
 
 ---
 
-## 知識グラフ構造
+## Knowledge Graph Structure
 
 ```
-ノード (Node):
-  ├── IC: {型番, メーカー, カテゴリ, パッケージ}
-  ├── ピン: {番号, 名前, ピン役割}
-  └── 外部部品: {種類, 値, 接続先}
+Nodes:
+  ├── IC: {part number, manufacturer, category, package}
+  ├── Pin: {number, name, pin role}
+  └── External component: {type, value, connection target}
 
-ピン役割 (PinRole — 全11種):
-  ├── PrimaryVdd / PrimaryVss (メイン電源 / GND)
-  ├── AnalogVdd / AnalogVss (アナログ電源 / GND)
+Pin roles (PinRole — 11 types):
+  ├── PrimaryVdd / PrimaryVss (main power / GND)
+  ├── AnalogVdd / AnalogVss (analog power / GND)
   ├── SignalInput / SignalOutput / Bidirectional
   ├── ClockInput / Reset / BootConfig
   └── NoConnect
 
-エッジ (Edge):
-  ├── must_connect_to: {ピン → 外部部品/ネット}
-  ├── requires_bypass_cap: {VDD ピン → コンデンサ値}
-  ├── pull_up_required / pull_down_required: {ピン → 抵抗値}
-  └── crystal_pair: {OSC_IN ↔ OSC_OUT, 周波数, 負荷容量}
+Edges:
+  ├── must_connect_to: {pin → external component/net}
+  ├── requires_bypass_cap: {VDD pin → capacitor value}
+  ├── pull_up_required / pull_down_required: {pin → resistance value}
+  └── crystal_pair: {OSC_IN ↔ OSC_OUT, frequency, load capacitance}
 ```
 
 ---
 
-## PCB ビルドステップ（9ステップ）
+## PCB Build Steps (9 Steps)
 
-| ステップ | 説明 |
-|---------|------|
-| `ParseRequirements` | 要件パース |
-| `GenerateBom` | BOM 生成 |
-| `AnalyzeDatasheet` | データシート解析 |
-| `BuildKnowledgeGraph` | ナレッジグラフ構築 |
-| `SynthesizeSchematic` | 回路図合成（LLM コア） |
-| `Verify` | 検証（DRC/ERC/KG 5段階） |
-| `PlaceComponents` | コンポーネント配置 |
-| `RouteTraces` | 配線 |
-| `GenerateOutput` | 製造出力生成（ガーバー等） |
-
----
-
-## KiCad アダプター
-
-| フィールド | 値 |
-|-----------|---|
-| アダプター ID | `org.kicad.kicad8` |
-| 対応フォーマット | `kicad*`, `*.kicad_pcb`, `*.kicad_sch` |
-| API バージョン | 1 |
-
-**KiCad CLI サブコマンド対応表:**
-
-| メソッド | サブコマンド | 用途 |
-|---------|------------|------|
-| `generate_schematic` | `sch export netlist` | ネットリスト出力 |
-| `run_drc` | `pcb drc` | DRC 実行 |
-| `run_erc` | `sch erc` | ERC 実行 |
-| `generate_bom` | `sch export bom` | BOM 生成 |
-| `place_components` | `pcb export pos` | 部品配置データ |
-| `route_traces` | `pcb export drill` | ドリルデータ |
-| `generate_output` | `pcb export gerbers` | ガーバー出力 |
+| Step | Description |
+|------|-------------|
+| `ParseRequirements` | Parse requirements |
+| `GenerateBom` | Generate BOM |
+| `AnalyzeDatasheet` | Analyze datasheets |
+| `BuildKnowledgeGraph` | Build knowledge graph |
+| `SynthesizeSchematic` | Synthesize schematic (LLM core) |
+| `Verify` | Verify (DRC/ERC/KG 5 levels) |
+| `PlaceComponents` | Place components |
+| `RouteTraces` | Route traces |
+| `GenerateOutput` | Generate manufacturing output (Gerber, etc.) |
 
 ---
 
-## pcb.toml 設定例
+## KiCad Adapter
+
+| Field | Value |
+|-------|-------|
+| Adapter ID | `org.kicad.kicad8` |
+| Supported formats | `kicad*`, `*.kicad_pcb`, `*.kicad_sch` |
+| API version | 1 |
+
+**KiCad CLI Subcommand Mapping:**
+
+| Method | Subcommand | Purpose |
+|--------|-----------|---------|
+| `generate_schematic` | `sch export netlist` | Netlist output |
+| `run_drc` | `pcb drc` | Run DRC |
+| `run_erc` | `sch erc` | Run ERC |
+| `generate_bom` | `sch export bom` | Generate BOM |
+| `place_components` | `pcb export pos` | Component placement data |
+| `route_traces` | `pcb export drill` | Drill data |
+| `generate_output` | `pcb export gerbers` | Gerber output |
+
+---
+
+## pcb.toml Configuration Example
 
 ```toml
 [project]
@@ -194,26 +194,26 @@ output_dir = "output/"
 
 ---
 
-## サブエージェント構成
+## Sub-agent Configuration
 
-pcb-conductor は **planner / designer / schematic / layout / tester** の5種類のサブエージェントを持ち、回路図設計 → 配置配線 → 検証フローを分担する。各サブエージェントは独立した agent-cli プロセスとして起動され、`agent-cli send <peer>` IPC で pcb-conductor 本体（peer 名 `pcb`）と協調する。
+pcb-conductor has five types of sub-agents: **planner / designer / schematic / layout / tester**, each sharing the schematic design → placement/routing → verification flow. Each sub-agent is launched as an independent agent-cli process and coordinates with the pcb-conductor main body (peer name `pcb`) via `agent-cli send <peer>` IPC.
 
-| サブエージェント | peer 名 | 役割 | 多重度 |
-|----------------|---------|------|-------|
-| **planner** | `pcb-planner` | PCB 開発プランニング（基板規模、層数、コネクタ配置、部品調達戦略）| 1 |
-| **designer** | `pcb-designer` | PCB 詳細仕様（回路ブロック構成、IO 配置、電源プラン、信号品質要件）| 1 |
-| **schematic** | `pcb-schematic` | AI 駆動回路図設計（SKiDL / KiCad、知識グラフ活用）| 1 |
-| **layout** | `pcb-layout` | アートワーク（配置 + 配線、Freerouting 連携）| 1 |
-| **tester** | `pcb-tester` | DRC / ERC / BOM 検証 + Gerber 出力検証 | 1 |
+| Sub-agent | Peer Name | Role | Multiplicity |
+|-----------|-----------|------|-------------|
+| **planner** | `pcb-planner` | PCB development planning (board scale, layer count, connector placement, component procurement strategy) | 1 |
+| **designer** | `pcb-designer` | PCB detailed specification (circuit block configuration, I/O placement, power plan, signal integrity requirements) | 1 |
+| **schematic** | `pcb-schematic` | AI-driven schematic design (SKiDL / KiCad, knowledge graph utilization) | 1 |
+| **layout** | `pcb-layout` | Artwork (placement + routing, Freerouting integration) | 1 |
+| **tester** | `pcb-tester` | DRC / ERC / BOM verification + Gerber output verification | 1 |
 
-**フロー**: planner → designer → schematic → layout → tester の順次実行。AI 駆動回路図生成は schematic サブエージェントが担当。
+**Flow**: planner → designer → schematic → layout → tester, executed sequentially. AI-driven schematic generation is handled by the schematic sub-agent.
 
 ---
 
-## 関連ドキュメント
+## Related Documentation
 
-- [master_agent_design.md](master_agent_design.md) — ai-conductor 詳細設計
-- [rtl_conductor.md](rtl_conductor.md) — RTL 設計フローオーケストレーター
-- [fpga_conductor.md](fpga_conductor.md) — FPGA 設計フローオーケストレーター
-- [asic_conductor.md](asic_conductor.md) — ASIC 設計フローオーケストレーター
-- [hal_conductor.md](hal_conductor.md) — HAL 生成オーケストレーター
+- [master_agent_design.md](master_agent_design.md) — ai-conductor detailed design
+- [rtl_conductor.md](rtl_conductor.md) — RTL design flow orchestrator
+- [fpga_conductor.md](fpga_conductor.md) — FPGA design flow orchestrator
+- [asic_conductor.md](asic_conductor.md) — ASIC design flow orchestrator
+- [hal_conductor.md](hal_conductor.md) — HAL generation orchestrator

@@ -1,24 +1,24 @@
 # Constraint Bridge
 
-**対象領域**: common — 制約変換
-**ソース**: 設計仕様書 §13.3
+**Domain**: common — Constraint Conversion
+**Source**: Design Specification §13.3
 
-## 概要
+## Overview
 
-制約ファイルの相互変換エンジン。`ConstraintModel` を中間表現とし、N 種類のフォーマット間で変換可能。従来の N x N 変換から N + M 個のパーサ/ジェネレータに削減する。
+A constraint file cross-conversion engine. Using `ConstraintModel` as an intermediate representation, conversion between N format types is possible. This reduces the traditional N x N conversion approach to N + M parsers/generators.
 
-## 対応フォーマット
+## Supported Formats
 
-| フォーマット | 対象 | 拡張子 |
+| Format | Target | Extension |
 |------------|------|--------|
 | XDC | Xilinx (Vivado) | `.xdc` |
 | PCF | iCE40 (nextpnr) | `.pcf` |
 | SDC | Synopsys (OpenSTA / Vivado) | `.sdc` |
 | Efinity XML | Efinix (Efinity) | `.xml` |
 | QSF | Intel (Quartus) | `.qsf` |
-| UCF | 旧 Xilinx (ISE) | `.ucf` |
+| UCF | Legacy Xilinx (ISE) | `.ucf` |
 
-## 中間表現: ConstraintModel
+## Intermediate Representation: ConstraintModel
 
 ### ConstraintFormat
 
@@ -27,11 +27,11 @@ pub enum ConstraintFormat {
     Xdc,
     Pcf,
     Sdc,
-    // その他は拡張型
+    // Others are extensible
 }
 ```
 
-### 主要構造体
+### Key Structures
 
 ```rust
 pub struct ClockConstraint {
@@ -68,52 +68,52 @@ pub struct RawConstraint {
 }
 ```
 
-## 変換フロー
+## Conversion Flow
 
 ```
-入力フォーマット (XDC / PCF / SDC / ...) → パーサ → ConstraintModel → ジェネレータ → 出力フォーマット
+Input format (XDC / PCF / SDC / ...) -> Parser -> ConstraintModel -> Generator -> Output format
 ```
 
-- N 種フォーマット → N 個のパーサ + N 個のジェネレータ = 2N 個のモジュール
-- 従来の N x N = N^2 個の変換関数を削減
+- N format types -> N parsers + N generators = 2N modules
+- Reduces the traditional N x N = N^2 conversion functions
 
-## 対応制約の網羅範囲
+## Supported Constraint Coverage
 
-- ピンアサイン（PORT → PIN マッピング）
-- I/O 標準（LVCMOS33 / LVDS 等）
-- ドライブ強度（mA 指定）
-- スルーレート（FAST / SLOW）
-- 差動ペア（p/n ペア制約）
-- クロック制約（周期 / 周波数 / 波形）
-- マルチサイクルパス
-- フォルスパス
-- タイミング例外
+- Pin assignments (PORT -> PIN mapping)
+- I/O standards (LVCMOS33 / LVDS, etc.)
+- Drive strength (mA specification)
+- Slew rate (FAST / SLOW)
+- Differential pairs (p/n pair constraints)
+- Clock constraints (period / frequency / waveform)
+- Multicycle paths
+- False paths
+- Timing exceptions
 
-## クレート構成
+## Crate Structure
 
 ```
 constraint-bridge/
 ├── Cargo.toml
 └── src/
-    ├── lib.rs              # ConstraintModel, 変換ディスパッチ
+    ├── lib.rs              # ConstraintModel, conversion dispatch
     ├── parsers/
-    │   ├── xdc.rs          # XDC パーサ
-    │   ├── pcf.rs          # PCF パーサ
-    │   ├── sdc.rs          # SDC パーサ
-    │   ├── efinity.rs      # Efinity XML パーサ
-    │   ├── qsf.rs          # QSF パーサ
-    │   └── ucf.rs          # UCF パーサ
+    │   ├── xdc.rs          # XDC parser
+    │   ├── pcf.rs          # PCF parser
+    │   ├── sdc.rs          # SDC parser
+    │   ├── efinity.rs      # Efinity XML parser
+    │   ├── qsf.rs          # QSF parser
+    │   └── ucf.rs          # UCF parser
     └── generators/
-        ├── xdc.rs          # XDC ジェネレータ
-        ├── pcf.rs          # PCF ジェネレータ
-        ├── sdc.rs          # SDC ジェネレータ
-        ├── efinity.rs      # Efinity XML ジェネレータ
-        ├── qsf.rs          # QSF ジェネレータ
-        └── ucf.rs          # UCF ジェネレータ
+        ├── xdc.rs          # XDC generator
+        ├── pcf.rs          # PCF generator
+        ├── sdc.rs          # SDC generator
+        ├── efinity.rs      # Efinity XML generator
+        ├── qsf.rs          # QSF generator
+        └── ucf.rs          # UCF generator
 ```
 
-## 関連ドキュメント
+## Related Documents
 
 - [hdl_lsp_broker.md](hdl_lsp_broker.md) — HDL LSP Broker
 - [ip_manager.md](ip_manager.md) — IP Manager
-- [observability.md](observability.md) — 監視
+- [observability.md](observability.md) — Monitoring

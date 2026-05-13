@@ -1,9 +1,9 @@
-//! ロックファイル管理（fpga.lock / asic.lock によるビルド再現性保証）
+//! Lock file management (ensuring build reproducibility via fpga.lock / asic.lock)
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// fpga.lock — FPGA ビルドの完全再現を保証
+/// fpga.lock — Ensures full reproducibility of FPGA builds
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FpgaLock {
     pub version: String,
@@ -13,7 +13,7 @@ pub struct FpgaLock {
     pub build_config: LockBuildConfig,
 }
 
-/// asic.lock — ASIC ビルドの完全再現を保証
+/// asic.lock — Ensures full reproducibility of ASIC builds
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AsicLock {
     pub version: String,

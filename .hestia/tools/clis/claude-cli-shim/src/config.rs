@@ -1,9 +1,9 @@
-//! Path 解決ヘルパ。
+//! Path resolution helpers.
 //!
-//! 解決順:
-//! 1. CLI 引数 (`--registry-path` / `--log-path`)
-//! 2. 環境変数 (`CLAUDE_CLI_SHIM_REGISTRY_PATH` / `CLAUDE_CLI_SHIM_LOG_PATH`)
-//! 3. 既定値 (`~/.local/share/claude-cli-shim/registry|logs`)
+//! Resolution order:
+//! 1. CLI argument (`--registry-path` / `--log-path`)
+//! 2. Environment variable (`CLAUDE_CLI_SHIM_REGISTRY_PATH` / `CLAUDE_CLI_SHIM_LOG_PATH`)
+//! 3. Default value (`~/.local/share/claude-cli-shim/registry|logs`)
 
 use std::path::PathBuf;
 
@@ -55,7 +55,7 @@ mod tests {
 
     #[test]
     fn registry_dir_default_under_data_dir() {
-        // Override 無し、env 変数も無い前提（test 環境でクリーンならば確認）
+        // Assumes no override and no env variable (verifiable in a clean test environment)
         std::env::remove_var("CLAUDE_CLI_SHIM_REGISTRY_PATH");
         let p = registry_dir(None);
         assert!(p.ends_with("claude-cli-shim/registry"));

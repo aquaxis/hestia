@@ -1,9 +1,9 @@
-//! ScriptAdapter — adapter.toml 宣言方式（原則2: ゼロ変更での拡張）
+//! ScriptAdapter — adapter.toml declaration style (Principle 2: Zero-modification extension)
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// adapter.toml のスキーマ
+/// adapter.toml schema
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdapterToml {
     pub manifest: super::manifest::AdapterManifest,
@@ -16,7 +16,7 @@ pub struct AdapterToml {
     pub report_extraction: ReportExtractionConfig,
 }
 
-/// ツール設定
+/// Tool configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolConfig {
     pub command: String,
@@ -28,7 +28,7 @@ pub struct ToolConfig {
     pub working_dir: Option<String>,
 }
 
-/// コマンド設定（各ビルドステップのコマンドマッピング）
+/// Command configuration (command mapping for each build step)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CommandConfig {
     #[serde(default)]
@@ -43,7 +43,7 @@ pub struct CommandConfig {
     pub program: Option<StepCommand>,
 }
 
-/// ステップコマンド
+/// Step command
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StepCommand {
     pub command: String,
@@ -53,7 +53,7 @@ pub struct StepCommand {
     pub timeout_secs: Option<u64>,
 }
 
-/// ログパースルール
+/// Log parsing rules
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LogParsingConfig {
     #[serde(default)]
@@ -64,7 +64,7 @@ pub struct LogParsingConfig {
     pub info_pattern: Option<String>,
 }
 
-/// レポート抽出ルール
+/// Report extraction rules
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReportExtractionConfig {
     #[serde(default)]
@@ -73,7 +73,7 @@ pub struct ReportExtractionConfig {
     pub resource_pattern: Option<String>,
 }
 
-/// adapter.toml をファイルから読み込む
+/// Load adapter.toml from file
 pub fn load_adapter_toml(path: &Path) -> Result<AdapterToml, super::error::AdapterError> {
     let content = std::fs::read_to_string(path).map_err(|e| {
         super::error::AdapterError::Io(std::io::Error::other(format!(

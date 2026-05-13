@@ -1,4 +1,4 @@
-//! asic.toml 設定モデル（§6.9）
+//! asic.toml configuration model (section 6.9)
 
 use serde::{Deserialize, Serialize};
 

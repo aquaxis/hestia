@@ -1,54 +1,54 @@
-# rtl-conductor 設定スキーマ
+# rtl-conductor Configuration Schema
 
-**対象 Conductor**: rtl-conductor
-**ソース**: 設計仕様書 §4.4（1288-1310行目付近）
+**Target Conductor**: rtl-conductor
+**Source**: Design Specification §4.4 (around lines 1288-1310)
 
-## rtl.toml — 統一プロジェクトフォーマット
+## rtl.toml — Unified Project Format
 
-RTL プロジェクトの設定・ソース定義・アダプター選択・ハンドオフ先を宣言的に定義するファイル。
+A file that declaratively defines RTL project settings, source definitions, adapter selections, and handoff targets.
 
-### セクション一覧
+### Sections
 
-| セクション | 必須 | 説明 |
-|-----------|------|------|
-| `[project]` | 必須 | プロジェクト基本設定（名前、トップモジュール、言語） |
-| `[sources]` | 必須 | ソースファイル定義（RTL / テストベンチ / 共有制約） |
-| `[adapters]` | 任意 | 各機能のアダプター選択 |
-| `[handoff]` | 任意 | 下流 conductor へのハンドオフ成果物 |
+| Section | Required | Description |
+|---------|----------|-------------|
+| `[project]` | Required | Project basic settings (name, top module, language) |
+| `[sources]` | Required | Source file definitions (RTL / testbench / shared constraints) |
+| `[adapters]` | Optional | Adapter selection for each function |
+| `[handoff]` | Optional | Handoff artifacts to downstream conductors |
 
-### `[project]` セクション
+### `[project]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `name` | string | プロジェクト名 |
-| `top` | string | トップモジュール名 |
-| `language` | string | HDL 言語（`systemverilog` / `vhdl` / `chisel` / `spinalhdl` / `amaranth`） |
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Project name |
+| `top` | string | Top module name |
+| `language` | string | HDL language (`systemverilog` / `vhdl` / `chisel` / `spinalhdl` / `amaranth`) |
 
-### `[sources]` セクション
+### `[sources]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `rtl` | string[] | RTL ソースファイル（glob 対応） |
-| `testbench` | string[] | テストベンチファイル |
-| `constraints_shared` | string[] | 共通制約ファイル（SDC 等） |
+| Field | Type | Description |
+|-------|------|-------------|
+| `rtl` | string[] | RTL source files (glob supported) |
+| `testbench` | string[] | Testbench files |
+| `constraints_shared` | string[] | Shared constraint files (SDC, etc.) |
 
-### `[adapters]` セクション
+### `[adapters]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `lint` | string | Lint アダプター名 |
-| `simulation` | string | シミュレーションアダプター名 |
-| `formal` | string | 形式検証アダプター名 |
+| Field | Type | Description |
+|-------|------|-------------|
+| `lint` | string | Lint adapter name |
+| `simulation` | string | Simulation adapter name |
+| `formal` | string | Formal verification adapter name |
 
-### `[handoff]` セクション
+### `[handoff]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `fpga` | string[] | fpga-conductor（§5）に渡す成果物 |
-| `asic` | string[] | asic-conductor（§6）に渡す成果物 |
-| `hal_bus_decl` | string | hal-conductor（§8）のバス定義入力 |
+| Field | Type | Description |
+|-------|------|-------------|
+| `fpga` | string[] | Artifacts to pass to fpga-conductor (§5) |
+| `asic` | string[] | Artifacts to pass to asic-conductor (§6) |
+| `hal_bus_decl` | string | Bus definition input for hal-conductor (§8) |
 
-### 設定例
+### Configuration Example
 
 ```toml
 [project]
@@ -72,9 +72,9 @@ asic = ["build/asic_ready.sv"]
 hal_bus_decl = "build/bus_iface.rdl"
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [rtl/binary_spec.md](binary_spec.md) — hestia-rtl-cli バイナリ仕様
-- [rtl/rtl_tool_adapter.md](rtl_tool_adapter.md) — RtlToolAdapter トレイト
-- [rtl/handoff.md](handoff.md) — 下流連携ハンドオフ
-- [../fpga/config_schema.md](../fpga/config_schema.md) — fpga.toml スキーマ
+- [rtl/binary_spec.md](binary_spec.md) — hestia-rtl-cli binary specification
+- [rtl/rtl_tool_adapter.md](rtl_tool_adapter.md) — RtlToolAdapter trait
+- [rtl/handoff.md](handoff.md) — Downstream handoff
+- [../fpga/config_schema.md](../fpga/config_schema.md) — fpga.toml schema

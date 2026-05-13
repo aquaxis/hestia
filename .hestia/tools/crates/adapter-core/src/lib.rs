@@ -11,7 +11,7 @@ use error::AdapterError;
 use manifest::AdapterManifest;
 use std::path::PathBuf;
 
-/// 汎用 ToolAdapter トレイト（RTL / HAL / Apps 等のドメインで実装）
+/// Generic ToolAdapter trait (implemented in RTL / HAL / Apps domains)
 #[async_trait]
 pub trait ToolAdapter: Send + Sync {
     fn id(&self) -> &str;
@@ -19,7 +19,7 @@ pub trait ToolAdapter: Send + Sync {
     fn capabilities(&self) -> &CapabilitySet;
 }
 
-/// FPGA VendorAdapter トレイト（§5.2 統一インターフェース）
+/// FPGA VendorAdapter trait (section 5.2 unified interface)
 #[async_trait]
 pub trait VendorAdapter: Send + Sync + 'static {
     fn manifest(&self) -> &AdapterManifest;
@@ -50,7 +50,7 @@ pub trait VendorAdapter: Send + Sync + 'static {
     }
 }
 
-/// ビルドコンテキスト
+/// Build context
 #[derive(Debug, Clone)]
 pub struct BuildContext {
     pub project_dir: PathBuf,
@@ -60,7 +60,7 @@ pub struct BuildContext {
     pub env_vars: std::collections::HashMap<String, String>,
 }
 
-/// プログラムコンテキスト
+/// Program context
 #[derive(Debug, Clone)]
 pub struct ProgramContext {
     pub bitstream: PathBuf,
@@ -68,7 +68,7 @@ pub struct ProgramContext {
     pub probe: Option<String>,
 }
 
-/// シミュレーションコンテキスト
+/// Simulation context
 #[derive(Debug, Clone)]
 pub struct SimContext {
     pub testbench: String,
@@ -76,7 +76,7 @@ pub struct SimContext {
     pub work_dir: PathBuf,
 }
 
-/// ステップ実行結果
+/// Step execution result
 #[derive(Debug, Clone)]
 pub struct StepResult {
     pub success: bool,
@@ -86,7 +86,7 @@ pub struct StepResult {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// タイミングレポート
+/// Timing report
 #[derive(Debug, Clone)]
 pub struct TimingReport {
     pub wns: f64,
@@ -97,7 +97,7 @@ pub struct TimingReport {
     pub paths: Vec<TimingPath>,
 }
 
-/// タイミングパス
+/// Timing path
 #[derive(Debug, Clone)]
 pub struct TimingPath {
     pub slack: f64,
@@ -106,7 +106,7 @@ pub struct TimingPath {
     pub delay_ns: f64,
 }
 
-/// デバッグセッション
+/// Debug session
 #[derive(Debug, Clone)]
 pub struct DebugSession {
     pub session_id: String,
@@ -114,7 +114,7 @@ pub struct DebugSession {
     pub interface: String,
 }
 
-/// シミュレーション結果
+/// Simulation result
 #[derive(Debug, Clone)]
 pub struct SimResult {
     pub passed: bool,
@@ -123,7 +123,7 @@ pub struct SimResult {
     pub duration_secs: f64,
 }
 
-/// 診断メッセージ
+/// Diagnostic message
 #[derive(Debug, Clone)]
 pub struct Diagnostic {
     pub severity: DiagnosticSeverity,
@@ -133,7 +133,7 @@ pub struct Diagnostic {
     pub line: Option<u32>,
 }
 
-/// 診断重大度
+/// Diagnostic severity
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticSeverity {
     Error,
@@ -141,7 +141,7 @@ pub enum DiagnosticSeverity {
     Info,
 }
 
-/// HDL 言語識別子
+/// HDL language identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum HdlLanguage {
@@ -154,7 +154,7 @@ pub enum HdlLanguage {
     MyHdl,
 }
 
-/// RTL アダプター機能フラグ
+/// RTL adapter capability flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RtlCapability {
     Lint,
@@ -163,7 +163,7 @@ pub enum RtlCapability {
     Transpile,
 }
 
-/// レジスタフォーマット（HAL conductor）
+/// Register format (HAL conductor)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RegisterFormat {
@@ -172,7 +172,7 @@ pub enum RegisterFormat {
     Toml,
 }
 
-/// 出力言語（HAL conductor）
+/// Output language (HAL conductor)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputLang {
@@ -183,7 +183,7 @@ pub enum OutputLang {
     Svd,
 }
 
-/// ターゲットアーキテクチャ（Apps conductor）
+/// Target architecture (Apps conductor)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TargetArch {
@@ -192,7 +192,7 @@ pub enum TargetArch {
     XtensaEsp32,
 }
 
-/// アプリケーション言語（Apps conductor）
+/// Application language (Apps conductor)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AppLanguage {

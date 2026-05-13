@@ -1,72 +1,72 @@
-# apps-conductor エラー型
+# apps-conductor Error Types
 
-**対象 Conductor**: apps-conductor
-**ソース**: 設計仕様書 §9（2281-2400行目付近）, §14.3（3565-3581行目付近）
+**Target Conductor**: apps-conductor
+**Source**: Design specification §9 (around lines 2281-2400), §14.3 (around lines 3565-3581)
 
-## エラーカテゴリ
+## Error Categories
 
-apps-conductor は HESTIA 共通エラーコード（-32000 〜 -32099）およびリクエスト標準エラー（-32600 〜 -32603）を使用する。apps 固有のエラーは共通範囲内で細分化される。
+apps-conductor uses HESTIA common error codes (-32000 to -32099) and request standard errors (-32600 to -32603). Apps-specific errors are subdivided within the common range.
 
-## ビルド エラー
+## Build Errors
 
-| エラー | 説明 |
-|-------|------|
-| CROSS_COMPILATION_FAILED | クロスコンパイル失敗（arm-gcc / riscv-gcc / cargo） |
-| TOOLCHAIN_NOT_FOUND | 指定されたツールチェーン未検出 |
-| TOOLCHAIN_VERSION_MISMATCH | ツールチェーンバージョン不整合 |
-| COMPILATION_ERROR | ソースコードコンパイルエラー |
-| LINK_ERROR | リンクエラー（未解決シンボル・重複定義等） |
+| Error | Description |
+|-------|-------------|
+| CROSS_COMPILATION_FAILED | Cross-compilation failure (arm-gcc / riscv-gcc / cargo) |
+| TOOLCHAIN_NOT_FOUND | Specified toolchain not found |
+| TOOLCHAIN_VERSION_MISMATCH | Toolchain version mismatch |
+| COMPILATION_ERROR | Source code compilation error |
+| LINK_ERROR | Link error (unresolved symbols, duplicate definitions, etc.) |
 
-## メモリ エラー
+## Memory Errors
 
-| エラー | 説明 |
-|-------|------|
-| MEMORY_OVERFLOW_FLASH | Flash 領域オーバーフロー |
-| MEMORY_OVERFLOW_RAM | RAM 領域オーバーフロー |
-| LINKER_SCRIPT_ERROR | リンカスクリプトエラー |
-| SIZE_CHECK_FAILED | バイナリサイズチェック失敗 |
+| Error | Description |
+|-------|-------------|
+| MEMORY_OVERFLOW_FLASH | Flash region overflow |
+| MEMORY_OVERFLOW_RAM | RAM region overflow |
+| LINKER_SCRIPT_ERROR | Linker script error |
+| SIZE_CHECK_FAILED | Binary size check failure |
 
-## RTOS エラー
+## RTOS Errors
 
-| エラー | 説明 |
-|-------|------|
-| RTOS_NOT_FOUND | 指定された RTOS が未インストール |
-| RTOS_VERSION_INCOMPATIBLE | RTOS バージョン非互換 |
-| FREERTOS_CONFIG_ERROR | FreeRTOS 設定エラー |
-| ZEPHYR_WEST_FAILED | Zephyr west コマンド失敗 |
+| Error | Description |
+|-------|-------------|
+| RTOS_NOT_FOUND | Specified RTOS not installed |
+| RTOS_VERSION_INCOMPATIBLE | RTOS version incompatibility |
+| FREERTOS_CONFIG_ERROR | FreeRTOS configuration error |
+| ZEPHYR_WEST_FAILED | Zephyr west command failure |
 
-## フラッシュ エラー
+## Flash Errors
 
-| エラー | 説明 |
-|-------|------|
-| FLASH_FAILED | フラッシュ書込失敗 |
-| PROBE_NOT_FOUND | デバッグプローブ未検出 |
-| PROBE_CONNECTION_ERROR | プローブ接続エラー |
-| TARGET_NOT_RESPONDING | ターゲットデバイス応答なし |
+| Error | Description |
+|-------|-------------|
+| FLASH_FAILED | Flash write failure |
+| PROBE_NOT_FOUND | Debug probe not found |
+| PROBE_CONNECTION_ERROR | Probe connection error |
+| TARGET_NOT_RESPONDING | Target device not responding |
 
-## テスト エラー
+## Test Errors
 
-| エラー | 説明 |
-|-------|------|
-| TEST_FAILED | テスト実行失敗 |
-| QEMU_LAUNCH_FAILED | QEMU 起動失敗 |
-| HIL_CONNECTION_FAILED | HIL テスト接続失敗 |
-| TEST_TIMEOUT | テストタイムアウト |
+| Error | Description |
+|-------|-------------|
+| TEST_FAILED | Test execution failure |
+| QEMU_LAUNCH_FAILED | QEMU launch failure |
+| HIL_CONNECTION_FAILED | HIL test connection failure |
+| TEST_TIMEOUT | Test timeout |
 
-## HAL 連携 エラー
+## HAL Integration Errors
 
-| エラー | 説明 |
-|-------|------|
-| HAL_IMPORT_NOT_FOUND | HAL モジュール import 先未検出 |
-| HAL_VERSION_MISMATCH | HAL バージョン不整合 |
+| Error | Description |
+|-------|-------------|
+| HAL_IMPORT_NOT_FOUND | HAL module import destination not found |
+| HAL_VERSION_MISMATCH | HAL version mismatch |
 
-## ビルドステートマシン エラー
+## Build State Machine Errors
 
-ビルド中の各ステート（Resolving / Compiling / Linking / SizeChecking / Flashing / Testing）で失敗した場合、`Failed` 状態に遷移し `Diagnosing` で修正提案を生成する。
+When a failure occurs in any state during a build (Resolving / Compiling / Linking / SizeChecking / Flashing / Testing), the state machine transitions to `Failed` and generates a fix suggestion in `Diagnosing`.
 
-## 関連ドキュメント
+## Related Documentation
 
-- [apps/message_methods.md](message_methods.md) — apps.* メソッド一覧
-- [apps/state_machines.md](state_machines.md) — ビルドステートマシン
-- [apps/toolchain.md](toolchain.md) — 主要アダプター
-- [../common/error_registry.md](../common/error_registry.md) — HESTIA 共通エラーレジストリ
+- [apps/message_methods.md](message_methods.md) — apps.* method list
+- [apps/state_machines.md](state_machines.md) — Build state machine
+- [apps/toolchain.md](toolchain.md) — Main adapters
+- [../common/error_registry.md](../common/error_registry.md) — HESTIA common error registry

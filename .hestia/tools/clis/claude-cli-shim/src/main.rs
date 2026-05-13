@@ -1,9 +1,9 @@
-//! claude-cli-shim — Claude Code wrapper that mimics `agent-cli` for hestia.
+//! claude-cli-shim -- Claude Code wrapper that mimics `agent-cli` for hestia.
 //!
-//! Phase 113 (instructions.md 第 18 版) で導入された wrapper レイヤ。
-//! agent-cli 互換の subcommand (`run` / `list` / `send` / `providers` / `doctor`)
-//! を提供し、内部で Claude Code (`claude`) CLI を子プロセスとして保持して
-//! 永続 session を実現する。
+//! Wrapper layer introduced in Phase 113 (instructions.md v18).
+//! Provides agent-cli compatible subcommands (`run` / `list` / `send` / `providers` / `doctor`)
+//! and keeps a Claude Code (`claude`) CLI process running as a child subprocess
+//! to implement persistent sessions.
 
 use anyhow::Result;
 use clap::Parser;

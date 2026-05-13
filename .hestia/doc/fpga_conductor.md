@@ -1,99 +1,99 @@
-# FPGA 設計フローオーケストレーター
+# FPGA Design Flow Orchestrator
 
-**対象領域**: fpga-conductor
-**ソース**: 設計仕様書 §5（1398-1760行目）
-
----
-
-## 概要
-
-fpga-conductor は FPGA デザインの合成・配置配線・ビットストリーム生成・デバイスプログラミングを統一的に管理するオーケストレーターである。AMD Vivado / Intel Quartus Prime / Efinix Efinity / Lattice Radiant / OSS（Yosys + nextpnr）の全ベンダーを VendorAdapter トレイトで抽象化し、fpga.toml による宣言的プロジェクト定義と fpga.lock による再現性を提供する。
+**Target Domain**: fpga-conductor
+**Source**: Design Specification §5 (lines 1398-1760)
 
 ---
 
-## クレート構成
+## Overview
+
+fpga-conductor is an orchestrator that uniformly manages FPGA design synthesis, place-and-route, bitstream generation, and device programming. It abstracts all vendors — AMD Vivado / Intel Quartus Prime / Efinix Efinity / Lattice Radiant / OSS (Yosys + nextpnr) — via the VendorAdapter trait, and provides declarative project definition through fpga.toml and reproducibility through fpga.lock.
+
+---
+
+## Crate Structure
 
 ```
 fpga-conductor/
 ├── Cargo.toml
 ├── crates/
-│   ├── conductor-core/             # agent-cli persona・ステートマシン・main.rs
+│   ├── conductor-core/             # agent-cli persona, state machine, main.rs
 │   │   └── src/
-│   │       ├── main.rs             # デーモン起動エントリポイント
-│   │       ├── rpc.rs              # agent-cli メッセージハンドラー
-│   │       ├── state_machine.rs    # ビルドステートマシン
+│   │       ├── main.rs             # Daemon entry point
+│   │       ├── rpc.rs              # agent-cli message handler
+│   │       ├── state_machine.rs    # Build state machine
 │   │       ├── router.rs           # CapabilityRouter
 │   │       └── self_healing.rs     # SelfHealingPipeline
-│   ├── project-model/              # fpga.toml パーサー・モデル
+│   ├── project-model/              # fpga.toml parser and model
 │   │   └── src/
-│   │       ├── lib.rs              # ProjectInfo, Target 定義
-│   │       ├── parser.rs           # TOML パーサー
-│   │       └── lock.rs            # fpga.lock 管理
-│   ├── plugin-registry/            # アダプター登録・解決エンジン
+│   │       ├── lib.rs              # ProjectInfo, Target definitions
+│   │       ├── parser.rs           # TOML parser
+│   │       └── lock.rs            # fpga.lock management
+│   ├── plugin-registry/            # Adapter registration and resolution engine
 │   │   └── src/
 │   │       ├── lib.rs              # PluginRegistry
 │   │       ├── adapter/
-│   │       │   ├── mod.rs          # VendorAdapter トレイト
+│   │       │   ├── mod.rs          # VendorAdapter trait
 │   │       │   ├── script.rs       # ScriptAdapter (adapter.toml)
 │   │       │   ├── dynamic.rs      # Dynamic Adapter (dlopen)
 │   │       │   └── remote.rs       # Remote Adapter (gRPC)
 │   │       └── capability.rs       # CapabilitySet, CapabilityRouter
-│   ├── adapter-vivado/             # AMD Vivado アダプター
+│   ├── adapter-vivado/             # AMD Vivado adapter
 │   │   └── src/
-│   │       ├── lib.rs              # VivadoAdapter 実装
-│   │       └── templates/          # TCL テンプレート (minijinja)
-│   ├── adapter-quartus/            # Intel Quartus Prime アダプター
+│   │       ├── lib.rs              # VivadoAdapter implementation
+│   │       └── templates/          # TCL templates (minijinja)
+│   ├── adapter-quartus/            # Intel Quartus Prime adapter
 │   │   └── src/
-│   │       └── lib.rs              # QuartusAdapter (QSF/QIP 生成)
-│   ├── adapter-efinity/            # Efinix Efinity アダプター
+│   │       └── lib.rs              # QuartusAdapter (QSF/QIP generation)
+│   ├── adapter-efinity/            # Efinix Efinity adapter
 │   │   └── src/
-│   │       └── lib.rs              # EfinityAdapter (Python API 呼び出し)
-│   ├── constraint-bridge/          # XDC ⇔ SDC ⇔ Efinity XML ⇔ PCF 変換
-│   ├── toolchain-registry/         # バージョン検出・解決
-│   ├── compat-matrix/              # 互換性マトリクス DB (SQLite)
-│   ├── podman-runtime/             # Podman コンテナ管理
-│   ├── hdl-lsp-broker/             # HDL 言語サーバープロキシ
-│   ├── waveform-core/              # VCD/FST パーサー (→WASM 対応)
-│   └── agent-system/               # AI エージェント群 (Rust 部分)
+│   │       └── lib.rs              # EfinityAdapter (Python API invocation)
+│   ├── constraint-bridge/          # XDC ⇔ SDC ⇔ Efinity XML ⇔ PCF conversion
+│   ├── toolchain-registry/         # Version detection and resolution
+│   ├── compat-matrix/              # Compatibility matrix DB (SQLite)
+│   ├── podman-runtime/             # Podman container management
+│   ├── hdl-lsp-broker/             # HDL language server proxy
+│   ├── waveform-core/              # VCD/FST parser (WASM support)
+│   └── agent-system/               # AI agent group (Rust part)
 │       └── src/
 │           ├── watcher.rs          # WatcherAgent
 │           ├── probe.rs            # ProbeAgent
 │           └── validator.rs        # ValidatorAgent
 ├── packages/
-│   ├── vscode-extension/           # VSCode 拡張 (TypeScript)
+│   ├── vscode-extension/           # VSCode extension (TypeScript)
 │   ├── agent-system/               # PatcherAgent (TypeScript + Anthropic SDK)
 │   ├── fpga-ci/                    # CI/CD CLI (TypeScript)
-│   └── tauri-app/                  # Tauri デスクトップアプリ
-├── fpga-cli/                       # Rust 製 CLI クライアント
-└── conductor-sdk/                  # サードパーティ向け SDK
+│   └── tauri-app/                  # Tauri desktop app
+├── fpga-cli/                       # Rust CLI client
+└── conductor-sdk/                  # Third-party SDK
 ```
 
 ---
 
-## VendorAdapter トレイト
+## VendorAdapter Trait
 
-すべてのアダプターが実装すべき統一インターフェースである。
+A unified interface that all adapters must implement.
 
 ```rust
 #[async_trait::async_trait]
 pub trait VendorAdapter: Send + Sync + 'static {
-    // --- 必須: 自己記述 ---
+    // --- Required: Self-description ---
     fn manifest(&self) -> &AdapterManifest;
     fn capabilities(&self) -> CapabilitySet;
 
-    // --- 必須: コアフロー ---
+    // --- Required: Core flow ---
     async fn synthesize(&self, ctx: &BuildContext) -> Result<StepResult, AdapterError>;
     async fn implement(&self, ctx: &BuildContext) -> Result<StepResult, AdapterError>;
     async fn generate_bitstream(&self, ctx: &BuildContext) -> Result<StepResult, AdapterError>;
 
-    // --- オプション (デフォルト: CapabilityUnsupported を返す) ---
+    // --- Optional (default: returns CapabilityUnsupported) ---
     async fn timing_analysis(&self, ctx: &BuildContext) -> Result<TimingReport, AdapterError>;
     async fn start_debug_session(&self, ctx: &BuildContext) -> Result<DebugSession, AdapterError>;
     async fn hls_compile(&self, ctx: &BuildContext) -> Result<StepResult, AdapterError>;
     async fn program_device(&self, ctx: &ProgramContext) -> Result<(), AdapterError>;
     async fn simulate(&self, ctx: &SimContext) -> Result<SimResult, AdapterError>;
 
-    // --- ログ診断 (デフォルト: None) ---
+    // --- Log diagnostics (default: None) ---
     fn parse_log_line(&self, line: &str) -> Option<Diagnostic> { None }
 }
 ```
@@ -104,25 +104,25 @@ pub trait VendorAdapter: Send + Sync + 'static {
 
 ---
 
-## ビルドステートマシン
+## Build State Machine
 
 ```
-Idle → Resolving (ツールチェーン確定)
-     → ContainerStarting (Podman コンテナ起動)
+Idle → Resolving (resolve toolchain)
+     → ContainerStarting (start Podman container)
      → Synthesizing (adapter.synthesize)
      → Implementing (adapter.implement)
      → Bitstreamming (adapter.generate_bitstream)
      → Success
 
-各ステップで失敗 → SelfHealingPipeline.on_build_failure()
-    → CompatibilityMatrix で診断
-    → 既知パッチあり → 自動適用/通知
-    → 未知エラー    → PatcherAgent 起動
+On failure at any step → SelfHealingPipeline.on_build_failure()
+    → Diagnose via CompatibilityMatrix
+    → Known patch available → Auto-apply/notify
+    → Unknown error      → Launch PatcherAgent
 ```
 
 ---
 
-## 統一プロジェクトフォーマット（fpga.toml）
+## Unified Project Format (fpga.toml)
 
 ```toml
 [project]
@@ -132,7 +132,7 @@ hdl_files   = ["hdl/top.sv", "hdl/fir_filter.sv", "hdl/bram_ctrl.sv"]
 include_dirs = ["hdl/include"]
 testbenches = ["sim/tb_top.sv", "sim/tb_fir.sv"]
 
-# ターゲット定義
+# Target definitions
 [targets.artix7_dev]
 vendor      = "xilinx"
 device      = "xc7a35tcsg324-1"
@@ -152,12 +152,12 @@ top               = "top"
 interface_script  = "constraints/trion_t20.peri.xml"
 
 [targets.ice40]
-vendor      = "yosyshq"     # OSS チェーン (adapter.toml)
+vendor      = "yosyshq"     # OSS chain (adapter.toml)
 device      = "iCE40HX8K"
 top         = "top"
 constraints = ["constraints/ice40.pcf"]
 
-# ツールチェーンバージョン制約 (semver)
+# Toolchain version constraints (semver)
 [toolchain]
 vivado   = ">=2023.1, <2026"
 quartus  = "~23.1"
@@ -187,41 +187,41 @@ plusargs = ["+DUMP_WAVES=1"]
 
 ---
 
-## Vivado アダプター実装
+## Vivado Adapter Implementation
 
-- minijinja テンプレートエンジンで TCL スクリプト自動生成
-- Vivado を `-mode batch` で起動
-- リアルタイムログパース（`ERROR: [Synth 8-439]` 形式の正規表現マッチ）
+- Auto-generates TCL scripts via minijinja template engine
+- Runs Vivado in `-mode batch`
+- Real-time log parsing (regex matching `ERROR: [Synth 8-439]` format)
 
-## Quartus アダプター実装
+## Quartus Adapter Implementation
 
-- .qpf / .qsf プロジェクトファイル自動生成
-- `quartus_sh --flow compile` で全フロー実行
+- Auto-generates .qpf / .qsf project files
+- Runs full flow via `quartus_sh --flow compile`
 
-## Efinity アダプター実装
+## Efinity Adapter Implementation
 
-- インターフェーススクリプト (XML) を Rust の serde で直接生成
-- ビルドスクリプトを Rust テンプレートエンジンで生成
-- Efinity 同梱の Python で実行（外部 Python に依存しない）
+- Generates interface scripts (XML) directly via Rust serde
+- Generates build scripts via Rust template engine
+- Runs using Efinity-bundled Python (no external Python dependency)
 
 ---
 
-## サブエージェント構成
+## Sub-Agent Configuration
 
-fpga-conductor は **planner / designer / synthesizer / implementer / tester / programmer** の6種類のサブエージェントを持つ。各サブエージェントは独立した agent-cli プロセスとして起動され、`agent-cli send <peer>` IPC で fpga-conductor 本体（peer 名 `fpga`）と協調する。
+fpga-conductor has six sub-agent types: **planner / designer / synthesizer / implementer / tester / programmer**. Each sub-agent is launched as an independent agent-cli process and coordinates with the fpga-conductor main body (peer name `fpga`) via `agent-cli send <peer>` IPC.
 
-| サブエージェント | peer 名 | 役割 | 多重度 |
-|----------------|---------|------|-------|
-| **planner** | `fpga-planner` | FPGA 開発プランニング（target/family 選定、ビルド戦略、IP 利用判断）| 1 |
-| **designer** | `fpga-designer` | FPGA 詳細仕様（XDC/SDC/PCF 制約、IO mapping、クロックドメイン、IP 構成）| 1 |
-| **synthesizer** | `fpga-synthesizer` | RTL → netlist 合成（Vivado / Quartus / Efinity / Yosys+nextpnr）| 1（target 並列時 N）|
-| **implementer** | `fpga-implementer` | 配置配線 + bitstream 生成 | 1（target 並列時 N）|
-| **tester** | `fpga-tester` | シミュレーション + タイミング検証 + リソース解析 | 1 |
-| **programmer** | `fpga-programmer` | FPGA への bitstream 書込（debug-conductor 連携）| 1 |
+| Sub-Agent | Peer Name | Role | Multiplicity |
+|-----------|-----------|------|--------------|
+| **planner** | `fpga-planner` | FPGA development planning (target/family selection, build strategy, IP usage decisions) | 1 |
+| **designer** | `fpga-designer` | FPGA detailed specifications (XDC/SDC/PCF constraints, IO mapping, clock domains, IP configuration) | 1 |
+| **synthesizer** | `fpga-synthesizer` | RTL → netlist synthesis (Vivado / Quartus / Efinity / Yosys+nextpnr) | 1 (N for parallel targets) |
+| **implementer** | `fpga-implementer` | Place-and-route + bitstream generation | 1 (N for parallel targets) |
+| **tester** | `fpga-tester` | Simulation + timing verification + resource analysis | 1 |
+| **programmer** | `fpga-programmer` | Bitstream programming to FPGA (debug-conductor integration) | 1 |
 
-**フロー**: planner → designer → synthesizer → implementer → tester → programmer の順次実行。複数 target 並列ビルド時は synthesizer / implementer が target ごとに動的並列起動。
+**Flow**: Sequential execution: planner → designer → synthesizer → implementer → tester → programmer. During multi-target parallel builds, synthesizer / implementer are dynamically launched per target.
 
-**起動コマンド例:**
+**Launch command examples:**
 
 ```bash
 agent-cli run --persona-file ./.hestia/personas/fpga-planner.md     --name fpga-planner     &
@@ -234,10 +234,10 @@ agent-cli run --persona-file ./.hestia/personas/fpga-programmer.md  --name fpga-
 
 ---
 
-## 関連ドキュメント
+## Related Documentation
 
-- [master_agent_design.md](master_agent_design.md) — ai-conductor 詳細設計
-- [rtl_conductor.md](rtl_conductor.md) — RTL 設計フローオーケストレーター（上流）
-- [asic_conductor.md](asic_conductor.md) — ASIC 設計フローオーケストレーター
-- [hal_conductor.md](hal_conductor.md) — HAL 生成オーケストレーター
-- [debug_conductor.md](debug_conductor.md) — デバッグ環境オーケストレーター
+- [master_agent_design.md](master_agent_design.md) — ai-conductor detailed design
+- [rtl_conductor.md](rtl_conductor.md) — RTL design flow orchestrator (upstream)
+- [asic_conductor.md](asic_conductor.md) — ASIC design flow orchestrator
+- [hal_conductor.md](hal_conductor.md) — HAL generation orchestrator
+- [debug_conductor.md](debug_conductor.md) — Debug environment orchestrator

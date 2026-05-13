@@ -1,6 +1,6 @@
-//! agent-cli 互換の JSONL ログ writer。
+//! agent-cli compatible JSONL log writer.
 //!
-//! スキーマ (`derive_status_from_log` 互換):
+//! Schema (`derive_status_from_log` compatible):
 //! ```jsonl
 //! {"kind":"thinking","ts":"...","text":"..."}
 //! {"kind":"tool_call","ts":"...","tool":"Read","args":{...}}
@@ -20,7 +20,7 @@ pub struct LogWriter {
 }
 
 impl LogWriter {
-    /// `<log_dir>/<agent_id>/session.jsonl` を新規作成 / 追記モードで開く。
+    /// Create or append to `<log_dir>/<agent_id>/session.jsonl`.
     pub fn open(log_dir: &Path, agent_id: &str) -> Result<(Self, PathBuf)> {
         let dir = log_dir.join(agent_id);
         fs::create_dir_all(&dir)
@@ -42,7 +42,7 @@ impl LogWriter {
         Ok(())
     }
 
-    /// 簡便ヘルパ: `kind` + `text` のみのイベントを書込。
+    /// Convenience helper: write an event with only `kind` + `text`.
     pub fn write_simple(&mut self, kind: &str, text: &str) -> Result<()> {
         let ev = serde_json::json!({
             "kind": kind,

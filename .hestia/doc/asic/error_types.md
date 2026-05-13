@@ -1,82 +1,82 @@
-# asic-conductor エラーコード
+# asic-conductor Error Codes
 
-**対象 Conductor**: asic-conductor
-**ソース**: 設計仕様書 §14.3（3565-3581行目付近）
+**Target Conductor**: asic-conductor
+**Source**: Design specification §14.3 (around lines 3565-3581)
 
-## エラーコード範囲
+## Error Code Range
 
-asic-conductor のエラーコードは **-32300 〜 -32399** の範囲を使用する。
+asic-conductor error codes use the range **-32300 to -32399**.
 
-## エラーカテゴリ
+## Error Categories
 
-### RTL Synthesis（論理合成）
+### RTL Synthesis
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32300 | SYNTHESIS_FAILED | Yosys 論理合成失敗 |
-| -32301 | SYNTHESIS_TIMEOUT | 合成タイムアウト |
-| -32302 | RTL_READ_ERROR | RTL 読み込みエラー |
-| -32303 | TECH_MAPPING_FAILED | テクノロジマッピング失敗（ABC） |
+| Code | Name | Description |
+|-------|------|------------|
+| -32300 | SYNTHESIS_FAILED | Yosys logic synthesis failure |
+| -32301 | SYNTHESIS_TIMEOUT | Synthesis timeout |
+| -32302 | RTL_READ_ERROR | RTL read error |
+| -32303 | TECH_MAPPING_FAILED | Technology mapping failure (ABC) |
 
-### Floorplan（フロアプラン）
+### Floorplan
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32310 | FLOORPLAN_FAILED | フロアプラン作成失敗 |
-| -32311 | PDN_GENERATION_FAILED | 電源分配網生成失敗 |
-| -32312 | IO_PLACEMENT_FAILED | I/O ピン配置失敗 |
-| -32313 | MACRO_PLACEMENT_FAILED | マクロ配置失敗 |
+| Code | Name | Description |
+|-------|------|------------|
+| -32310 | FLOORPLAN_FAILED | Floorplan creation failure |
+| -32311 | PDN_GENERATION_FAILED | Power distribution network generation failure |
+| -32312 | IO_PLACEMENT_FAILED | I/O pin placement failure |
+| -32313 | MACRO_PLACEMENT_FAILED | Macro placement failure |
 
-### Placement（配置）
+### Placement
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32320 | PLACEMENT_FAILED | セル配置失敗 |
-| -32321 | DENSITY_EXCEEDED | 配置密度超過 |
-| -32322 | OVERFLOW_ERROR | 配置オーバーフロー |
+| Code | Name | Description |
+|-------|------|------------|
+| -32320 | PLACEMENT_FAILED | Cell placement failure |
+| -32321 | DENSITY_EXCEEDED | Placement density exceeded |
+| -32322 | OVERFLOW_ERROR | Placement overflow |
 
-### CTS（クロックツリー合成）
+### CTS (Clock Tree Synthesis)
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32330 | CTS_FAILED | クロックツリー合成失敗 |
-| -32331 | CTS_SKEW_VIOLATION | スキューバイオレーション |
-| -32332 | BUFFER_INSERTION_FAILED | バッファ挿入失敗 |
+| Code | Name | Description |
+|-------|------|------------|
+| -32330 | CTS_FAILED | Clock tree synthesis failure |
+| -32331 | CTS_SKEW_VIOLATION | Skew violation |
+| -32332 | BUFFER_INSERTION_FAILED | Buffer insertion failure |
 
-### Routing（配線）
+### Routing
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32340 | GLOBAL_ROUTING_FAILED | グローバルルーティング失敗 |
-| -32341 | DETAILED_ROUTING_FAILED | 詳細ルーティング失敗 |
-| -32342 | CONGESTION_DETECTED | 配線混雑度検出 |
-| -32343 | DRC_VIOLATION_ROUTING | 配線DRC 違反 |
+| Code | Name | Description |
+|-------|------|------------|
+| -32340 | GLOBAL_ROUTING_FAILED | Global routing failure |
+| -32341 | DETAILED_ROUTING_FAILED | Detailed routing failure |
+| -32342 | CONGESTION_DETECTED | Routing congestion detected |
+| -32343 | DRC_VIOLATION_ROUTING | Routing DRC violation |
 
 ### Extraction / Timing
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32350 | EXTRACTION_FAILED | 寄生抽出失敗（OpenRCX） |
-| -32351 | TIMING_SIGNOFF_FAILED | タイミングサインオフ失敗（WNS < 0） |
+| Code | Name | Description |
+|-------|------|------------|
+| -32350 | EXTRACTION_FAILED | Parasitic extraction failure (OpenRCX) |
+| -32351 | TIMING_SIGNOFF_FAILED | Timing signoff failure (WNS < 0) |
 
 ### DRC / LVS / Signoff
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32360 | DRC_FAILED | DRC チェック失敗（Magic / KLayout） |
-| -32361 | LVS_FAILED | LVS チェック失敗（Netgen） |
-| -32362 | DRC_VIOLATIONS_FOUND | DRC 違反検出 |
-| -32363 | LVS_MISMATCH_FOUND | LVS ミスマッチ検出 |
+| Code | Name | Description |
+|-------|------|------------|
+| -32360 | DRC_FAILED | DRC check failure (Magic / KLayout) |
+| -32361 | LVS_FAILED | LVS check failure (Netgen) |
+| -32362 | DRC_VIOLATIONS_FOUND | DRC violations detected |
+| -32363 | LVS_MISMATCH_FOUND | LVS mismatch detected |
 
 ### GDSII / PDK
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32370 | GDSII_GENERATION_FAILED | GDSII ストリーム生成失敗 |
-| -32371 | PDK_NOT_INSTALLED | PDK 未インストール |
-| -32372 | PDK_VERSION_MISMATCH | PDK バージョン不整合 |
+| Code | Name | Description |
+|-------|------|------------|
+| -32370 | GDSII_GENERATION_FAILED | GDSII stream generation failure |
+| -32371 | PDK_NOT_INSTALLED | PDK not installed |
+| -32372 | PDK_VERSION_MISMATCH | PDK version mismatch |
 
-## エラー応答フォーマット
+## Error Response Format
 
 ```json
 {
@@ -98,9 +98,9 @@ asic-conductor のエラーコードは **-32300 〜 -32399** の範囲を使用
 }
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [asic/message_methods.md](message_methods.md) — asic.* メソッド一覧
-- [asic/state_machines.md](state_machines.md) — ASIC ビルドステートマシン
-- [asic/tool_adapter.md](tool_adapter.md) — AsicToolAdapter トレイト
-- [../common/error_registry.md](../common/error_registry.md) — HESTIA 共通エラーレジストリ
+- [asic/message_methods.md](message_methods.md) — asic.* method list
+- [asic/state_machines.md](state_machines.md) — ASIC build state machine
+- [asic/tool_adapter.md](tool_adapter.md) — AsicToolAdapter trait
+- [../common/error_registry.md](../common/error_registry.md) — HESTIA common error registry

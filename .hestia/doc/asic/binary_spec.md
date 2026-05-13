@@ -1,39 +1,39 @@
-# asic-conductor CLI バイナリ仕様
+# asic-conductor CLI Binary Specification
 
-**対象 Conductor**: asic-conductor
-**ソース**: 設計仕様書 §15（3631-3730行目付近）, §6（1761-1981行目付近）
+**Target Conductor**: asic-conductor
+**Source**: Design specification §15 (around lines 3631-3730), §6 (around lines 1761-1981)
 
-## バイナリ名
+## Binary Name
 
 `hestia-asic-cli`
 
-## サブコマンド一覧
+## Subcommands
 
-| サブコマンド | 説明 |
-|-------------|------|
-| `init` | asic.toml テンプレート生成 |
-| `build` | RTL-to-GDSII フルビルド実行 |
-| `pdk install <pdk>` | PDK インストール（Sky130 / GF180MCU / IHP SG13G2） |
-| `pdk list` | インストール済み PDK 一覧表示 |
-| `advance` | ビルドを次ステップに進める（OpenLane 2 Step-based Execution と連携） |
-| `drc` | DRC（デザインルールチェック）実行 |
-| `lvs` | LVS（レイアウト対回路図検証）実行 |
-| `status` | ビルド状態・ジョブ状況表示 |
+| Subcommand | Description |
+|-------------|------------|
+| `init` | Generate asic.toml template |
+| `build` | Execute RTL-to-GDSII full build |
+| `pdk install <pdk>` | Install PDK (Sky130 / GF180MCU / IHP SG13G2) |
+| `pdk list` | Display installed PDK list |
+| `advance` | Advance build to next step (integrates with OpenLane 2 Step-based Execution) |
+| `drc` | Run DRC (Design Rule Check) |
+| `lvs` | Run LVS (Layout Versus Schematic verification) |
+| `status` | Display build state and job status |
 
-## 共通オプション（CommonOpts）
+## Common Options (CommonOpts)
 
-| オプション | 値 | 説明 |
-|-----------|---|------|
-| `--output` | `human` \| `json` | 出力フォーマット（既定: human） |
-| `--timeout` | `<秒>` | RPC タイムアウト |
-| `--registry` | `<path>` | agent-cli レジストリパス |
-| `--config` | `<path>` | 設定ファイルパス |
-| `--verbose` | — | 詳細ログ出力 |
+| Option | Value | Description |
+|-----------|---|------------|
+| `--output` | `human` \| `json` | Output format (default: human) |
+| `--timeout` | `<seconds>` | RPC timeout |
+| `--registry` | `<path>` | agent-cli registry path |
+| `--config` | `<path>` | Configuration file path |
+| `--verbose` | — | Verbose log output |
 
-## Exit Code
+## Exit Codes
 
-| Exit Code | 意味 |
-|-----------|------|
+| Exit Code | Meaning |
+|-----------|--------|
 | 0 | SUCCESS |
 | 1 | GENERAL_ERROR |
 | 2 | RPC_ERROR |
@@ -44,32 +44,32 @@
 | 7 | SOCKET_NOT_FOUND |
 | 8 | PERMISSION_DENIED |
 
-## CLI 使用例
+## CLI Usage Examples
 
 ```bash
-# 初期化
+# Initialize
 hestia asic init
 
-# PDK インストール
+# PDK install
 hestia asic pdk install sky130_fd_sc_hd
 
-# フルビルド
+# Full build
 hestia asic build
 
-# DRC のみ実行
+# DRC only
 hestia asic drc
 
-# 特定ステップから再開
+# Resume from specific step
 hestia asic advance --from placement
 ```
 
-## CLI アーキテクチャ
+## CLI Architecture
 
-Rust 製クライアントバイナリ（`tokio` + `serde` + `clap`）。asic-conductor の agent-cli peer（peer 名 `asic`）に対して agent-cli ネイティブ IPC で接続する。OpenLane 2 は Podman コンテナ内で実行される。
+Rust-based client binary (`tokio` + `serde` + `clap`). Connects to the asic-conductor agent-cli peer (peer name `asic`) via agent-cli native IPC. OpenLane 2 runs inside a Podman container.
 
-## 関連ドキュメント
+## Related Documentation
 
-- [asic/config_schema.md](config_schema.md) — asic.toml 設定スキーマ
-- [asic/message_methods.md](message_methods.md) — asic.* メソッド一覧
-- [asic/state_machines.md](state_machines.md) — ASIC ビルドステートマシン
-- [asic/tool_adapter.md](tool_adapter.md) — AsicToolAdapter トレイト
+- [asic/config_schema.md](config_schema.md) — asic.toml configuration schema
+- [asic/message_methods.md](message_methods.md) — asic.* method list
+- [asic/state_machines.md](state_machines.md) — ASIC build state machine
+- [asic/tool_adapter.md](tool_adapter.md) — AsicToolAdapter trait

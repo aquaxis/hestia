@@ -1,88 +1,87 @@
 ---
 name: Hestia Agent Setup Guidelines
-description: hestia agent (各 conductor / sub-agent) がワークスペース立ち上げ時に従う規約。`.aiprj/rules/setup_project.md` を agent 文脈に解釈変更したもの（Phase 81 P-3）。
+description: Rules that hestia agents (each conductor / sub-agent) follow during workspace setup. Adapted from `.aiprj/rules/setup_project.md` for the agent context (Phase 81 P-3).
 ---
 
 # Hestia Agent Setup Guidelines (Phase 81)
 
-このファイルは hestia agent（ai-conductor / 9 ドメイン conductor / 50+ sub-agent persona）が **起動時の setup フェーズ** で参照する規約です。プロジェクト管理 AI 用の `.aiprj/rules/setup_project.md` とは独立した実体で、hestia ランタイムが `.aiprj/` 不在環境でも動作するよう設計されています。
+This file defines the rules that hestia agents (ai-conductor / 9 domain conductors / 50+ sub-agent personas) reference during the **setup phase at startup**. It is an independent entity separate from `.aiprj/rules/setup_project.md` which is intended for project management AI, and is designed so that the hestia runtime functions even in environments without `.aiprj/`.
 
 ---
 
-## Article 1: 入力の取得
+## Article 1: Input Acquisition
 
-agent は起動時に以下の優先順で入力を取得します。
+Agents acquire inputs in the following priority order at startup:
 
-1. 上位 conductor から `agent-cli send` 経由で受信した prompt（上位指示はすべて peer prompt 経由）
-2. `<workspace>/{requirements,design,tasks}.md`（既に setup_ai サイクルで生成済の場合、整合性確認の入力）
-3. ペルソナ自身の責務範囲（`name` フィールドが示すドメイン責務）
+1. Prompt received from the superior conductor via `agent-cli send` (all superior instructions come through the peer prompt)
+2. `<workspace>/{requirements,design,tasks}.md` (if already generated in a setup_ai cycle, as input for consistency verification)
+3. The persona's own scope of responsibilities (domain responsibilities indicated by the `name` field)
 
-（Phase 89 用語統一により旧 fs_read による取得経路は廃止、上記 3 系統に整理）
+(The previous fs_read-based acquisition path has been abolished by Phase 89 terminology unification; inputs are now organized into the above 3 categories.)
 
-入力が空または欠落の場合、agent は idle 状態に遷移し、上位からの指示を待機します。エラー終了してはいけません。
+If input is empty or missing, the agent transitions to an idle state and waits for instructions from the superior. It must not exit with an error.
 
 ---
 
-## Article 2: 成果物の作成範囲（Phase 91 — 3 文書遵守必須化）
+## Article 2: Artifact Creation Scope (Phase 81 - 3-Document Compliance Mandatory)
 
-agent はペルソナの責務範囲内で **3 文書 + workspace 内および project root 配下の成果物** を fs_write で作成します。Phase 91 で全階層に 3 文書遵守義務が明示化されています。
+Agents create **3 documents + artifacts within the workspace and under the project root** via fs_write, within the scope of their persona responsibilities. Phase 81 makes 3-document compliance mandatory at all levels.
 
-| ペルソナ階層 | 主な作成対象（3 文書 + 成果物の二段） |
+| Persona level | Primary creation targets (3 documents + artifact two-tier) |
 |------------|------------------------------|
-| ai-conductor | (1) `<workspace>/{requirements,design,tasks}.md` の 3 文書 / (2) `<root>/.hestia/run_log/<run-id>.json` aggregate / `<workspace>/agent.log` |
-| domain conductor (rtl/fpga/asic/pcb/hal/apps/debug/rag) | (1) `<workspace>/{requirements,design,tasks}.md` の 3 文書 / (2) `<root>/<domain>/...` 成果物（rtl/<top>.sv 等）/ `<workspace>/agent.log`。タスク作成・管理は本 conductor が直接担当（Phase 91 で domain planner 廃止） |
-| sub-agent (designer/coder/tester/...) | (1) `<workspace>/{requirements,design,tasks}.md` の 3 文書 / (2) 担当モジュールの設計 / 実装 / テスト成果物 |
+| ai-conductor | (1) `<workspace>/{requirements,design,tasks}.md` 3 documents / (2) `<root>/.hestia/run_log/<run-id>.json` aggregate / `<workspace>/agent.log` |
+| domain conductor (rtl/fpga/asic/pcb/hal/apps/debug/rag) | (1) `<workspace>/{requirements,design,tasks}.md` 3 documents / (2) `<root>/<domain>/...` artifacts (e.g., rtl/<top>.sv) / `<workspace>/agent.log`. Task creation and management is handled directly by this conductor (domain planner abolished in Phase 91) |
+| sub-agent (designer/coder/tester/...) | (1) `<workspace>/{requirements,design,tasks}.md` 3 documents / (2) Design / implementation / test artifacts for the assigned module |
 
-`.aiprj/` ディレクトリへの書込は禁止（プロジェクト管理 AI の専有領域）。3 文書 skip は禁止（Phase 91 遵守必須化）。
-
----
-
-
-**Phase 92 明確化**: 各 persona 階層の 3 文書 (`requirements.md` / `design.md` / `tasks.md`) はそのエージェントの workspace ディレクトリ専用 (`.hestia/workspaces/<peer>/`) であり、他エージェントの 3 文書とは独立しています。共用配置 (`<root>/requirements.md` 等の project root 直下や複数エージェント間の参照共有) は禁止です。たとえば `ai/requirements.md` と `rtl-designer/requirements.md` は別ファイル / 別内容として管理されます。
+Writing to the `.aiprj/` directory is prohibited (project management AI's exclusive domain). Skipping the 3 documents is prohibited (Phase 81 mandatory compliance).
 
 ---
 
-## Article 3: テンプレート埋め込み禁止（Phase 42 継承）
-
-`.hestia/tools/` 配下の handler ソースに HDL / 制約 / TCL / レジスタマップ等のドメイン固有テンプレートを埋め込んではいけません。LLM (ai-conductor / designer 等) が `fs_write` で動的生成し、handler は実ツール起動 (verilator / Vivado / yosys 等) のみ担当します。
-
-詳細は `.hestia/personas/ai.md` の「絶対規約」節および Phase 42/47 の persona 規約を参照。
+**Phase 92 Clarification**: Each persona level's 3 documents (`requirements.md` / `design.md` / `tasks.md`) are **exclusive to that agent's workspace directory** (`.hestia/workspaces/<peer>/`) and are independent from other agents' 3 documents. Shared placement (under the project root like `<root>/requirements.md` or cross-referencing between agents) is prohibited. For example, `ai/requirements.md` and `rtl-designer/requirements.md` are managed as separate files with separate content.
 
 ---
 
-## Article 4: 自己実行ループ (Phase 57b/68/71 継承)
+## Article 3: Template Embedding Prohibition (Phase 81 inheritance)
 
-agent は次の 4 サイクルを自身で判定・実行します:
+Domain-specific templates (HDL / constraints / TCL / register maps, etc.) must not be embedded in handler source code under `.hestia/tools/`. The LLM (ai-conductor / designer etc.) dynamically generates them via `fs_write`, and handlers are responsible only for invoking physical tools (verilator / Vivado / yosys etc.).
 
-| サイクル | 契機 | 参照規約 |
+For details, refer to the "Absolute Rules" section of `.hestia/personas/ai.md` and the Phase 42/47 persona rules.
+
+---
+
+## Article 4: Self-Execution Loop (Phase 57b/68/71 inheritance)
+
+Agents judge and execute the following 4 cycles on their own:
+
+| Cycle | Trigger | Reference rules |
 |---------|------|---------|
-| setup_ai | peer 起動直後 | 本ファイル (`.hestia/rules/setup_project.md`) |
-| update_ai | 上位 prompt 受信 + `<workspace>/requirements.md` 内容差分検出（Phase 89 用語統一）| `.hestia/rules/update_project.md` |
-| exec_job | 上位からの実行依頼 prompt 受信 | `.hestia/rules/exec_job.md` |
-| close_ai | セッション終了通知 | `.hestia/rules/close_ai.md`（Phase 82+ で追加予定）|
+| setup_ai | Immediately after peer startup | This file (`.hestia/rules/setup_project.md`) |
+| update_ai | Superior prompt received + content diff detected in `<workspace>/requirements.md` (Phase 89 terminology unification)| `.hestia/rules/update_project.md` |
+| exec_job | Execution request prompt received from superior | `.hestia/rules/exec_job.md` |
+| close_ai | Session termination notification | `.hestia/rules/close_ai.md` (planned for Phase 82+) |
 
-各サイクルの判定分岐ロジックは persona 内の「起動時の `.hestia/rules/` 自己実行規約」節に記載されています。
-
----
-
-## Article 5: 進捗の可視化 (Phase 49 mirror 継承)
-
-agent の活動 (thinking / tool_call / tool_result / peer_prompt / assistant) は agent-cli の構造化 JSONL に書き出されます。`hestia start` が detached helper として `hestia mirror <peer>` を spawn しており、ユーザーは `cat .hestia/workspaces/<peer>/agent.log` で real-time に活動を観測できます。
-
-agent は明示的なログ出力を行う必要はありません — agent-cli の構造化イベントが mirror 経由で workspace agent.log に到達します。
+The judgment and branching logic for each cycle is described in the "Self-execution rules for `.hestia/rules/` at startup" section within each persona.
 
 ---
 
-## Article 6: 失敗時の透明な報告 (Phase 50 継承)
+## Article 5: Progress Visibility (Phase 49 mirror inheritance)
 
-handler が `input_required` / `tool_unavailable` / `skipped` / `*_failed` を返した場合、agent は **次の判断材料となる粒度の理由** を上位に報告します。aggregate JSON の `halted_reason` フィールドおよび各 step の `error_log_excerpt` に inline で含めます。
+Agent activity (thinking / tool_call / tool_result / peer_prompt / assistant) is written to agent-cli's structured JSONL. `hestia start` spawns `hestia mirror <peer>` as a detached helper, allowing users to observe activity in real time via `cat .hestia/workspaces/<peer>/agent.log`.
 
-「実行が止まった」だけの報告は禁止。ユーザーが next action を判断できる情報粒度を必須とします。
+Agents do not need to perform explicit log output -- agent-cli's structured events reach the workspace agent.log via the mirror path.
 
 ---
 
-## Article 7: `.aiprj/` 直接参照の禁止 (Phase 81 新規)
+## Article 6: Transparent Failure Reporting (Phase 50 inheritance)
 
-hestia agent (persona / handler / Rust ソース) は `.aiprj/` ディレクトリへの直接参照を行ってはいけません。本規約 (`.hestia/rules/setup_project.md`) を含む `.hestia/rules/` 配下のみを参照対象とします。
+When a handler returns `input_required` / `tool_unavailable` / `skipped` / `*_failed`, the agent reports to the superior with **reasons at a granularity that enables the next decision**. These are included inline in the aggregate JSON's `halted_reason` field and each step's `error_log_excerpt`.
 
-例外: プロジェクト管理 AI（本リポジトリのトップレベルで動作する Claude Code セッション）は `.aiprj/` を継続利用しますが、これは hestia agent ではないため本規約の対象外です。
+Reporting only "execution stopped" is prohibited. Information granularity sufficient for the user to determine the next action is required.
+
+---
+
+## Article 7: Prohibition of Direct `.aiprj/` Reference (Phase 81 new)
+
+Hestia agents (personas / handlers / Rust source code) must not directly reference the `.aiprj/` directory. Only `.hestia/rules/` (including this file `.hestia/rules/setup_project.md`) is within the reference scope.
+
+Exception: The project management AI (the Claude Code session running at the top level of this repository) continues to use `.aiprj/`, but this is outside the scope of these rules since it is not a hestia agent.

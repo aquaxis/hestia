@@ -1,23 +1,23 @@
-# pcb-conductor ビルドステップ
+# pcb-conductor Build Steps
 
-**対象 Conductor**: pcb-conductor
-**ソース**: 設計仕様書 §7.4（2085-2098行目付近）
+**Target Conductor**: pcb-conductor
+**Source**: Design specification §7.4 (around lines 2085-2098)
 
-## 9 ステップビルドフロー
+## 9-Step Build Flow
 
-| ステップ | 説明 | 主要コンポーネント |
-|---------|------|------------------|
-| `ParseRequirements` | 要件パース | RequirementsParser（自然言語 → CircuitRequirements） |
-| `GenerateBom` | BOM 生成 | BOM Generator（要件 → 部品リスト） |
-| `AnalyzeDatasheet` | データシート解析 | Datasheet Fetcher（各 IC のデータシートダウンロード・解析） |
-| `BuildKnowledgeGraph` | ナレッジグラフ構築 | Knowledge Graph Builder（データシート → KG） |
-| `SynthesizeSchematic` | 回路図合成（LLM コア） | Schematic Synthesizer（CoT 6 ステージ） |
-| `Verify` | 検証（DRC/ERC/KG 5段階） | Constraint Verifier（多段階検証エンジン） |
-| `PlaceComponents` | コンポーネント配置 | KiCad アダプター（`pcb export pos`） |
-| `RouteTraces` | 配線 | KiCad アダプター（`pcb export drill`）+ Freerouting 連携 |
-| `GenerateOutput` | 製造出力生成（ガーバー等） | KiCad アダプター（`pcb export gerbers`） |
+| Step | Description | Key Component |
+|------|-------------|---------------|
+| `ParseRequirements` | Parse requirements | RequirementsParser (natural language → CircuitRequirements) |
+| `GenerateBom` | Generate BOM | BOM Generator (requirements → component list) |
+| `AnalyzeDatasheet` | Analyze datasheets | Datasheet Fetcher (download and parse datasheets for each IC) |
+| `BuildKnowledgeGraph` | Build knowledge graph | Knowledge Graph Builder (datasheets → KG) |
+| `SynthesizeSchematic` | Schematic synthesis (LLM core) | Schematic Synthesizer (CoT 6 stages) |
+| `Verify` | Verify (DRC/ERC/KG 5 levels) | Constraint Verifier (multi-level verification engine) |
+| `PlaceComponents` | Place components | KiCad adapter (`pcb export pos`) |
+| `RouteTraces` | Route traces | KiCad adapter (`pcb export drill`) + Freerouting integration |
+| `GenerateOutput` | Generate manufacturing output (Gerber, etc.) | KiCad adapter (`pcb export gerbers`) |
 
-## 状態遷移
+## State Transitions
 
 ```
 ParseRequirements
@@ -32,12 +32,12 @@ AnalyzeDatasheet
 BuildKnowledgeGraph
        │
        ▼
-SynthesizeSchematic ← フィードバックループ（最大3回）
+SynthesizeSchematic ← Feedback loop (up to 3 attempts)
        │              ↑
        ▼              │
-Verify ───── 不合格 →─┘
+Verify ───── Fail →───┘
        │
-       │ 合格
+       │ Pass
        ▼
 PlaceComponents
        │
@@ -51,44 +51,44 @@ GenerateOutput
 Done
 ```
 
-## フィードバックループ
+## Feedback Loop
 
-Verify ステップで不合格の場合、SynthesizeSchematic ステップに戻り再生成を試行する（最大3回）。これにより AI 生成回路図の品質を反復的に向上させる。
+When the Verify step fails, it returns to the SynthesizeSchematic step and retries generation (up to 3 attempts). This iteratively improves the quality of AI-generated schematics.
 
-## 各ステップの詳細
+## Step Details
 
 ### ParseRequirements
 
-自然言語仕様入力を CircuitRequirements（概要、I/O、電源電圧、制約）に変換する。
+Converts natural language specification input into CircuitRequirements (summary, I/O, power voltage, constraints).
 
 ### GenerateBom
 
-CircuitRequirements から部品リスト（型番・数量・メーカー）を生成する。
+Generates a component list (part number, quantity, manufacturer) from CircuitRequirements.
 
 ### AnalyzeDatasheet
 
-各 IC のデータシートをダウンロード・解析し、ピン配置・電気特性・推奨回路を抽出する。rag-conductor（§13.7）のデータシート知識ベースを活用。
+Downloads and parses datasheets for each IC, extracting pin assignments, electrical characteristics, and recommended circuits. Leverages the datasheet knowledge base from rag-conductor (§13.7).
 
 ### BuildKnowledgeGraph
 
-データシートからナレッジグラフ（IC ノード + ピンノード + エッジ）を構築する。
+Constructs a knowledge graph (IC nodes + pin nodes + edges) from datasheets.
 
 ### SynthesizeSchematic
 
-LLM による Chain-of-Thought 6 ステージで回路図を合成する。
+Synthesizes schematics via LLM Chain-of-Thought 6 stages.
 
 ### Verify
 
-5 段階の多段階検証:
-- Level 1: 構文検証
+Five-level multi-stage verification:
+- Level 1: Syntax verification
 - Level 2: ERC
-- Level 3: KG ベース検証（ピン内）
-- Level 4: KG ベース検証（ピン間）
-- Level 5: トポロジー検証
+- Level 3: KG-based verification (intra-pin)
+- Level 4: KG-based verification (inter-pin)
+- Level 5: Topology verification
 
-## 関連ドキュメント
+## Related Documentation
 
-- [pcb/binary_spec.md](binary_spec.md) — hestia-pcb-cli バイナリ仕様
-- [pcb/error_types.md](error_types.md) — pcb-conductor エラーコード
-- [pcb/tool_adapter.md](tool_adapter.md) — AI 駆動回路図設計 / KiCad アダプター
-- [pcb/config_schema.md](config_schema.md) — pcb.toml スキーマ
+- [pcb/binary_spec.md](binary_spec.md) — hestia-pcb-cli binary specification
+- [pcb/error_types.md](error_types.md) — pcb-conductor error codes
+- [pcb/tool_adapter.md](tool_adapter.md) — AI-driven schematic design / KiCad adapter
+- [pcb/config_schema.md](config_schema.md) — pcb.toml schema

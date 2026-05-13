@@ -109,22 +109,23 @@ pub fn ensure_artifact_dir(category: &str, subpath: Option<&str>) -> Result<Path
 /// This keeps unit tests deterministic in environments without a running
 /// `agent-cli` process.
 ///
-/// # Phase 87 — H11 真因修正（agent-cli list 出力 parsing 修正）
+/// # Phase 87 — H11 root cause fix (agent-cli list output parsing fix)
 ///
-/// agent-cli list の実出力形式は `<ID>  <NAME>  <PROVIDER>  <MODEL>  <ROLE>  <SKILLS>`
-/// で、各行は **agent-id（`agent-01KXX...`）から始まり**、peer 名（NAME）は
-/// **2 列目**に現れる。Phase 55b の旧実装は peer 名が行頭にあると期待していた
-/// ため、`agent-cli list` で peer が確かに登録されていても false を返していた
-/// （Phase 83 で観測された ai-conductor 約 80% 肩代わりの真因 = H11）。
+/// The actual output format of `agent-cli list` is `<ID>  <NAME>  <PROVIDER>  <MODEL>  <ROLE>  <SKILLS>`,
+/// where each line starts with **agent-id (`agent-01KXX...`)** and the peer name (NAME) appears
+/// in the **2nd column**. The old Phase 55b implementation expected the peer name at the line start,
+/// so it returned false even when a peer was definitely registered in `agent-cli list`
+/// (the root cause of the ai-conductor ~80% takeover observed in Phase 83 = H11).
 ///
-/// 本修正で whitespace 区切りの 2 列目（NAME 列）を peer 名と比較するよう変更。
-/// ヘッダー行（`ID NAME PROVIDER ...`）は `peer_name == "NAME"` でない限り
-/// マッチしない（NAME という名の peer が存在することは事実上ない）。
-/// Phase 113 — engine binary 名を解決する。
+/// This fix changes the comparison to use the 2nd whitespace-separated column (NAME column)
+/// as the peer name. The header line (`ID NAME PROVIDER ...`) will not match unless
+/// `peer_name == "NAME"` (a peer named NAME effectively never exists).
 ///
-/// hestia バイナリは subprocess spawn 時に env 変数 `HESTIA_ENGINE_BINARY` を
-/// 設定するため、conductor-sdk はその値を read して engine 抽象化に追従する。
-/// 未設定時は `agent-cli`（後方互換）。
+/// Phase 113 — Resolve engine binary name.
+///
+/// The hestia binary sets env variable `HESTIA_ENGINE_BINARY` when spawning subprocesses,
+/// so conductor-sdk reads its value to follow the engine abstraction.
+/// Defaults to `agent-cli` when unset (backward compatible).
 pub(crate) fn engine_binary() -> String {
     std::env::var("HESTIA_ENGINE_BINARY").unwrap_or_else(|_| "agent-cli".to_string())
 }
@@ -166,20 +167,20 @@ pub fn agent_cli_peer_alive(peer_name: &str) -> bool {
     })
 }
 
-/// Phase 129 — `engine_binary() list` 出力の NAME 列を走査し、`prefix` で
-/// 始まる peer 数を返す。registry query 失敗時は 0（保守的な fallback で
-/// 過剰 cap 抑制を避ける）。
+/// Phase 129 — Scan the NAME column of `engine_binary() list` output and return
+/// the number of peers starting with `prefix`. Returns 0 on registry query failure
+/// (conservative fallback to avoid excessive cap suppression).
 ///
-/// 用途: rtl-conductor / apps-conductor が `dispatch_coders.v1` 呼出時に
-/// 既存 alive coder 数を取得し、`per_conductor_max` を **alive cap** として
-/// 強制する（複数 dispatch 呼出を跨いだ累積 alive を抑制）。
+/// Usage: rtl-conductor / apps-conductor obtain the current alive coder count when
+/// calling `dispatch_coders.v1` and enforce `per_conductor_max` as the **alive cap**
+/// (suppressing cumulative alive count across multiple dispatch calls).
 ///
-/// engine 抽象化を踏襲し、`engine_binary()` 経由で agent-cli /
-/// claude-cli-shim の双方で動作する。
+/// Follows engine abstraction and works with both agent-cli and claude-cli-shim
+/// via `engine_binary()`.
 ///
-/// テスト互換: 既存 `agent_cli_peer_alive` と同様、`HESTIA_PEER_ALIVE_FORCE`
-/// env が設定されていれば、その comma-separated list 内で `prefix` から
-/// 始まるエントリ数を返す（実 engine query をスキップ）。
+/// Test compatibility: Like the existing `agent_cli_peer_alive`, if `HESTIA_PEER_ALIVE_FORCE`
+/// env is set, returns the count of entries starting with `prefix` from its comma-separated
+/// list (skipping actual engine query).
 pub fn count_alive_peers_with_prefix(prefix: &str) -> usize {
     if let Ok(force) = std::env::var("HESTIA_PEER_ALIVE_FORCE") {
         return force
@@ -202,8 +203,8 @@ pub fn count_alive_peers_with_prefix(prefix: &str) -> usize {
     count_prefix_matches_in_listing(&stdout, prefix)
 }
 
-/// Phase 129 — `count_alive_peers_with_prefix` の純粋 parse 関数。
-/// 単体テスト可能化のため I/O から分離。
+/// Phase 129 — Pure parse function for `count_alive_peers_with_prefix`.
+/// Separated from I/O for unit testability.
 pub(crate) fn count_prefix_matches_in_listing(stdout: &str, prefix: &str) -> usize {
     stdout
         .lines()
@@ -216,38 +217,39 @@ pub(crate) fn count_prefix_matches_in_listing(stdout: &str, prefix: &str) -> usi
         .count()
 }
 
-/// Phase 84f / Phase 88 — strict subagent モード判定。
+/// Phase 84f / Phase 88 — Strict subagent mode determination.
 ///
-/// env `HESTIA_STRICT_SUBAGENT` の値で各 conductor の `<domain>.design.v1`
-/// handler の振る舞いを決定:
-/// - `=1` または `=true` または **未設定** → strict（`subagent_unavailable` + halt）
-/// - `=0` または `=false` → 非 strict（Phase 55b 互換 `phase55b-fallback`）
+/// Determine the behavior of each conductor's `<domain>.design.v1` handler
+/// based on the value of env `HESTIA_STRICT_SUBAGENT`:
+/// - `=1` or `=true` or **unset** → strict (`subagent_unavailable` + halt)
+/// - `=0` or `=false` → non-strict (Phase 55b compatible `phase55b-fallback`)
 ///
-/// **Phase 88 (1.7.0) で default を strict ON に変更**。Phase 83/84/87 で 3 度連続観察した
-/// 「fallback が steady-state 化 → sub-agent 階層が永久に 0% 機能」問題を構造的に解消。
-/// fallback への沈黙的依存（persona が fallback 経路を normal flow と誤学習する）は
-/// 明示的 opt-out（`HESTIA_STRICT_SUBAGENT=0`）が必要となる。
+/// **Changed default to strict ON in Phase 88 (1.7.0)**. This structurally resolves
+/// the issue observed three consecutive times in Phase 83/84/87 where
+/// "fallback became steady-state → sub-agent hierarchy permanently at 0% function".
+/// Silent dependency on fallback (persona mislearning the fallback path as normal flow)
+/// now requires explicit opt-out (`HESTIA_STRICT_SUBAGENT=0`).
 pub fn strict_subagent_enabled() -> bool {
     match std::env::var("HESTIA_STRICT_SUBAGENT") {
         Ok(v) if v == "0" || v.eq_ignore_ascii_case("false") => false,
-        // Phase 88: default → strict ON（旧 Phase 84f は default OFF だった）
+        // Phase 88: default → strict ON (old Phase 84f had default OFF)
         _ => true,
     }
 }
 
-/// Phase 84 — registry 登録確定までの待機。
+/// Phase 84 — Wait until registry registration is confirmed.
 ///
-/// `agent-cli list` を polling して `peer_name` が registry に登録されるまで
-/// 最大 `timeout_ms` ミリ秒待機する。返却:
-/// - `true`  ... 期限内に登録確認
-/// - `false` ... timeout または agent-cli 不在
+/// Polls `agent-cli list` and waits up to `timeout_ms` milliseconds for `peer_name`
+/// to be registered in the registry. Returns:
+/// - `true`  ... registration confirmed within deadline
+/// - `false` ... timeout or agent-cli not available
 ///
-/// 用途: `spawn_agent_cli` から子プロセス spawn 直後に呼出し、agent-cli が
-/// IPC ready になるまでブロックすることで、後続の design.v1 / dispatch から
-/// 即座に peer 委譲できる状態を保証する。
+/// Usage: Called from `spawn_agent_cli` immediately after spawning a child process,
+/// blocking until agent-cli becomes IPC ready, ensuring that subsequent design.v1 / dispatch
+/// calls can immediately delegate to the peer.
 ///
-/// Test override: `HESTIA_PEER_ALIVE_FORCE` が設定されている場合は
-/// `agent_cli_peer_alive` の判定をそのまま使用（テスト互換性）。
+/// Test override: If `HESTIA_PEER_ALIVE_FORCE` is set, use `agent_cli_peer_alive`'s
+/// determination directly (test compatibility).
 pub fn wait_for_registry(peer_name: &str, timeout_ms: u64) -> bool {
     let deadline = std::time::Instant::now()
         + std::time::Duration::from_millis(timeout_ms);
@@ -263,20 +265,21 @@ pub fn wait_for_registry(peer_name: &str, timeout_ms: u64) -> bool {
     }
 }
 
-/// Phase 80 — dispatch_*.v1 完了後に ai-reviewer を auto-spawn する汎用ヘルパ。
+/// Phase 80 — Generic helper to auto-spawn ai-reviewer after dispatch_*.v1 completion.
 ///
-/// 各 conductor の `<domain>.dispatch_*.v1` メソッド末尾から呼出可能で、ai-reviewer に
-/// 「dispatch スコープのレビューを依頼」する prompt を送信する fire-and-forget 経路。
+/// Can be called from the end of each conductor's `<domain>.dispatch_*.v1` method,
+/// sending a fire-and-forget prompt to ai-reviewer requesting
+/// "review of the dispatch scope".
 ///
-/// 引数:
-/// - `parent_conductor`: 親 conductor の peer 名（例 "rtl"）
-/// - `dispatch_method`: 実行された dispatch メソッド名（例 "rtl.dispatch_coders.v1"）
-/// - `spawned_count`: 動的 spawn された sub-agent 数
+/// Arguments:
+/// - `parent_conductor`: parent conductor's peer name (e.g. "rtl")
+/// - `dispatch_method`: executed dispatch method name (e.g. "rtl.dispatch_coders.v1")
+/// - `spawned_count`: number of dynamically spawned sub-agents
 ///
-/// 返却: dispatch 成功なら true、失敗（hestia 不在 / agent-cli 不在等）なら false。
-/// 失敗は warn ログのみで dispatch 全体に影響なし。
+/// Returns: true on dispatch success, false on failure (hestia not present / agent-cli not present, etc.).
+/// Failure only logs a warning and does not affect the overall dispatch.
 ///
-/// env override `HESTIA_DISABLE_AUTO_REVIEW=1` で無効化可能（Phase 77 と共通）。
+/// Can be disabled with env override `HESTIA_DISABLE_AUTO_REVIEW=1` (shared with Phase 77).
 pub fn auto_review_after_dispatch(
     parent_conductor: &str,
     dispatch_method: &str,
@@ -286,7 +289,7 @@ pub fn auto_review_after_dispatch(
         return false;
     }
     if spawned_count == 0 {
-        // spawn 0 件なら review する対象がないため skip
+        // If 0 spawns, there is nothing to review, so skip
         return false;
     }
     // hestia spawn-subagent --persona ai-reviewer --name ai-reviewer
@@ -296,7 +299,7 @@ pub fn auto_review_after_dispatch(
     if !matches!(&spawn_result, Ok(o) if o.status.success()) {
         return false;
     }
-    // Phase 102 — レビュー成果物は project root 直下に書き出す (`.aiprj/` は project 管理 AI 専有領域)。
+    // Phase 102 — Review artifacts are written directly under the project root (`.aiprj/` is the project-managed AI-exclusive area).
     let prompt = format!(
         "[{dispatch_method} auto-review] parent={parent_conductor} spawned_count={spawned_count}. Review the dynamic sub-agent outputs and write `<root>/REVIEW_REPORT_dispatch.md`."
     );
@@ -338,28 +341,29 @@ pub fn agent_cli_send(peer_name: &str, text: &str) -> Result<(), String> {
 
 /// Phase 93 — Spawn a domain conductor on-demand via `hestia start <domain>`.
 ///
-/// Phase 93 起動モデル再設計の一環: `hestia start` (引数なし) は ai-conductor のみを
-/// 起動し、domain conductor (rtl/fpga/asic/pcb/hal/apps/debug/rag) は ai-conductor が
-/// dispatch 時に本ヘルパで on-demand 起動する。
+/// Part of the Phase 93 startup model redesign: `hestia start` (no arguments)
+/// starts only the ai-conductor, and domain conductors
+/// (rtl/fpga/asic/pcb/hal/apps/debug/rag) are started on-demand by the
+/// ai-conductor at dispatch time using this helper.
 ///
-/// 動作:
-/// 1. `agent_cli_peer_alive(domain)` で生存確認
-/// 2. 不在なら `hestia start <domain>` を spawn（detached / fire-and-forget）
-/// 3. `wait_for_registry(domain, 5000ms)` で registry 登録完了を待機
-/// 4. 戻り値: 起動成功なら `Ok(())`、registry 登録失敗なら `Err`
+/// Behavior:
+/// 1. Check liveness with `agent_cli_peer_alive(domain)`
+/// 2. If absent, spawn `hestia start <domain>` (detached / fire-and-forget)
+/// 3. Wait for registry registration with `wait_for_registry(domain, 5000ms)`
+/// 4. Return value: `Ok(())` on successful startup, `Err` on registry registration failure
 ///
-/// 既に生存中の peer に対しては no-op（Ok 返却）。
+/// No-op for already-live peers (returns Ok).
 ///
-/// 環境変数:
-/// - `HESTIA_PEER_SEND_NOOP=1` — test 用に spawn を skip して Ok を返す
+/// Environment variables:
+/// - `HESTIA_PEER_SEND_NOOP=1` — skip spawn for testing and return Ok
 pub fn spawn_conductor_on_demand(domain: &str) -> Result<(), String> {
     if std::env::var("HESTIA_PEER_SEND_NOOP").as_deref() == Ok("1") {
         return Ok(());
     }
     if agent_cli_peer_alive(domain) {
-        return Ok(()); // 既に起動中
+        return Ok(()); // Already running
     }
-    // detached spawn: `hestia start <domain>` を background で起動
+    // detached spawn: start `hestia start <domain>` in background
     let result = std::process::Command::new("hestia")
         .arg("start")
         .arg(domain)
@@ -372,7 +376,7 @@ pub fn spawn_conductor_on_demand(domain: &str) -> Result<(), String> {
             "spawn_conductor_on_demand({domain}): hestia start spawn failed: {e}"
         ));
     }
-    // registry 登録完了を待機（最大 5 秒）
+    // Wait for registry registration (max 5 seconds)
     if !wait_for_registry(domain, 5000) {
         return Err(format!(
             "spawn_conductor_on_demand({domain}): registry timeout 5000ms"
@@ -429,9 +433,9 @@ pub fn find_project_file(category: &str, subpath: Option<&str>, name: &str) -> O
 mod tests {
     use super::*;
 
-    /// Phase 129 — `count_prefix_matches_in_listing` の純粋 parse テスト。
-    /// agent-cli / claude-cli-shim どちらの list 出力でも同じパース規約
-    /// （NAME 列 = 2 番目の whitespace token）で動作することを確認する。
+    /// Phase 129 — Pure parse test for `count_prefix_matches_in_listing`.
+    /// Verify that it works with the same parsing convention (NAME column = 2nd whitespace token)
+    /// for both agent-cli and claude-cli-shim list output.
     #[test]
     fn count_prefix_matches_zero_when_empty() {
         assert_eq!(count_prefix_matches_in_listing("", "rtl-coder-"), 0);
@@ -439,7 +443,7 @@ mod tests {
 
     #[test]
     fn count_prefix_matches_skips_header() {
-        // 通常 1 行目はヘッダで NAME 列に "NAME" 等が入る。prefix で絞れば 0。
+        // Typically the first line is a header with "NAME" etc. in the NAME column. Filtering by prefix yields 0.
         let stdout = "ID  NAME  PROVIDER\n";
         assert_eq!(count_prefix_matches_in_listing(stdout, "rtl-coder-"), 0);
     }
@@ -457,13 +461,13 @@ shim-fff-6                        apps-coder-uart            claude    claude-op
 ";
         assert_eq!(count_prefix_matches_in_listing(stdout, "rtl-coder-"), 2);
         assert_eq!(count_prefix_matches_in_listing(stdout, "apps-coder-"), 1);
-        assert_eq!(count_prefix_matches_in_listing(stdout, "ai-"), 1); // ai-designer のみ
+        assert_eq!(count_prefix_matches_in_listing(stdout, "ai-"), 1); // ai-designer only
         assert_eq!(count_prefix_matches_in_listing(stdout, "rtl"), 3); // rtl, rtl-coder-axi, rtl-coder-bootrom
     }
 
     #[test]
     fn count_prefix_matches_handles_agent_cli_format() {
-        // agent-cli の `agent-` prefix 形式でも parse できる
+        // Can also parse agent-cli's `agent-` prefix format
         let stdout = "\
 agent-01KQX72WJY3Z59RN77YXB9Z02P  rtl-coder-i2c   ollama  glm-5.1:cloud
 agent-01KQX72WT3DY2GKWSDDXA9QK0K  rtl-coder-spi   ollama  glm-5.1:cloud

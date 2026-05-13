@@ -1,11 +1,11 @@
-# asic-conductor ツールアダプター
+# asic-conductor Tool Adapter
 
-**対象 Conductor**: asic-conductor
-**ソース**: 設計仕様書 §6.4（1842-1865行目付近）, §6.6（1886-1893行目付近）, §6.7（1894-1919行目付近）
+**Target Conductor**: asic-conductor
+**Source**: Design specification §6.4 (around lines 1842-1865), §6.6 (around lines 1886-1893), §6.7 (around lines 1894-1919)
 
-## AsicToolAdapter トレイト
+## AsicToolAdapter Trait
 
-ASIC 固有のツールアダプターインターフェース。FPGA の VendorAdapter と異なり、物理設計ステップ（フロアプラン、CTS、寄生抽出等）を網羅する。
+ASIC-specific tool adapter interface. Unlike the FPGA VendorAdapter, it covers physical design steps (floorplan, CTS, parasitic extraction, etc.).
 
 ```rust
 #[async_trait]
@@ -13,7 +13,7 @@ pub trait AsicToolAdapter: Send + Sync + 'static {
     fn manifest(&self) -> &AdapterManifest;
     fn capabilities(&self) -> &AsicCapabilitySet;
 
-    // コアフロー（7ステップ）
+    // Core flow (7 steps)
     async fn synthesize(&self, ctx: &AsicBuildContext) -> Result<StepResult, AdapterError>;
     async fn floorplan(&self, ctx: &AsicBuildContext) -> Result<StepResult, AdapterError>;
     async fn place(&self, ctx: &AsicBuildContext) -> Result<StepResult, AdapterError>;
@@ -22,7 +22,7 @@ pub trait AsicToolAdapter: Send + Sync + 'static {
     async fn extract(&self, ctx: &AsicBuildContext) -> Result<StepResult, AdapterError>;
     async fn generate_gdsii(&self, ctx: &AsicBuildContext) -> Result<StepResult, AdapterError>;
 
-    // サインオフ
+    // Signoff
     async fn timing_signoff(&self, ctx: &AsicBuildContext) -> Result<TimingReport, AdapterError>;
     async fn drc(&self, ctx: &AsicBuildContext) -> Result<SignoffResult, AdapterError>;
     async fn lvs(&self, ctx: &AsicBuildContext) -> Result<SignoffResult, AdapterError>;
@@ -31,21 +31,21 @@ pub trait AsicToolAdapter: Send + Sync + 'static {
 
 ## AsicCapabilitySet
 
-AsicToolAdapter がサポートする機能セット。各ステップごとに対応可否を示す。
+The set of capabilities supported by AsicToolAdapter. Indicates support availability for each step.
 
-## AsicCapabilityRouter（ルーティング戦略）
+## AsicCapabilityRouter (Routing Strategy)
 
-アダプター選択のルーティング戦略。
+Routing strategy for adapter selection.
 
-| 戦略 | 説明 |
-|------|------|
-| `PreferOpenLane` | OpenLane2 が対応可能なステップは OpenLane2 に委譲する（既定） |
-| `StepOptimal` | 各ステップごとに最適なアダプターを個別選択する |
-| `Explicit` | asic.toml で明示的に指定されたアダプターを使用する |
+| Strategy | Description |
+|---------|------------|
+| `PreferOpenLane` | Delegate steps that OpenLane2 can handle to OpenLane2 (default) |
+| `StepOptimal` | Select the optimal adapter individually for each step |
+| `Explicit` | Use the adapter explicitly specified in asic.toml |
 
 ## SignoffChecker
 
-テープアウト前の最終検証を担当する。
+Responsible for final verification before tape-out.
 
 ### SignoffResult
 
@@ -59,40 +59,40 @@ pub struct SignoffResult {
 }
 
 pub struct Violation {
-    pub rule: String,              // 違反ルール名
-    pub description: String,       // 違反の説明
-    pub location: Option<GdsCoord>,// GDSII 座標
+    pub rule: String,              // Violation rule name
+    pub description: String,       // Violation description
+    pub location: Option<GdsCoord>,// GDSII coordinates
     pub severity: ViolationSeverity,
 }
 ```
 
-### サインオフツール
+### Signoff Tools
 
-| ツール | 検証種別 | 説明 |
-|--------|---------|------|
-| Magic | DRC | レイアウト DRC エンジン |
-| Netgen | LVS | SPICE レベルの回路比較 |
-| KLayout | DRC + LVS | スクリプタブルなレイアウト検証 |
+| Tool | Verification Type | Description |
+|-------|------------------|------------|
+| Magic | DRC | Layout DRC engine |
+| Netgen | LVS | SPICE-level circuit comparison |
+| KLayout | DRC + LVS | Scriptable layout verification |
 
-## 主要クレート構成
+## Main Crate Structure
 
 ```
 asic-conductor/
 ├── crates/
-│   ├── conductor-core/             # agent-cli persona・main.rs
-│   ├── project-model/              # asic.toml パーサー
-│   ├── plugin-registry/            # ツール登録・解決（AsicToolAdapter トレイト）
-│   ├── adapter-openlane/           # OpenLane 2 統合
-│   ├── adapter-yosys/              # Yosys 論理合成
-│   ├── adapter-openroad/           # OpenROAD 配置配線
-│   ├── pdk-manager/                # PDK 管理
-│   ├── podman-runtime/             # コンテナ管理
-│   └── conductor-sdk/              # 共有 SDK
+│   ├── conductor-core/             # agent-cli persona, main.rs
+│   ├── project-model/              # asic.toml parser
+│   ├── plugin-registry/            # Tool registration and resolution (AsicToolAdapter trait)
+│   ├── adapter-openlane/           # OpenLane 2 integration
+│   ├── adapter-yosys/              # Yosys logic synthesis
+│   ├── adapter-openroad/           # OpenROAD placement and routing
+│   ├── pdk-manager/                # PDK management
+│   ├── podman-runtime/             # Container management
+│   └── conductor-sdk/              # Shared SDK
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [asic/config_schema.md](config_schema.md) — asic.toml スキーマ
-- [asic/state_machines.md](state_machines.md) — ASIC ビルドステートマシン
-- [asic/error_types.md](error_types.md) — asic-conductor エラーコード
-- [../fpga/vendor_adapter.md](../fpga/vendor_adapter.md) — FPGA VendorAdapter トレイト
+- [asic/config_schema.md](config_schema.md) — asic.toml schema
+- [asic/state_machines.md](state_machines.md) — ASIC build state machine
+- [asic/error_types.md](error_types.md) — asic-conductor error codes
+- [../fpga/vendor_adapter.md](../fpga/vendor_adapter.md) — FPGA VendorAdapter trait

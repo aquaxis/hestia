@@ -1,10 +1,10 @@
-//! 構造化メッセージ仕様（Request / Response / Notification / Batch）
+//! Structured message specification (Request / Response / Notification / Batch)
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// メッセージ ID（msg_{ISO8601 timestamp}_{random}）
+/// Message ID (msg_{ISO8601 timestamp}_{random})
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MessageId(String);
 
@@ -32,7 +32,7 @@ impl std::fmt::Display for MessageId {
     }
 }
 
-/// トレース ID（ワークフロー横断の追跡用）
+/// Trace ID (for cross-workflow tracking)
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TraceId(String);
 
@@ -52,7 +52,7 @@ impl Default for TraceId {
     }
 }
 
-/// メソッド名前空間: {domain}.{method_group}.{version_prefix}.{action}
+/// Method namespace: {domain}.{method_group}.{version_prefix}.{action}
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MethodName(String);
 
@@ -61,7 +61,7 @@ impl MethodName {
         Self(format!("{domain}.{group}.{version}.{action}"))
     }
 
-    /// 簡略形: {domain}.{action}（v1 既定）
+    /// Shorthand: {domain}.{action} (v1 default)
     pub fn simple(domain: &str, action: &str) -> Self {
         Self(format!("{domain}.{action}"))
     }
@@ -88,14 +88,14 @@ impl std::str::FromStr for MethodName {
     }
 }
 
-/// API バージョン
+/// API version
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ApiVersion {
     pub major: u32,
     pub minor: u32,
 }
 
-/// 廃止予告
+/// Deprecation notice
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeprecationNotice {
     pub deprecated_since: ApiVersion,
@@ -103,20 +103,20 @@ pub struct DeprecationNotice {
     pub replacement: String,
 }
 
-/// 構造化リクエスト（hestia 内部のドメイン要求表現）
+/// Structured request (hestia internal domain request representation)
 ///
-/// agent-cli の IPC ワイヤ表現（`AgentCliPrompt`）の `text` に JSON シリアライズして埋め込む。
-/// `kind`/`from` フィールドはレガシー互換のため温存しているが、agent-cli 経由での送信時は
-/// 外側の `AgentCliPrompt` が wire レベルの `kind`/`from` を担う。
+/// Serialized as JSON and embedded in the `text` field of agent-cli's IPC wire format (`AgentCliPrompt`).
+/// The `kind`/`from` fields are retained for legacy compatibility, but when sending via agent-cli,
+/// the outer `AgentCliPrompt` handles wire-level `kind`/`from`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
-    /// メッセージ種別（レガシー互換）: prompt | ack | error | ping | pong
+    /// Message type (legacy compatibility): prompt | ack | error | ping | pong
     #[serde(default = "default_kind")]
     pub kind: String,
-    /// 送信元 ID（レガシー互換）
+    /// Sender ID (legacy compatibility)
     #[serde(default = "default_from")]
     pub from: String,
-    /// メソッド名（hestia ドメイン要求のディスパッチキー）
+    /// Method name (hestia domain request dispatch key)
     pub method: String,
     #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
     pub params: serde_json::Value,
@@ -133,28 +133,27 @@ fn default_from() -> String {
     "cli".to_string()
 }
 
-/// agent-cli IPC ワイヤフォーマット（`IpcMessage::Prompt` 互換）
+/// agent-cli IPC wire format (compatible with `IpcMessage::Prompt`)
 ///
-/// 出典: `agent-cli/src/ipc/mod.rs` の `IpcMessage::Prompt`。
-/// `serde(tag = "kind", rename_all = "snake_case")` による外部タグ enum なので、
-/// `kind = "prompt"` を必ず先頭フィールドとして含めれば agent-cli 側の
-/// `serde_json::from_str::<IpcMessage>` で `Prompt { from, from_name, text }` に
-/// デシリアライズされる。
+/// Source: `IpcMessage::Prompt` in `agent-cli/src/ipc/mod.rs`.
+/// Since it's an externally-tagged enum via `serde(tag = "kind", rename_all = "snake_case")`,
+/// including `kind = "prompt"` as the first field will cause agent-cli's
+/// `serde_json::from_str::<IpcMessage>` to deserialize it as `Prompt { from, from_name, text }`.
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentCliPrompt {
-    /// 必ず "prompt"
+    /// Must be "prompt"
     pub kind: &'static str,
-    /// 送信元 agent-id（agent-cli の `AgentId(pub String)` に直接マップ。非空文字列のみ要求）
+    /// Sender agent-id (maps directly to agent-cli's `AgentId(pub String)`. Requires non-empty string)
     pub from: String,
-    /// 表示名（任意）
+    /// Display name (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from_name: Option<String>,
-    /// 本文（自然言語または JSON シリアライズ済みドメインメッセージ）
+    /// Body (natural language or JSON-serialized domain message)
     pub text: String,
 }
 
 impl AgentCliPrompt {
-    /// 新しい `AgentCliPrompt` を構築する
+    /// Construct a new `AgentCliPrompt`
     pub fn new(from: impl Into<String>, text: impl Into<String>) -> Self {
         Self {
             kind: "prompt",
@@ -164,7 +163,7 @@ impl AgentCliPrompt {
         }
     }
 
-    /// 表示名付きで構築する
+    /// Construct with display name
     pub fn with_name(from: impl Into<String>, from_name: impl Into<String>, text: impl Into<String>) -> Self {
         Self {
             kind: "prompt",
@@ -175,7 +174,7 @@ impl AgentCliPrompt {
     }
 }
 
-/// 成功応答
+/// Success response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuccessResponse {
     pub result: serde_json::Value,
@@ -184,7 +183,7 @@ pub struct SuccessResponse {
     pub trace_id: Option<TraceId>,
 }
 
-/// エラー応答
+/// Error response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorResultResponse {
     pub error: crate::error::ErrorResponse,
@@ -193,7 +192,7 @@ pub struct ErrorResultResponse {
     pub trace_id: Option<TraceId>,
 }
 
-/// 通知（id なし、応答なし）
+/// Notification (no id, no response)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Notification {
     pub method: String,
@@ -203,7 +202,7 @@ pub struct Notification {
     pub trace_id: Option<TraceId>,
 }
 
-/// 応答（成功またはエラー）
+/// Response (success or error)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Response {
@@ -211,11 +210,11 @@ pub enum Response {
     Error(ErrorResultResponse),
 }
 
-/// バッチリクエスト
+/// Batch request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchRequest(pub Vec<Request>);
 
-/// ペイロード（構造化 JSON または自然言語テキスト）
+/// Payload (structured JSON or natural language text)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Payload {
@@ -224,7 +223,7 @@ pub enum Payload {
 }
 
 impl Payload {
-    /// ペイロードが構造化 JSON か自然言語かを判定
+    /// Determine whether the payload is structured JSON or natural language
     pub fn is_structured(&self) -> bool {
         matches!(self, Self::Structured(_))
     }

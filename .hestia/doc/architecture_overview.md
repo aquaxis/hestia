@@ -1,190 +1,185 @@
-# アーキテクチャ概要（Architecture Overview）
+# Architecture Overview
 
-**対象領域**: Hestia 全体
-**ソース**: 設計仕様書 §1（設計思想・8原則）, §2（5層+9 Conductor アーキテクチャ）, §1.4（技術スタック）, §1.7（実行環境）
-
----
-
-## 1. 設計思想と根本的課題
-
-ハードウェア開発（FPGA・ASIC・PCB）には複数のベンダーツールが並存している。FPGA だけでも AMD Vivado、Intel Quartus Prime、Efinix Efinity、Lattice Radiant がそれぞれ独自のプロジェクト形式・制約記述・CLI インターフェースを持つ。ASIC では OpenLane 2 / Yosys / OpenROAD / Magic といった OSS ツールチェーンを組み合わせる必要があり、PCB では KiCad / SKiDL / Freerouting が独立して存在する。
-
-これらの異種ツールを扱うプロジェクトでは膨大なコンテキストスイッチコストが発生する。さらに各ツールは年1〜2回のメジャーリリースがあり、バージョンアップのたびにスクリプト・ログパーサー・制約形式の修正が必要になる。Hestia はこれらの課題を AI を活用した統合環境で解決する。
+**Scope**: Hestia overall
+**Source**: Design specification §1 (Design philosophy and 8 principles), §2 (5-layer + 9 Conductor architecture), §1.4 (Technology stack), §1.7 (Execution environment)
 
 ---
 
-## 2. 設計原則（8原則）
+## 1. Design Philosophy and Fundamental Challenges
 
-### 原則1: 置き換えではなく抽象化
+Hardware development (FPGA, ASIC, PCB) involves multiple vendor tools coexisting. For FPGAs alone, AMD Vivado, Intel Quartus Prime, Efinix Efinity, and Lattice Radiant each have their own project formats, constraint descriptions, and CLI interfaces. For ASICs, the OpenLane 2 / Yosys / OpenROAD / Magic OSS toolchain must be combined, and for PCBs, KiCad / SKiDL / Freerouting exist independently.
 
-ベンダーツールは FPGA ビットストリーム生成や ASIC GDSII 出力の認定チェーンであり、完全置換は不可能。「統一インターフェースでオーケストレートするレイヤー」を構築する。各ツールの固有機能は VendorAdapter / ToolAdapter トレイトを通じて抽象化し、上位層からは同一の API で操作可能とする。
-
-### 原則2: ゼロ変更での拡張
-
-新しいベンダーツールを追加する際にコアコードを一切変更しない。`adapter.toml` を書くだけでアダプターを追加できる。Script アダプター戦略として、TOML ファイル内にコマンド、ログパースルール、レポート抽出ルールを正規表現で定義する。
-
-### 原則3: 持続可能な維持管理
-
-ツールのバージョンアップへの対応を AI エージェント（WatcherAgent → ProbeAgent → PatcherAgent → ValidatorAgent）が自動化し、人間の維持管理コストを最小化する。
-
-### 原則4: セキュリティ
-
-ツール実行はコンテナ実行とローカル実行のいずれも選択可能。コンテナ実行時は Podman rootless により非特権実行、`--network=none` でネットワーク隔離、`--security-opt=no-new-privileges` で権限昇格を防止する。
-
-### 原則5: 再現性
-
-fpga.lock / asic.lock によるビルドの完全再現を保証。コンテナ実行ではコンテナイメージのハッシュ固定により、ローカル実行ではツールバージョン・実行パス・環境変数の lock 記録により同一結果を確保。
-
-### 原則6: メーカー非依存
-
-OSS ツールを優先し、プラグインシステムにより任意のベンダーツールを統合可能。特定メーカーへのロックインを排除。
-
-### 原則7: AI 活用
-
-仕様書駆動開発、生成 AI の Tool Use 機能を活用し、設計プロセス全体を AI で支援。
-
-### 原則8: 統一インターフェース
-
-全 conductor 間およびフロントエンド ↔ ai-conductor の通信を agent-cli 互換 IPC に統一する。各 conductor 自身が agent-cli 互換 engine（`agent-cli` または Phase 113 で追加された `claude-cli-shim` wrapper）プロセスとして起動された AI エージェントであり、フロントエンドも agent-cli の peer として参加する。Engine は `.hestia/config.toml` の `[engine]` セクションで切替可能（[backend_switching.md](common/backend_switching.md) 参照）。
+Projects dealing with these heterogeneous tools incur enormous context-switching costs. Furthermore, each tool has 1-2 major releases per year, and each version upgrade requires modifications to scripts, log parsers, and constraint formats. Hestia solves these challenges through an AI-powered integrated environment.
 
 ---
 
-## 3. 5層 + 9 Conductor アーキテクチャ
+## 2. Design Principles (8 Principles)
+
+### Principle 1: Abstraction, Not Replacement
+
+Vendor tools are certified chains for FPGA bitstream generation and ASIC GDSII output — complete replacement is impossible. We build "a layer that orchestrates via a unified interface." Each tool's unique functionality is abstracted through VendorAdapter / ToolAdapter traits, making it operable via the same API from upper layers.
+
+### Principle 2: Zero-Modification Extension
+
+Adding a new vendor tool requires no changes to core code whatsoever. An adapter can be added simply by writing `adapter.toml`. As a Script adapter strategy, commands, log parsing rules, and report extraction rules are defined as regular expressions within the TOML file.
+
+### Principle 3: Sustainable Maintenance
+
+AI agents (WatcherAgent → ProbeAgent → PatcherAgent → ValidatorAgent) automate the response to tool version upgrades, minimizing human maintenance costs.
+
+### Principle 4: Security
+
+Tool execution can be selected as either container execution or local execution. Container execution uses Podman rootless for unprivileged execution, `--network=none` for network isolation, and `--security-opt=no-new-privileges` to prevent privilege escalation.
+
+### Principle 5: Reproducibility
+
+Complete build reproducibility is guaranteed by fpga.lock / asic.lock. Container execution achieves this through container image hash pinning; local execution through lock recording of tool versions, execution paths, and environment variables.
+
+### Principle 6: Vendor Independence
+
+OSS tools are prioritized, and any vendor tool can be integrated via the plugin system. Lock-in to specific vendors is eliminated.
+
+### Principle 7: AI Utilization
+
+Leverages spec-driven development and generative AI's Tool Use functionality to support the entire design process with AI.
+
+### Principle 8: Unified Interface
+
+All communication between conductors and between the frontend ↔ ai-conductor is unified under agent-cli compatible IPC. Each conductor itself is an AI agent launched as an agent-cli compatible engine (`agent-cli` or the `claude-cli-shim` wrapper added in Phase 113) process, and the frontend also joins as an agent-cli peer. The engine can be switched in the `[engine]` section of `.hestia/config.toml` (see [backend_switching.md](common/backend_switching.md)).
+
+---
+
+## 3. 5-Layer + 9 Conductor Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        フロントエンド層                               │
-│    VSCode 拡張 (TypeScript)  /  Tauri IDE (Rust + React)             │
+│                        Frontend Layer                                │
+│    VSCode Extension (TypeScript)  /  Tauri IDE (Rust + React)       │
 │    CLI: hestia + {ai,rtl,fpga,asic,pcb,hal,apps,debug,rag}-cli │
 └─────────────────────────┬───────────────────────────────────────────┘
                           │ agent-cli IPC (peer "ai")
 ┌─────────────────────────▼───────────────────────────────────────────┐
-│                   メタオーケストレーション層                           │
-│    ai-conductor (全 conductor 統括 + 持続可能アップグレード)           │
+│                   Meta-Orchestration Layer                           │
+│    ai-conductor (orchestrates all conductors + sustainable upgrade) │
 │    ┌──────────────────────────────────────────────────────────────┐ │
-│    │  container-manager (全 conductor のコンテナライフサイクル管理)  │ │
+│    │  container-manager (container lifecycle management for all)   │ │
 │    └──────────────────────────────────────────────────────────────┘ │
 └───┬──────────┬──────────┬──────────┬──────────┬────────────────────┘
-    │          │          │          │          │  agent-cli IPC (peer ごと)
+    │          │          │          │          │  agent-cli IPC (per peer)
 ┌───▼───┐  ┌──▼───┐  ┌──▼───┐  ┌──▼───┐  ┌──▼───┐
-│ fpga  │  │ asic │  │ pcb  │  │debug │  │ rag  │   Conductor 層
-│ cond. │  │ cond.│  │ cond.│  │cond. │  │cond. │   (各領域専用オーケストレーター)
+│ fpga  │  │ asic │  │ pcb  │  │debug │  │ rag  │   Conductor Layer
+│ cond. │  │ cond.│  │ cond.│  │cond. │  │cond. │   (domain-specific orchestrators)
 │       │  │      │  │      │  │      │  │      │
 │Vivado │  │Open  │  │KiCad │  │JTAG  │  │Chroma│
 │Quartus│  │Lane 2│  │SKiDL │  │SWD   │  │Qdrant│
-│Efinity│  │Yosys │  │AI 設計│  │ILA   │  │Ollama│
-│nextpnr│  │Open  │  │Free- │  │Signal│  │Embed │
-│Radiant│  │ROAD  │  │routing│  │Tap   │  │ ing  │
-│Gowin  │  │Magic │  │      │  │sigrok│  │      │
+│Efinity│  │Yosys │  │AI    │  │ILA   │  │Ollama│
+│nextpnr│  │Open  │  │design│  │Signal│  │Embed │
+│Radiant│  │ROAD  │  │Free- │  │Tap   │  │ ing  │
+│Gowin  │  │Magic │  │routing│  │sigrok│  │      │
 └───┬───┘  └──┬───┘  └──┬───┘  └──┬───┘  └──┬───┘
     │         │         │         │         │
 ┌───▼─────────▼─────────▼─────────▼─────────▼──────────────────────────┐
-│         ツール実行層 (コンテナ実行 [Podman rootless] / ローカル実行)     │
+│         Tool Execution Layer (container [Podman rootless] / local)   │
 │    fpga/vivado:2025.2  │  asic/openlane:latest  │  pcb/kicad:latest   │
 │    fpga/quartus:25.1   │  asic/magic:latest     │  debug/tools:latest │
-│    fpga/efinity:2025.2 │  fpga/oss:latest       │  (debug は local 専用)│
+│    fpga/efinity:2025.2 │  fpga/oss:latest       │  (debug: local only)│
 │    fpga/radiant:2024.2 │                        │                     │
 └─────────────────────────┬───────────────────────────────────────────-┘
                           │
 ┌─────────────────────────▼───────────────────────────────────────────┐
-│                      共有サービス層（Layer 5）                          │
-│    HDL LSP Broker (svls/vhdl_ls/verilog-ams-ls)                      │
-│    WASM 波形ビューア (VCD/FST/GHW/EVCD)                              │
-│    Constraint Bridge (XDC ⇔ SDC ⇔ PCF ⇔ Efinity XML)                │
-│    IP Manager (OSS / VendorProprietary)                              │
-│    CI/CD API (GitHub Actions / GitLab CI / Local)                    │
-│    Observability (Prometheus + tracing + OpenTelemetry)              │
+│                      Shared Services Layer (Layer 5)                 │
+│    HDL LSP Broker (svls/vhdl_ls/verilog-ams-ls)                    │
+│    WASM Waveform Viewer (VCD/FST/GHW/EVCD)                         │
+│    Constraint Bridge (XDC ⇔ SDC ⇔ PCF ⇔ Efinity XML)              │
+│    IP Manager (OSS / VendorProprietary)                             │
+│    CI/CD API (GitHub Actions / GitLab CI / Local)                  │
+│    Observability (Prometheus + tracing + OpenTelemetry)             │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 5層の責務
+### 5-Layer Responsibilities
 
-| 層 | 責務 | 主要コンポーネント |
+| Layer | Responsibility | Key Components |
 |----|------|------------------|
-| フロントエンド層 | ユーザーインタラクション、エディタ統合、CLI 体験 | VSCode 拡張 / Tauri IDE / `hestia` 統合 CLI / 各 conductor 個別 CLI |
-| メタオーケストレーション層 | 全 conductor 統括、コンテナライフサイクル管理 | ai-conductor / container-manager |
-| Conductor 層 | 各設計領域の専用オーケストレーション、ツール抽象化、ビルドステートマシン | rtl / fpga / asic / pcb / hal / apps / debug / rag conductor |
-| ツール実行層 | 各ベンダーツールの実行（コンテナまたはローカル選択可）、再現性保証、セキュリティ境界 | Podman rootless 対応コンテナイメージ 8 種 + ローカルインストール対応 |
-| 共有サービス層 | 層横断機能 6 種（LSP / 波形 / 制約変換 / IP / CI/CD / Observability）| HDL LSP Broker / WASM 波形ビューア / Constraint Bridge / IP Manager / CI/CD API / Observability |
+| Frontend Layer | User interaction, editor integration, CLI experience | VSCode Extension / Tauri IDE / `hestia` unified CLI / individual conductor CLIs |
+| Meta-Orchestration Layer | Orchestrates all conductors, container lifecycle management | ai-conductor / container-manager |
+| Conductor Layer | Domain-specific orchestration, tool abstraction, build state machines | rtl / fpga / asic / pcb / hal / apps / debug / rag conductors |
+| Tool Execution Layer | Vendor tool execution (container or local), reproducibility guarantee, security boundary | 8 Podman rootless container images + local installation support |
+| Shared Services Layer | 6 cross-cutting services (LSP / Waveform / Constraint conversion / IP / CI/CD / Observability) | HDL LSP Broker / WASM Waveform Viewer / Constraint Bridge / IP Manager / CI/CD API / Observability |
 
 ---
 
-## 4. 9 Conductor の役割
+## 4. 9 Conductor Roles
 
-| Conductor | 役割 | 対象ツール / 機能 | 実行モード |
+| Conductor | Role | Target Tools / Functions | Execution Mode |
 |-----------|------|------------------|-----------|
-| ai-conductor | メタオーケストレーター（全 conductor 統括／人間との唯一の入口） | Skill / Workflow / Spec-Driven / Backend Switching | コンテナ + ローカル |
-| rtl-conductor | RTL 設計フローオーケストレーション（HDL Lint / Sim / Formal / Transpile）| Verilator, Verible, iverilog, GHDL, SymbiYosys, cocotb, Chisel/SpinalHSD/Amaranth bridges | コンテナ + ローカル |
-| fpga-conductor | FPGA 設計フローオーケストレーション | Vivado, Quartus, Efinity, Radiant, Gowin, Yosys+nextpnr, OSS | コンテナ + ローカル |
-| asic-conductor | ASIC 設計フローオーケストレーション（13 ステップ RTL-to-GDSII） | OpenLane 2, Yosys, OpenROAD, OpenSTA, TritonCTS, TritonRoute, Magic, Netgen, KLayout, Ngspice, SymbiYosys | コンテナ + ローカル |
-| pcb-conductor | PCB 設計フローオーケストレーション + AI 回路図生成 | KiCad 9, SKiDL, Freerouting, kicad-mcp-python | コンテナ + ローカル |
-| hal-conductor | Hardware Abstraction Layer 生成（レジスタマップ / 多言語ドライバ）| peakrdl, peakrdl-rust, ipyxact, csr2regs, cmsis-svd-gen, svd2rust | コンテナ + ローカル |
-| apps-conductor | アプリケーションソフトウェア（FW / RTOS / ベアメタル）開発 | arm-gcc, riscv-gcc, cargo-embed, west-zephyr, freertos-builder, embassy-builder, qemu-system, probe-rs | コンテナ + ローカル |
-| debug-conductor | デバッグ環境オーケストレーション | OpenOCD/pyOCD/JTAG/SWD, ILA/SignalTap/Reveal, sigrok/PulseView, WASM 波形ビューア | **ローカル専用** |
-| rag-conductor | 知識基盤の構築・管理・検索（ai-conductor から分離） | Chroma/Qdrant, Ollama (nomic-embed-text), PyPDF/pdfplumber, Tesseract OCR, Camelot, trafilatura | コンテナ + ローカル |
+| ai-conductor | Meta-orchestrator (orchestrates all conductors / sole entry point for humans) | Skill / Workflow / Spec-Driven / Backend Switching | Container + Local |
+| rtl-conductor | RTL design flow orchestration (HDL Lint / Sim / Formal / Transpile) | Verilator, Verible, iverilog, GHDL, SymbiYosys, cocotb, Chisel/SpinalHSD/Amaranth bridges | Container + Local |
+| fpga-conductor | FPGA design flow orchestration | Vivado, Quartus, Efinity, Radiant, Gowin, Yosys+nextpnr, OSS | Container + Local |
+| asic-conductor | ASIC design flow orchestration (13-step RTL-to-GDSII) | OpenLane 2, Yosys, OpenROAD, OpenSTA, TritonCTS, TritonRoute, Magic, Netgen, KLayout, Ngspice, SymbiYosys | Container + Local |
+| pcb-conductor | PCB design flow orchestration + AI schematic generation | KiCad 9, SKiDL, Freerouting, kicad-mcp-python | Container + Local |
+| hal-conductor | Hardware Abstraction Layer generation (register maps / multi-language drivers) | peakrdl, peakrdl-rust, ipyxact, csr2regs, cmsis-svd-gen, svd2rust | Container + Local |
+| apps-conductor | Application software (FW / RTOS / bare-metal) development | arm-gcc, riscv-gcc, cargo-embed, west-zephyr, freertos-builder, embassy-builder, qemu-system, probe-rs | Container + Local |
+| debug-conductor | Debug environment orchestration | OpenOCD/pyOCD/JTAG/SWD, ILA/SignalTap/Reveal, sigrok/PulseView, WASM waveform viewer | **Local only** |
+| rag-conductor | Knowledge base construction, management, and search (separated from ai-conductor) | Chroma/Qdrant, Ollama (nomic-embed-text), PyPDF/pdfplumber, Tesseract OCR, Camelot, trafilatura | Container + Local |
 
-### Conductor 共通アーキテクチャパターン
+### Conductor Common Architecture Patterns
 
-各 conductor は同一アーキテクチャパターンを踏襲する:
+Each conductor follows the same architecture pattern:
 
-- Rust ワークスペース構成（`.hestia/tools/` 配下、`Cargo.toml` resolver = 2）
-- ToolAdapter / VendorAdapter による抽象化
-- Capability ベースのアダプター登録・解決エンジン（AdapterRegistry）
-- adapter.toml 宣言方式による拡張（Rust コード変更不要）
-- Podman rootless コンテナ統合（debug-conductor を除く）
-- agent-cli ネイティブ IPC による通信（Phase 113 以降は `[engine] type` で `agent_cli` / `claude_cli_shim` を選択可）
-- CLI クライアントバイナリ（`hestia-{conductor}-cli`）
-- conductor-sdk / adapter-core 等の共通クレート利用
-- **サブエージェント並列度制御**（Phase 126）: `conductor_sdk::concurrency::ConductorLimiter`
-  による 3 段階階層 Semaphore (global / ai-dispatch / per-conductor) + acquire timeout
-  で spawn cap を共通化。取得順序固定 + timeout + reviewer 予約 slot で Coffman 4 条件の
-  hold-and-wait と circular wait を破る。`.hestia/config.toml` `[concurrency]` で調整可
-- **version-TAG 同期**（Phase 127）: `clis/hestia/build.rs` が `git describe` 結果を
-  build 時に env 注入。`hestia --version` は GitHub TAG と自動同期し、git 不在環境では
-  `[workspace.package] version` にフォールバック
+- Rust workspace structure (under `.hestia/tools/`, `Cargo.toml` resolver = 2)
+- ToolAdapter / VendorAdapter-based abstraction
+- Capability-based adapter registration and resolution engine (AdapterRegistry)
+- `adapter.toml` declarative extension (no Rust code changes required)
+- Podman rootless container integration (except debug-conductor)
+- agent-cli native IPC communication (Phase 113+ allows selecting `agent_cli` / `claude_cli_shim` via `[engine] type`)
+- CLI client binary (`hestia-{conductor}-cli`)
+- Shared crates: conductor-sdk / adapter-core etc.
+- **Sub-agent concurrency control** (Phase 126): 3-tier hierarchical Semaphore (global / ai-dispatch / per-conductor) + acquire timeout via `conductor_sdk::concurrency::ConductorLimiter` to unify spawn caps. Fixed acquisition order + timeout + reviewer reserved slot breaks hold-and-wait and circular wait from Coffman's 4 conditions. Adjustable via `.hestia/config.toml` `[concurrency]`
+- **version-TAG synchronization** (Phase 127): `clis/hestia/build.rs` injects `git describe` output as an env variable at build time. `hestia --version` auto-syncs with GitHub TAG, falling back to `[workspace.package] version` when git is unavailable
 
 ---
 
-## 5. 技術スタック
+## 5. Technology Stack
 
-| 層 | 技術 | 選定理由 |
+| Layer | Technology | Selection Reason |
 |---|---|---|
-| コアデーモン | Rust | メモリ安全・非同期処理（tokio）・クロスプラットフォームバイナリ・高速実行 |
-| フロントエンド | TypeScript (VSCode 拡張 / Tauri) | エコシステム成熟・Monaco Editor 統合・デスクトップアプリ対応 |
-| コンテナ | Podman (rootless) | デーモンレス・rootless で非特権実行・SELinux 対応 |
-| AI エージェント | TypeScript + Anthropic SDK | Claude Sonnet の Tool Use 機能によるエージェントループ |
-| 永続化 | sled (KV) + SQLite | Rust ネイティブ・軽量・組み込み可能・互換性マトリクス DB |
-| ASIC フロー | Python (OpenLane 2) | OpenLane 2 の Python ベース Step-based Execution |
-| PCB 設計 | Python (SKiDL) | LLM との親和性が高い回路記述言語 |
-| PCB AI | TypeScript + LangChain | LLM フレームワークによる回路図合成 |
+| Core daemon | Rust | Memory safety, async processing (tokio), cross-platform binary, fast execution |
+| Frontend | TypeScript (VSCode Extension / Tauri) | Mature ecosystem, Monaco Editor integration, desktop app support |
+| Container | Podman (rootless) | Daemonless, rootless unprivileged execution, SELinux support |
+| AI agent | TypeScript + Anthropic SDK | Agent loop via Claude Sonnet's Tool Use functionality |
+| Persistence | sled (KV) + SQLite | Rust-native, lightweight, embeddable, compatibility matrix DB |
+| ASIC flow | Python (OpenLane 2) | OpenLane 2's Python-based Step-based Execution |
+| PCB design | Python (SKiDL) | Circuit description language with high LLM compatibility |
+| PCB AI | TypeScript + LangChain | Circuit schematic synthesis via LLM framework |
 
 ---
 
-## 6. 実行環境
+## 6. Execution Environment
 
-HESTIA は **Linux** を実行環境とする。
+HESTIA targets **Linux** as its execution environment.
 
-| 区分 | 要件 |
+| Category | Requirement |
 |------|------|
-| ホスト OS | Linux（x86_64 カーネル 5.x 以降を推奨）|
-| 推奨ディストリビューション | Ubuntu 22.04 LTS 以降 / RHEL 8 以降 / Debian 12 以降 |
-| 必須カーネル機能 | user namespace（rootless Podman 用）/ cgroup v2 / SELinux or AppArmor / Unix Domain Socket |
-| 非対応 OS | Windows / macOS（ホスト OS としてはサポート対象外）|
-| 開発環境（補助的許容）| Windows + WSL2 は開発補助として利用可能。ただし CI / 本番は Linux ネイティブ |
+| Host OS | Linux (x86_64 kernel 5.x or later recommended) |
+| Recommended distributions | Ubuntu 22.04 LTS or later / RHEL 8 or later / Debian 12 or later |
+| Required kernel features | user namespace (for rootless Podman) / cgroup v2 / SELinux or AppArmor / Unix Domain Socket |
+| Unsupported OS | Windows / macOS (not supported as host OS) |
+| Development environment (auxiliary) | Windows + WSL2 is acceptable for development assistance. However, CI / production must be native Linux |
 
-Linux を前提とする具体的な依存要素:
+Linux-specific dependencies:
 
-- **コンテナランタイム**: Podman rootless は Linux の user namespace / cgroup / SELinux に依存
-- **IPC**: agent-cli ネイティブ IPC は POSIX/Linux のプリミティブ
-- **セキュリティ**: SELinux label は Linux Security Module の機能
-- **非同期ランタイム**: tokio は Linux epoll を主要バックエンドとして動作
-- **コンテナイメージ**: 8 種すべてが Linux ベース
+- **Container runtime**: Podman rootless depends on Linux user namespace / cgroup / SELinux
+- **IPC**: agent-cli native IPC uses POSIX/Linux primitives
+- **Security**: SELinux labels are a Linux Security Module feature
+- **Async runtime**: tokio uses Linux epoll as its primary backend
+- **Container images**: All 8 are Linux-based
 
 ---
 
-## 関連ドキュメント
+## Related Documentation
 
-- [glossary.md](glossary.md) — 用語集
-- [agent_communication.md](agent_communication.md) — 通信仕様
-- [security.md](security.md) — セキュリティ方針
-- [shared_services.md](shared_services.md) — 共有サービス層
+- [glossary.md](glossary.md) — Glossary
+- [agent_communication.md](agent_communication.md) — Communication specification
+- [security.md](security.md) — Security policy
+- [shared_services.md](shared_services.md) — Shared services layer

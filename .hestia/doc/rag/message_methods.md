@@ -1,51 +1,51 @@
-# rag-conductor メッセージメソッド一覧
+# rag-conductor Message Method List
 
-**対象 Conductor**: rag-conductor
-**ソース**: 設計仕様書 §13.7.5（3296-3305行目付近）, §14（3492-3630行目付近）
+**Target Conductor**: rag-conductor
+**Source**: Design Specification §13.7.5 (around lines 3296-3305), §14 (around lines 3492-3630)
 
-## トランスポート
+## Transport
 
-全通信は agent-cli ネイティブ IPC に統一。peer 名 `rag`。
+All communication is unified via agent-cli native IPC. Peer name: `rag`.
 
-## rag.* メソッド一覧
+## rag.* Method List
 
-### 取り込み
+### Ingestion
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `rag.ingest` | Request | ドキュメント取り込み（source_type / file_path / url / source_id / all / force / incremental 指定） |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `rag.ingest` | Request | Document ingestion (source_type / file_path / url / source_id / all / force / incremental) |
 
-### 検索
+### Search
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `rag.search` | Request | ベクトル類似検索（query / top_k / filter / trace_id 指定） |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `rag.search` | Request | Vector similarity search (query / top_k / filter / trace_id) |
 
-### 管理
+### Management
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `rag.cleanup` | Request | 古いインデックスのクリーンアップ（retention 期限切れデータ削除） |
-| `rag.status` | Request | インデックス状況・メトリクス取得 |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `rag.cleanup` | Request | Old index cleanup (delete data past retention period) |
+| `rag.status` | Request | Index status and metrics retrieval |
 
-### 自己学習（§13.7.8）
+### Self-learning (§13.7.8)
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `rag.ingest_work.v1` | Request | conductor 作業内容蓄積（design_case / bugfix_case / build_log 等） |
-| `rag.search_similar.v1` | Request | 類似タスク検索（過去の同種タスク事例を取得） |
-| `rag.search_bugfix.v1` | Request | エラー修正事例検索 |
-| `rag.search_design.v1` | Request | 過去設計パラメータ検索 |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `rag.ingest_work.v1` | Request | Conductor work content accumulation (design_case / bugfix_case / build_log, etc.) |
+| `rag.search_similar.v1` | Request | Similar task search (retrieve past cases of the same type) |
+| `rag.search_bugfix.v1` | Request | Error fix case search |
+| `rag.search_design.v1` | Request | Past design parameter search |
 
-### conductor-core 共通
+### conductor-core Common
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `system.health.v1` | Request | ヘルスチェック |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `system.health.v1` | Request | Health check |
 
-## ペイロード例
+## Payload Examples
 
-### rag.ingest リクエスト
+### rag.ingest Request
 
 ```json
 {
@@ -60,13 +60,13 @@
 }
 ```
 
-### rag.search リクエスト
+### rag.search Request
 
 ```json
 {
   "method": "rag.search",
   "params": {
-    "query": "STM32F103 の SPI ピン配置",
+    "query": "STM32F103 SPI pinout",
     "top_k": 5,
     "filter": { "source_type": "datasheet" }
   },
@@ -75,7 +75,7 @@
 }
 ```
 
-### rag.ingest_work.v1 リクエスト
+### rag.ingest_work.v1 Request
 
 ```json
 {
@@ -108,13 +108,13 @@ interface RagResult {
 }
 ```
 
-## MCP ツール
+## MCP Tool
 
-`hestia_rag_search` — Model Context Protocol 経由で外部ツールが RAG 検索を利用可能。
+`hestia_rag_search` — External tools can use RAG search via Model Context Protocol.
 
-## 関連ドキュメント
+## Related Documentation
 
-- [rag/binary_spec.md](binary_spec.md) — hestia-rag-cli バイナリ仕様
-- [rag/ingest_pipeline.md](ingest_pipeline.md) — 取り込みパイプライン
-- [rag/search_engine.md](search_engine.md) — 検索エンジン仕様
-- [rag/error_types.md](error_types.md) — rag-conductor エラーコード
+- [rag/binary_spec.md](binary_spec.md) — hestia-rag-cli binary specification
+- [rag/ingest_pipeline.md](ingest_pipeline.md) — Ingestion pipeline
+- [rag/search_engine.md](search_engine.md) — Search engine specification
+- [rag/error_types.md](error_types.md) — rag-conductor error codes

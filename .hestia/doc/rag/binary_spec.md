@@ -1,35 +1,35 @@
-# rag-conductor CLI バイナリ仕様
+# rag-conductor CLI Binary Specification
 
-**対象 Conductor**: rag-conductor
-**ソース**: 設計仕様書 §15（3631-3730行目付近）, §13.7（3252-3491行目付近）
+**Target Conductor**: rag-conductor
+**Source**: Design Specification §15 (around lines 3631-3730), §13.7 (around lines 3252-3491)
 
-## バイナリ名
+## Binary Name
 
 `hestia-rag-cli`
 
-## サブコマンド一覧
+## Subcommands
 
-| サブコマンド | 説明 |
-|-------------|------|
-| `ingest` | ドキュメント取り込み（PDF / Web / ソースコード / conductor-work-logs） |
-| `search` | ベクトル類似検索（query / top_k / filter / trace_id） |
-| `cleanup` | 古いインデックスのクリーンアップ（retention 期限切れデータ削除） |
-| `status` | インデックス状況・メトリクス表示 |
+| Subcommand | Description |
+|------------|-------------|
+| `ingest` | Document ingestion (PDF / Web / Source code / conductor-work-logs) |
+| `search` | Vector similarity search (query / top_k / filter / trace_id) |
+| `cleanup` | Old index cleanup (delete data past retention period) |
+| `status` | Index status and metrics display |
 
-## 共通オプション（CommonOpts）
+## Common Options (CommonOpts)
 
-| オプション | 値 | 説明 |
-|-----------|---|------|
-| `--output` | `human` \| `json` | 出力フォーマット（既定: human） |
-| `--timeout` | `<秒>` | RPC タイムアウト |
-| `--registry` | `<path>` | agent-cli レジストリパス |
-| `--config` | `<path>` | 設定ファイルパス |
-| `--verbose` | — | 詳細ログ出力 |
+| Option | Value | Description |
+|--------|-------|-------------|
+| `--output` | `human` \| `json` | Output format (default: human) |
+| `--timeout` | `<seconds>` | RPC timeout |
+| `--registry` | `<path>` | agent-cli registry path |
+| `--config` | `<path>` | Configuration file path |
+| `--verbose` | — | Verbose logging |
 
-## Exit Code
+## Exit Codes
 
-| Exit Code | 意味 |
-|-----------|------|
+| Exit Code | Meaning |
+|-----------|---------|
 | 0 | SUCCESS |
 | 1 | GENERAL_ERROR |
 | 2 | RPC_ERROR |
@@ -40,51 +40,51 @@
 | 7 | SOCKET_NOT_FOUND |
 | 8 | PERMISSION_DENIED |
 
-## ingest サブコマンド オプション
+## ingest Subcommand Options
 
-| オプション | 値 | 説明 |
-|-----------|---|------|
-| `--source-type` | `pdf` / `web` / `source` / `all` | 取り込みソース種別 |
-| `--file-path` | `<path>` | 単一ファイル取り込み |
-| `--url` | `<url>` | URL 取り込み |
-| `--source-id` | `<id>` | ソース ID 指定 |
-| `--force` | — | 強制再取り込み |
-| `--incremental` | — | 増分更新モード |
+| Option | Value | Description |
+|--------|-------|-------------|
+| `--source-type` | `pdf` / `web` / `source` / `all` | Ingestion source type |
+| `--file-path` | `<path>` | Single file ingestion |
+| `--url` | `<url>` | URL ingestion |
+| `--source-id` | `<id>` | Source ID specification |
+| `--force` | — | Force re-ingestion |
+| `--incremental` | — | Incremental update mode |
 
-## search サブコマンド オプション
+## search Subcommand Options
 
-| オプション | 値 | 説明 |
-|-----------|---|------|
-| `--query` | `<text>` | 検索クエリ |
-| `--top-k` | `<n>` | 取得件数（既定: 5） |
-| `--filter` | `<json>` | フィルタ条件 |
-| `--trace-id` | `<id>` | トレース ID |
+| Option | Value | Description |
+|--------|-------|-------------|
+| `--query` | `<text>` | Search query |
+| `--top-k` | `<n>` | Number of results (default: 5) |
+| `--filter` | `<json>` | Filter conditions |
+| `--trace-id` | `<id>` | Trace ID |
 
-## CLI 使用例
+## CLI Usage Examples
 
 ```bash
-# PDF 取り込み
+# PDF ingestion
 hestia rag ingest --source-type pdf --file-path datasheets/STM32F103.pdf
 
-# Web 取り込み
+# Web ingestion
 hestia rag ingest --source-type web --url https://example.com/guide
 
-# 全ソース増分取り込み
+# Incremental ingestion for all sources
 hestia rag ingest --source-type all --incremental
 
-# 検索
-hestia rag search --query "STM32F103 SPI ピン配置" --top-k 5
+# Search
+hestia rag search --query "STM32F103 SPI pinout" --top-k 5
 
-# クリーンアップ
+# Cleanup
 hestia rag cleanup
 
-# 状況表示
+# Status display
 hestia rag status
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [rag/config_schema.md](config_schema.md) — config.toml [rag] スキーマ
-- [rag/message_methods.md](message_methods.md) — rag.* メソッド一覧
-- [rag/ingest_pipeline.md](ingest_pipeline.md) — 取り込みパイプライン
-- [rag/search_engine.md](search_engine.md) — 検索エンジン仕様
+- [rag/config_schema.md](config_schema.md) — config.toml [rag] schema
+- [rag/message_methods.md](message_methods.md) — rag.* method list
+- [rag/ingest_pipeline.md](ingest_pipeline.md) — Ingestion pipeline
+- [rag/search_engine.md](search_engine.md) — Search engine specification

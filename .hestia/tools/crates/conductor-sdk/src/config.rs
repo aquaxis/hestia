@@ -1,40 +1,40 @@
-//! クライアント設定
+//! Client configuration
 
 use serde::{Deserialize, Serialize};
 
-/// Hestia クライアント設定
+/// Hestia client configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HestiaClientConfig {
-    /// agent-cli レジストリディレクトリ
-    /// 既定: $XDG_RUNTIME_DIR/agent-cli/
+    /// agent-cli registry directory
+    /// Default: $XDG_RUNTIME_DIR/agent-cli/
     #[serde(default)]
     pub agent_cli_registry_dir: String,
 
-    /// リクエストタイムアウト（ミリ秒）
+    /// Request timeout (milliseconds)
     #[serde(default = "default_request_timeout")]
     pub request_timeout: u64,
 
-    /// 再接続間隔（ミリ秒）
+    /// Reconnect interval (milliseconds)
     #[serde(default = "default_reconnect_interval")]
     pub reconnect_interval: u64,
 
-    /// 最大再接続試行回数
+    /// Maximum reconnect attempts
     #[serde(default = "default_max_reconnect_attempts")]
     pub max_reconnect_attempts: u32,
 
-    /// ログレベル
+    /// Log level
     #[serde(default = "default_log_level")]
     pub log_level: String,
 
-    /// リトライポリシー
+    /// Retry policy
     #[serde(default)]
     pub retry_policy: RetryPolicy,
 
-    /// 最大フレーム長（バイト）
+    /// Maximum frame length (bytes)
     #[serde(default = "default_max_frame_length")]
     pub max_frame_length: u64,
 
-    /// agent-cli IPC 送信時に使う `from` agent-id（空 = 既定 "agent-hestia-cli"）
+    /// `from` agent-id used when sending via agent-cli IPC (empty = default "agent-hestia-cli")
     #[serde(default)]
     pub agent_cli_from_id: String,
 }
@@ -54,14 +54,14 @@ impl Default for HestiaClientConfig {
     }
 }
 
-/// リトライポリシー
+/// Retry policy
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetryPolicy {
     pub max_retries: u32,
     pub initial_backoff_ms: u64,
     pub max_backoff_ms: u64,
     pub multiplier: f64,
-    /// リトライ可能なエラーコード一覧
+    /// Retryable error code list
     pub retryable_codes: Vec<i32>,
 }
 
@@ -77,7 +77,7 @@ impl Default for RetryPolicy {
     }
 }
 
-/// 接続状態
+/// Connection state
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConnectionState {
@@ -88,34 +88,34 @@ pub enum ConnectionState {
     Error,
 }
 
-/// agent-cli バックエンド設定（config.toml [agent_cli]）
+/// agent-cli backend configuration (config.toml [agent_cli])
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentCliConfig {
-    /// バックエンド種別: "claude" | "codex" | "ollama" | "llama_cpp"
+    /// Backend type: "claude" | "codex" | "ollama" | "llama_cpp"
     #[serde(default = "default_backend")]
     pub backend: String,
 
-    /// agent-cli バイナリパス（空 = $PATH 解決）
+    /// agent-cli binary path (empty = resolve via $PATH)
     #[serde(default)]
     pub binary_path: String,
 
-    /// Anthropic API ベース URL（空 = 公式）
+    /// Anthropic API base URL (empty = official)
     #[serde(default)]
     pub anthropic_base_url: String,
 
-    /// API キーを格納する環境変数名
+    /// Environment variable name storing the API key
     #[serde(default = "default_api_key_env")]
     pub anthropic_api_key_env: String,
 
-    /// LLM モデル識別子
+    /// LLM model identifier
     #[serde(default = "default_model")]
     pub model: String,
 
-    /// 応答上限トークン数
+    /// Maximum response token count
     #[serde(default = "default_max_tokens")]
     pub max_tokens: u32,
 
-    /// IPC レジストリディレクトリ（空 = $XDG_RUNTIME_DIR/agent-cli）
+    /// IPC registry directory (empty = $XDG_RUNTIME_DIR/agent-cli)
     #[serde(default)]
     pub registry_dir: String,
 }
@@ -162,30 +162,30 @@ fn default_max_tokens() -> u32 {
     4096
 }
 
-/// 共通 CLI オプション
+/// Common CLI options
 ///
-/// 全フラグを `global = true` にしているため、subcommand の前後どちらでも指定可能:
-/// - `hestia-rtl-cli --output json lint`  ← 従来形（subcommand の前）
-/// - `hestia-rtl-cli lint --output json`  ← LLM が好む形（subcommand の後）
+/// All flags are set to `global = true`, so they can be specified before or after the subcommand:
+/// - `hestia-rtl-cli --output json lint`  <- Traditional form (before subcommand)
+/// - `hestia-rtl-cli lint --output json`  <- Preferred form (after subcommand)
 #[derive(Debug, Clone, clap::Parser)]
 pub struct CommonOpts {
-    /// 出力フォーマット: human | json
+    /// Output format: human | json
     #[arg(long, global = true, default_value = "human")]
     pub output: String,
 
-    /// RPC タイムアウト（秒）
+    /// RPC timeout (seconds)
     #[arg(long, global = true)]
     pub timeout: Option<u64>,
 
-    /// agent-cli レジストリパス
+    /// agent-cli registry path
     #[arg(long, global = true)]
     pub registry: Option<String>,
 
-    /// 設定ファイルパス
+    /// Configuration file path
     #[arg(long, global = true)]
     pub config: Option<String>,
 
-    /// 詳細ログ出力
+    /// Verbose log output
     #[arg(long, global = true)]
     pub verbose: bool,
 }

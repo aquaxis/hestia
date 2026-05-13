@@ -1,4 +1,4 @@
-//! pcb.toml 設定モデル（§7.6）
+//! pcb.toml configuration model (section 7.6)
 
 use serde::{Deserialize, Serialize};
 

@@ -1,55 +1,55 @@
 # CI/CD API
 
-**対象領域**: common — CI/CD
-**ソース**: 設計仕様書 §13.5
+**Domain**: common — CI/CD
+**Source**: Design Specification §13.5
 
-## 概要
+## Overview
 
-CI/CD パイプラインを宣言的に定義し、複数バックエンド（GitHub Actions / GitLab CI / Local）で実行する共有サービス。agent-cli peer `cicd` として提供される。
+A shared service that declaratively defines CI/CD pipelines and runs them across multiple backends (GitHub Actions / GitLab CI / Local). Provided as agent-cli peer `cicd`.
 
-## 対応バックエンド
+## Supported Backends
 
-| Backend | 識別子 | 用途 |
+| Backend | Identifier | Purpose |
 |---------|-------|------|
-| `GithubActions` | `github_actions` | GitHub ホスティング時の CI/CD |
-| `GitlabCi` | `gitlab_ci` | GitLab ホスティング時の CI/CD |
-| `LocalPipeline` | `local` | ローカル実行（オフライン開発・検証）|
+| `GithubActions` | `github_actions` | CI/CD when hosted on GitHub |
+| `GitlabCi` | `gitlab_ci` | CI/CD when hosted on GitLab |
+| `LocalPipeline` | `local` | Local execution (offline development/verification)|
 
-## 主要型
+## Key Types
 
 ### PipelineDefinition
 
-パイプラインの宣言的定義。ステージ・ジョブ・条件を構造化する。
+Declarative definition of a pipeline. Structures stages, jobs, and conditions.
 
 ### PipelineStage
 
-ステージ定義。複数ジョブを含み、並列または逐次実行を制御。
+Stage definition. Contains multiple jobs and controls parallel or sequential execution.
 
 ### PipelineJob
 
-ジョブ定義。実行コマンド・環境・成果物・リトライ設定を含む。
+Job definition. Includes execution commands, environment, artifacts, and retry settings.
 
 ### StageCondition
 
-| 値 | 意味 |
+| Value | Meaning |
 |----|------|
-| `Always` | 常に実行 |
-| `OnSuccess` | 前段成功時のみ |
-| `OnFailure` | 前段失敗時のみ |
-| `Custom` | カスタム条件式 |
+| `Always` | Always execute |
+| `OnSuccess` | Only when previous stage succeeds |
+| `OnFailure` | Only when previous stage fails |
+| `Custom` | Custom condition expression |
 
-## 制御パラメータ
+## Control Parameters
 
-パイプラインは JSON 経由で以下を制御:
+Pipelines are controlled via JSON with the following:
 
-| パラメータ | 説明 |
+| Parameter | Description |
 |----------|------|
-| Artifact リテンション | 成果物の保持期間 |
-| Retry policy | ジョブ失敗時のリトライ回数・間隔 |
-| Timeout secs | ジョブごとのタイムアウト |
-| Cache key | ビルドキャッシュのキー |
+| Artifact retention | Artifact retention period |
+| Retry policy | Retry count and interval on job failure |
+| Timeout secs | Per-job timeout |
+| Cache key | Build cache key |
 
-## CI/CD 統合例（GitHub Actions）
+## CI/CD Integration Example (GitHub Actions)
 
 ```yaml
 name: Container Build & Publish
@@ -58,7 +58,7 @@ on:
     paths:
       - '.hestia/containers/**'
   schedule:
-    - cron: '0 2 * * 1'   # 毎週月曜 02:00 UTC
+    - cron: '0 2 * * 1'   # Every Monday 02:00 UTC
 
 jobs:
   build:
@@ -77,15 +77,15 @@ jobs:
         run: cosign sign ...
 ```
 
-## Observability 連携
+## Observability Integration
 
-| メトリクス | 型 | 意味 |
+| Metric | Type | Meaning |
 |----------|----|------|
-| `hestia_container_build_total{image,status}` | Counter | ビルド回数 |
-| `hestia_container_build_duration_seconds{image,stage}` | Histogram | ステージ別所要時間 |
+| `hestia_container_build_total{image,status}` | Counter | Build count |
+| `hestia_container_build_duration_seconds{image,stage}` | Histogram | Duration per stage |
 
-## 関連ドキュメント
+## Related Documents
 
-- [observability.md](observability.md) — 監視・メトリクス
-- [container_manager](../container/container_manager.md) — コンテナ管理
-- [agent_cli_messaging.md](agent_cli_messaging.md) — メッセージング仕様
+- [observability.md](observability.md) — Monitoring and metrics
+- [container_manager](../container/container_manager.md) — Container management
+- [agent_cli_messaging.md](agent_cli_messaging.md) — Messaging specification

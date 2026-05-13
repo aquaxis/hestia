@@ -1,60 +1,60 @@
-# pcb-conductor 設定スキーマ
+# pcb-conductor Configuration Schema
 
-**対象 Conductor**: pcb-conductor
-**ソース**: 設計仕様書 §7.6（2157-...行目付近）
+**Target Conductor**: pcb-conductor
+**Source**: Design specification §7.6 (around lines 2157-...)
 
-## pcb.toml — 統一プロジェクトフォーマット
+## pcb.toml — Unified Project Format
 
-PCB プロジェクトの設定・ボード定義・層構成・AI 設計設定・出力設定を宣言的に定義するファイル。
+A file that declaratively defines PCB project settings, board definitions, layer configuration, AI design settings, and output settings.
 
-### セクション一覧
+### Section List
 
-| セクション | 必須 | 説明 |
-|-----------|------|------|
-| `[project]` | 必須 | プロジェクト基本設定 |
-| `[board]` | 必須 | ボード寸法・層数 |
-| `[[layers]]` | 必須 | 各層の定義（信号/電源/GND） |
-| `[design]` | 任意 | AI 設計設定 |
-| `[output]` | 任意 | 出力設定 |
+| Section | Required | Description |
+|---------|----------|-------------|
+| `[project]` | Required | Project basic settings |
+| `[board]` | Required | Board dimensions and layer count |
+| `[[layers]]` | Required | Layer definitions (signal/power/GND) |
+| `[design]` | Optional | AI design settings |
+| `[output]` | Optional | Output settings |
 
-### `[project]` セクション
+### `[project]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `name` | string | プロジェクト名 |
-| `version` | string | バージョン |
-| `board_name` | string | ボード名 |
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Project name |
+| `version` | string | Version |
+| `board_name` | string | Board name |
 
-### `[board]` セクション
+### `[board]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `layer_count` | integer | 層数 |
-| `width_mm` | float | ボード幅（mm） |
-| `height_mm` | float | ボード高さ（mm） |
+| Field | Type | Description |
+|-------|------|-------------|
+| `layer_count` | integer | Number of layers |
+| `width_mm` | float | Board width (mm) |
+| `height_mm` | float | Board height (mm) |
 
-### `[[layers]]` セクション
+### `[[layers]]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `name` | string | 層名（例: `F.Cu`, `In1.Cu`, `B.Cu`） |
-| `type` | string | 層種別（`signal` / `power` / `ground`） |
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Layer name (e.g., `F.Cu`, `In1.Cu`, `B.Cu`) |
+| `type` | string | Layer type (`signal` / `power` / `ground`) |
 
-### `[design]` セクション
+### `[design]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `input_format` | string | 入力フォーマット（`natural_language` / `skidl` / `kicad_sch`） |
-| `ai_enabled` | boolean | AI 駆動回路図設計の有効化 |
+| Field | Type | Description |
+|-------|------|-------------|
+| `input_format` | string | Input format (`natural_language` / `skidl` / `kicad_sch`) |
+| `ai_enabled` | boolean | Enable AI-driven schematic design |
 
-### `[output]` セクション
+### `[output]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `format` | string | 出力フォーマット（`kicad` / `altium` / `gerber`） |
-| `output_dir` | string | 出力ディレクトリ |
+| Field | Type | Description |
+|-------|------|-------------|
+| `format` | string | Output format (`kicad` / `altium` / `gerber`) |
+| `output_dir` | string | Output directory |
 
-### 設定例
+### Configuration Example
 
 ```toml
 [project]
@@ -92,9 +92,9 @@ format = "kicad"
 output_dir = "output/"
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [pcb/binary_spec.md](binary_spec.md) — hestia-pcb-cli バイナリ仕様
-- [pcb/state_machines.md](state_machines.md) — PCB ビルドステップ
-- [pcb/tool_adapter.md](tool_adapter.md) — AI 駆動回路図設計 / KiCad アダプター
-- [../fpga/config_schema.md](../fpga/config_schema.md) — fpga.toml スキーマ
+- [pcb/binary_spec.md](binary_spec.md) — hestia-pcb-cli binary specification
+- [pcb/state_machines.md](state_machines.md) — PCB build steps
+- [pcb/tool_adapter.md](tool_adapter.md) — AI-driven schematic design / KiCad adapter
+- [../fpga/config_schema.md](../fpga/config_schema.md) — fpga.toml schema

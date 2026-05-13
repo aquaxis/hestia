@@ -1,81 +1,81 @@
-# ai-conductor エラーコード
+# ai-conductor Error Codes
 
-**対象 Conductor**: ai-conductor
-**ソース**: 設計仕様書 §14.3（3565-3581行目付近）
+**Target Conductor**: ai-conductor
+**Source**: Design Specification §14.3 (around lines 3565-3581)
 
-## エラーコード範囲
+## Error Code Range
 
-ai-conductor のエラーコードは **-32100 〜 -32199** の範囲を使用する。
+ai-conductor uses the error code range **-32100 to -32199**.
 
-## エラーカテゴリ
+## Error Categories
 
-### Orchestration（オーケストレーション）
+### Orchestration
 
-| コード | 名称 | 説明 |
+| Code | Name | Description |
 |-------|------|------|
-| -32100 | ORCHESTRATION_ERROR | タスク振り分け・ワークフロー実行中の一般エラー |
-| -32101 | TASK_DECOMPOSITION_FAILED | タスク分解失敗（意図理解不可・依存関係解析エラー） |
-| -32102 | WORKFLOW_EXECUTION_FAILED | ワークフロー（DAG）実行失敗 |
-| -32103 | CONDUCTOR_UNREACHABLE | 配下 conductor への到達不可（agent-cli IPC タイムアウト） |
-| -32104 | DAG_CYCLE_DETECTED | DAG 内の循環依存検出 |
+| -32100 | ORCHESTRATION_ERROR | General error during task routing or workflow execution |
+| -32101 | TASK_DECOMPOSITION_FAILED | Task decomposition failed (intent incomprehension or dependency analysis error) |
+| -32102 | WORKFLOW_EXECUTION_FAILED | Workflow (DAG) execution failed |
+| -32103 | CONDUCTOR_UNREACHABLE | Downstream conductor unreachable (agent-cli IPC timeout) |
+| -32104 | DAG_CYCLE_DETECTED | Circular dependency detected in DAG |
 
-### Agent Management（エージェント管理）
+### Agent Management
 
-| コード | 名称 | 説明 |
+| Code | Name | Description |
 |-------|------|------|
-| -32110 | AGENT_SPAWN_FAILED | サブエージェント起動失敗 |
-| -32111 | AGENT_NOT_FOUND | 指定されたエージェントが存在しない |
-| -32112 | AGENT_COMMUNICATION_FAILED | エージェント間通信失敗（IPC エラー） |
-| -32113 | AGENT_TIMEOUT | エージェント応答タイムアウト |
-| -32114 | MAX_AGENTS_EXCEEDED | エージェント並列数上限超過 |
+| -32110 | AGENT_SPAWN_FAILED | Sub-agent launch failed |
+| -32111 | AGENT_NOT_FOUND | Specified agent does not exist |
+| -32112 | AGENT_COMMUNICATION_FAILED | Inter-agent communication failed (IPC error) |
+| -32113 | AGENT_TIMEOUT | Agent response timeout |
+| -32114 | MAX_AGENTS_EXCEEDED | Agent parallelism limit exceeded |
 
-### Spec-Driven（仕様書駆動）
+### Spec-Driven
 
-| コード | 名称 | 説明 |
+| Code | Name | Description |
 |-------|------|------|
-| -32120 | SPEC_PARSE_ERROR | 仕様書パース失敗（REQ/CON/IF プレフィックス不正） |
-| -32121 | SPEC_VALIDATION_FAILED | DesignSpec バリデーション失敗（必須要件不足等） |
-| -32122 | SPEC_REVIEW_FAILED | レビューセッション失敗 |
-| -32123 | DESIGN_SPEC_CONFLICT | 複数仕様間の矛盾検出 |
+| -32120 | SPEC_PARSE_ERROR | Specification parse failed (invalid REQ/CON/IF prefix) |
+| -32121 | SPEC_VALIDATION_FAILED | DesignSpec validation failed (missing required constraints, etc.) |
+| -32122 | SPEC_REVIEW_FAILED | Review session failed |
+| -32123 | DESIGN_SPEC_CONFLICT | Contradiction detected between multiple specifications |
 
-### Version Tracking（バージョン追跡）
+### Version Tracking
 
-| コード | 名称 | 説明 |
+| Code | Name | Description |
 |-------|------|------|
-| -32130 | VERSION_INCOMPATIBLE | セマンティックバージョニング非互換 |
-| -32131 | ROLLOUT_FAILED | 段階的ロールアウト失敗（Canary/Staging） |
-| -32132 | ROLLBACK_FAILED | 自動ロールバック失敗 |
-| -32133 | UPGRADE_CHECK_FAILED | 新バージョン確認失敗（WatcherAgent） |
+| -32130 | VERSION_INCOMPATIBLE | Semantic versioning incompatibility |
+| -32131 | ROLLOUT_FAILED | Gradual rollout failed (Canary/Staging) |
+| -32132 | ROLLBACK_FAILED | Automatic rollback failed |
+| -32133 | UPGRADE_CHECK_FAILED | New version check failed (WatcherAgent) |
 
-### LLM（大規模言語モデル）
+### LLM (Large Language Model)
 
-| コード | 名称 | 説明 |
+| Code | Name | Description |
 |-------|------|------|
-| -32140 | LLM_BACKEND_UNAVAILABLE | LLM バックエンド接続不可（Ollama / Anthropic / LM Studio / vLLM） |
-| -32141 | LLM_INFERENCE_FAILED | LLM 推論失敗 |
-| -32142 | LLM_TIMEOUT | LLM 応答タイムアウト |
-| -32143 | TOOL_USE_EXECUTION_FAILED | Tool Use 機能のツール実行失敗 |
+| -32140 | LLM_BACKEND_UNAVAILABLE | LLM backend unreachable (Ollama / Anthropic / LM Studio / vLLM) |
+| -32141 | LLM_INFERENCE_FAILED | LLM inference failed |
+| -32142 | LLM_TIMEOUT | LLM response timeout |
+| -32143 | TOOL_USE_EXECUTION_FAILED | Tool execution failed in Tool Use feature |
 
-## 共通エラーコード（HESTIA 全体共通）
+## Common Error Codes (HESTIA-wide)
 
-| 範囲 | 領域 |
+| Range | Domain |
 |------|------|
-| -32700 | Parse Error（JSON ペイロードのパース失敗） |
-| -32600 〜 -32603 | リクエスト標準エラー（Invalid Request / Method not found / Invalid params / Internal） |
-| -32000 〜 -32099 | HESTIA 共通（Timeout / NotFound / AlreadyExists / PermissionDenied / InvalidState 等） |
+| -32700 | Parse Error (JSON payload parse failure) |
+| -32600 to -32603 | Standard request errors (Invalid Request / Method not found / Invalid params / Internal) |
+| -32000 to -32099 | HESTIA common (Timeout / NotFound / AlreadyExists / PermissionDenied / InvalidState, etc.) |
 
-## エラー応答フォーマット
+## Error Response Format
 
-`data` フィールドには以下を含める:
+The `data` field should include:
 
-| フィールド | 説明 |
+| Field | Description |
 |-----------|------|
-| `tool` | エラー発生元ツール名 |
-| `exit_code` | プロセス終了コード |
-| `log_path` | ログファイルパス |
-| `errors[]` | 詳細エラーリスト |
-| `retry_possible` | リトライ可能性 |
-| `suggested_action` | 推奨される対応 |
+| `tool` | Error source tool name |
+| `exit_code` | Process exit code |
+| `log_path` | Log file path |
+| `errors[]` | Detailed error list |
+| `retry_possible` | Whether retry is possible |
+| `suggested_action` | Recommended action |
 
 ```json
 {
@@ -93,9 +93,9 @@ ai-conductor のエラーコードは **-32100 〜 -32199** の範囲を使用�
 }
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [ai/message_methods.md](message_methods.md) — ai.* メソッド一覧
-- [ai/state_machines.md](state_machines.md) — タスク状態遷移
-- [../common/error_registry.md](../common/error_registry.md) — HESTIA 共通エラーレジストリ
-- [../common/error_handling_strategy.md](../common/error_handling_strategy.md) — エラーハンドリング戦略
+- [ai/message_methods.md](message_methods.md) — ai.* method list
+- [ai/state_machines.md](state_machines.md) — Task state transitions
+- [../common/error_registry.md](../common/error_registry.md) — HESTIA common error registry
+- [../common/error_handling_strategy.md](../common/error_handling_strategy.md) — Error handling strategy

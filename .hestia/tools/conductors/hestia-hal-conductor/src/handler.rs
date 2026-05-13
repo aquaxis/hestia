@@ -1,10 +1,10 @@
-//! HAL Conductor メッセージハンドラ
+//! HAL Conductor message handler
 
 use conductor_sdk::message::{ErrorResultResponse, Request, Response, SuccessResponse};
 use conductor_sdk::server::MessageHandler;
 use conductor_sdk::error::ErrorResponse;
 
-/// HAL Conductor メッセージハンドラ
+/// HAL Conductor message handler
 pub struct HalHandler;
 
 #[async_trait::async_trait]
@@ -69,14 +69,14 @@ impl HalHandler {
         }))
     }
 
-    /// Phase 55c — `hal.design.v1`: handler が直接 hal-designer へ送信し、
-    /// `expected_artifacts` を ai-conductor に提示する fire-and-forget dispatch モデル。
+    /// Phase 55c — `hal.design.v1`: Handler sends directly to hal-designer and
+    /// presents `expected_artifacts` to ai-conductor (fire-and-forget dispatch model).
     async fn handle_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let instruction = params.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
         let designer_peer = "hal-designer";
         let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
         let expected_artifacts = vec!["hal/register_map.json"];
-        // Phase 84f — strict mode: designer 不在時は fallback ではなく halt
+        // Phase 84f — strict mode: halt instead of fallback when designer is absent
         if !designer_alive && conductor_sdk::workspace::strict_subagent_enabled() {
             return Ok(serde_json::json!({
                 "status": "subagent_unavailable",
@@ -87,7 +87,7 @@ impl HalHandler {
                 "halted_reason": "subagent_spawn_failure",
                 "expected_artifacts": expected_artifacts,
                 "instruction": instruction,
-                "note": "HESTIA_STRICT_SUBAGENT=1: hal-designer が registry 不在のため halt。`hestia start` ログ確認 + `agent-cli list` で resident sub-agent 登録状態を調査してください。",
+                "note": "HESTIA_STRICT_SUBAGENT=1: hal-designer is not in the registry, halting. Check `hestia start` logs and `agent-cli list` for resident sub-agent registration status.",
             }));
         }
         if designer_alive {
@@ -109,7 +109,7 @@ impl HalHandler {
                 "designer_alive": true,
                 "dispatched": dispatched,
                 "expected_artifacts": expected_artifacts,
-                "next_action": "ai-conductor は designer の fs_write 完了後に hal.parse.v1 を実行。",
+                "next_action": "ai-conductor should run hal.parse.v1 after the designer's fs_write completes.",
                 "instruction": instruction,
             }))
         } else {
@@ -122,7 +122,7 @@ impl HalHandler {
                 "expected_artifacts": expected_artifacts,
                 "fallback": "ai-conductor fs_write hal/register_map.json",
                 "instruction": instruction,
-                "note": "hal-designer が agent-cli registry に不在のため移行期間動作にフォールバック。ai-conductor が暫定で fs_write してください。",
+                "note": "hal-designer is not in the agent-cli registry; falling back to transition behavior. ai-conductor should provisionally fs_write instead.",
             }))
         }
     }
@@ -193,9 +193,9 @@ impl HalHandler {
         }))
     }
 
-    /// Phase 60b — `hal.dispatch_coders.v1`: hal-designer の出力（言語一覧）を受けて
-    /// `hal-coder-{lang}` (c/rust/python/svd 等) を動的並列起動。設計仕様書 §8.x の
-    /// 「言語ごとに動的起動」を実装。
+    /// Phase 60b — `hal.dispatch_coders.v1`: Spawn `hal-coder-{lang}` (c/rust/python/svd etc.)
+    /// dynamically based on hal-designer output (language list). Implements design spec §8.x
+    /// "dynamic per-language spawn".
     async fn handle_dispatch_coders(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let langs: Vec<String> = params.get("languages")
             .and_then(|v| v.as_array())
@@ -226,7 +226,7 @@ impl HalHandler {
                 dispatched_all = false;
             }
         }
-        // Phase 80: dispatch 完了後に ai-reviewer auto-spawn
+        // Phase 80: Auto-spawn ai-reviewer after dispatch completes
         let auto_review_dispatched = conductor_sdk::workspace::auto_review_after_dispatch(
             "hal", "hal.dispatch_coders.v1", spawned.len(),
         );

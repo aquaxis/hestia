@@ -1,40 +1,40 @@
-# apps-conductor CLI バイナリ仕様
+# apps-conductor CLI Binary Specification
 
-**対象 Conductor**: apps-conductor
-**ソース**: 設計仕様書 §15（3631-3730行目付近）, §9（2281-2400行目付近）
+**Target Conductor**: apps-conductor
+**Source**: Design specification §15 (around lines 3631-3730), §9 (around lines 2281-2400)
 
-## バイナリ名
+## Binary Name
 
 `hestia-apps-cli`
 
-## サブコマンド一覧
+## Subcommands
 
-| サブコマンド | 説明 |
-|-------------|------|
-| `init` | apps.toml テンプレート生成 |
-| `build` | クロスコンパイル・ビルド実行 |
-| `flash` | ターゲットデバイスへのファームウェア書込 |
-| `test sil` | SIL（Software-in-the-Loop）テスト実行（QEMU） |
-| `test hil` | HIL（Hardware-in-the-Loop）テスト実行（実機 + debug-conductor） |
-| `test qemu` | QEMU テスト実行 |
-| `size` | バイナリサイズレポート表示 |
-| `debug` | デバッグセッション開始（debug-conductor §10 との bridging） |
-| `status` | ビルド状態・ジョブ状況表示 |
+| Subcommand | Description |
+|-------------|-----------|
+| `init` | Generate apps.toml template |
+| `build` | Execute cross-compilation build |
+| `flash` | Write firmware to target device |
+| `test sil` | Run SIL (Software-in-the-Loop) test (QEMU) |
+| `test hil` | Run HIL (Hardware-in-the-Loop) test (physical device + debug-conductor) |
+| `test qemu` | Run QEMU test |
+| `size` | Display binary size report |
+| `debug` | Start debug session (bridging with debug-conductor §10) |
+| `status` | Display build state and job status |
 
-## 共通オプション（CommonOpts）
+## Common Options (CommonOpts)
 
-| オプション | 値 | 説明 |
-|-----------|---|------|
-| `--output` | `human` \| `json` | 出力フォーマット（既定: human） |
-| `--timeout` | `<秒>` | RPC タイムアウト |
-| `--registry` | `<path>` | agent-cli レジストリパス |
-| `--config` | `<path>` | 設定ファイルパス |
-| `--verbose` | — | 詳細ログ出力 |
+| Option | Value | Description |
+|-----------|---|-----------|
+| `--output` | `human` \| `json` | Output format (default: human) |
+| `--timeout` | `<seconds>` | RPC timeout |
+| `--registry` | `<path>` | agent-cli registry path |
+| `--config` | `<path>` | Configuration file path |
+| `--verbose` | — | Verbose log output |
 
-## Exit Code
+## Exit Codes
 
-| Exit Code | 意味 |
-|-----------|------|
+| Exit Code | Meaning |
+|-----------|--------|
 | 0 | SUCCESS |
 | 1 | GENERAL_ERROR |
 | 2 | RPC_ERROR |
@@ -45,36 +45,36 @@
 | 7 | SOCKET_NOT_FOUND |
 | 8 | PERMISSION_DENIED |
 
-## CLI 使用例
+## CLI Usage Examples
 
 ```bash
-# 初期化
+# Initialize
 hestia apps init
 
-# ビルド
+# Build
 hestia apps build
 
-# QEMU テスト
+# QEMU test
 hestia apps test qemu
 
-# HIL テスト
+# HIL test
 hestia apps test hil
 
-# フラッシュ書込
+# Flash write
 hestia apps flash
 
-# サイズレポート
+# Size report
 hestia apps size
 ```
 
-## CLI アーキテクチャ
+## CLI Architecture
 
-Rust 製クライアントバイナリ（`tokio` + `serde` + `clap`）。apps-conductor の agent-cli peer（peer 名 `apps`）に対して agent-cli ネイティブ IPC で接続する。
+Rust-based client binary (`tokio` + `serde` + `clap`). Connects to the apps-conductor agent-cli peer (peer name `apps`) via agent-cli native IPC.
 
-## 関連ドキュメント
+## Related Documentation
 
-- [apps/config_schema.md](config_schema.md) — apps.toml 設定スキーマ
-- [apps/message_methods.md](message_methods.md) — apps.* メソッド一覧
-- [apps/toolchain.md](toolchain.md) — 主要アダプター
-- [apps/rtos.md](rtos.md) — RTOS サポート
-- [apps/hil_sil.md](hil_sil.md) — HIL/SIL テスト
+- [apps/config_schema.md](config_schema.md) — apps.toml configuration schema
+- [apps/message_methods.md](message_methods.md) — apps.* method list
+- [apps/toolchain.md](toolchain.md) — Main adapters
+- [apps/rtos.md](rtos.md) — RTOS support
+- [apps/hil_sil.md](hil_sil.md) — HIL/SIL testing

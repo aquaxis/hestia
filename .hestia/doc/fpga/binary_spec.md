@@ -1,41 +1,41 @@
-# fpga-conductor CLI バイナリ仕様
+# fpga-conductor CLI Binary Specification
 
-**対象 Conductor**: fpga-conductor
-**ソース**: 設計仕様書 §15（3631-3730行目付近）, §5（1398-1760行目付近）
+**Target Conductor**: fpga-conductor
+**Source**: Design Specification §15 (around lines 3631-3730), §5 (around lines 1398-1760)
 
-## バイナリ名
+## Binary Name
 
 `hestia-fpga-cli`
 
-## サブコマンド一覧
+## Subcommands
 
-| サブコマンド | 説明 |
-|-------------|------|
-| `init` | fpga.toml テンプレート生成 |
-| `build <target>` | 指定ターゲットでフルビルド（合成→配置配線→bitstream） |
-| `synthesize` | 合成のみ実行 |
-| `implement` | 配置配線のみ実行 |
-| `bitstream` | bitstream 生成のみ実行 |
-| `simulate` | シミュレーション実行 |
-| `program` | FPGA へ bitstream 書込 |
-| `report timing` | タイミングレポート表示 |
-| `report resource` | リソース使用率レポート表示 |
-| `status` | ビルド状態・ジョブ状況表示 |
+| Subcommand | Description |
+|------------|-------------|
+| `init` | Generate fpga.toml template |
+| `build <target>` | Full build for specified target (synthesis → place-and-route → bitstream) |
+| `synthesize` | Run synthesis only |
+| `implement` | Run place-and-route only |
+| `bitstream` | Generate bitstream only |
+| `simulate` | Run simulation |
+| `program` | Write bitstream to FPGA |
+| `report timing` | Show timing report |
+| `report resource` | Show resource utilization report |
+| `status` | Show build status and job progress |
 
-## 共通オプション（CommonOpts）
+## Common Options (CommonOpts)
 
-| オプション | 値 | 説明 |
-|-----------|---|------|
-| `--output` | `human` \| `json` | 出力フォーマット（既定: human） |
-| `--timeout` | `<秒>` | RPC タイムアウト |
-| `--registry` | `<path>` | agent-cli レジストリパス |
-| `--config` | `<path>` | 設定ファイルパス |
-| `--verbose` | — | 詳細ログ出力 |
+| Option | Value | Description |
+|--------|-------|-------------|
+| `--output` | `human` \| `json` | Output format (default: human) |
+| `--timeout` | `<seconds>` | RPC timeout |
+| `--registry` | `<path>` | agent-cli registry path |
+| `--config` | `<path>` | Configuration file path |
+| `--verbose` | — | Enable verbose logging |
 
-## Exit Code
+## Exit Codes
 
-| Exit Code | 意味 |
-|-----------|------|
+| Exit Code | Meaning |
+|-----------|---------|
 | 0 | SUCCESS |
 | 1 | GENERAL_ERROR |
 | 2 | RPC_ERROR |
@@ -46,32 +46,32 @@
 | 7 | SOCKET_NOT_FOUND |
 | 8 | PERMISSION_DENIED |
 
-## CLI 使用例
+## CLI Usage Examples
 
 ```bash
-# 初期化
+# Initialize
 hestia fpga init
 
-# フルビルド
+# Full build
 hestia fpga build artix7
 
-# 合成のみ
+# Synthesis only
 hestia fpga synthesize
 
-# タイミングレポート
+# Timing report
 hestia fpga report timing --job-id 1
 
-# bitstream 書込
+# Program bitstream
 hestia fpga program --target artix7_dev
 ```
 
-## CLI アーキテクチャ
+## CLI Architecture
 
-Rust 製クライアントバイナリ（`tokio` + `serde` + `clap`）。fpga-conductor の agent-cli peer（peer 名 `fpga`）に対して agent-cli ネイティブ IPC で接続する。
+Rust client binary (`tokio` + `serde` + `clap`). Connects to the fpga-conductor agent-cli peer (peer name `fpga`) via agent-cli native IPC.
 
-## 関連ドキュメント
+## Related Documentation
 
-- [fpga/config_schema.md](config_schema.md) — fpga.toml 設定スキーマ
-- [fpga/message_methods.md](message_methods.md) — fpga.* メソッド一覧
-- [fpga/state_machines.md](state_machines.md) — ビルドステートマシン
-- [fpga/vendor_adapter.md](vendor_adapter.md) — VendorAdapter トレイト
+- [fpga/config_schema.md](config_schema.md) — fpga.toml configuration schema
+- [fpga/message_methods.md](message_methods.md) — fpga.* method list
+- [fpga/state_machines.md](state_machines.md) — Build state machine
+- [fpga/vendor_adapter.md](vendor_adapter.md) — VendorAdapter trait

@@ -1,4 +1,4 @@
-//! 環境診断（agent-cli `doctor` 互換出力）。
+//! Environment diagnostics (agent-cli `doctor` compatible output).
 
 use crate::config;
 use anyhow::Result;
@@ -7,7 +7,7 @@ use std::process::Command;
 pub fn run() -> Result<()> {
     println!("[claude-cli-shim doctor]");
 
-    // 1. claude バイナリ
+    // 1. claude binary
     let claude_ok = match Command::new("claude").arg("--version").output() {
         Ok(out) if out.status.success() => {
             let v = String::from_utf8_lossy(&out.stdout);
@@ -33,7 +33,7 @@ pub fn run() -> Result<()> {
     println!("  registry path  : {}", reg.display());
     println!("  log path       : {}", log.display());
 
-    // 4. data dir 書込権限
+    // 4. data dir write permission
     let writable = check_writable(&reg);
     println!(
         "  registry writable: {}",

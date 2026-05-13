@@ -1,11 +1,11 @@
-# rtl-conductor RtlToolAdapter トレイト
+# rtl-conductor RtlToolAdapter Trait
 
-**対象 Conductor**: rtl-conductor
-**ソース**: 設計仕様書 §4.2（1262-1278行目付近）, §4.5（1312-1327行目付近）
+**Target Conductor**: rtl-conductor
+**Source**: Design Specification §4.2 (around lines 1262-1278), §4.5 (around lines 1312-1327)
 
-## RtlToolAdapter トレイト定義
+## RtlToolAdapter Trait Definition
 
-全ての RTL ツールアダプターが実装すべき統一インターフェース。
+A unified interface that all RTL tool adapters must implement.
 
 ```rust
 #[async_trait]
@@ -25,19 +25,19 @@ pub trait RtlToolAdapter: Send + Sync {
 
 ## RtlCapability
 
-アダプターがサポートする機能フラグ。
+Capability flags supported by an adapter.
 
-| 値 | 説明 |
-|---|------|
-| `Lint` | Lint / フォーマット / 静的解析 |
-| `Sim` | シミュレーション（サイクル精度 / 動作） |
-| `Formal` | 形式検証（プロパティベース） |
-| `Transpile` | HDL 言語間トランスパイル |
+| Value | Description |
+|-------|-------------|
+| `Lint` | Lint / format / static analysis |
+| `Sim` | Simulation (cycle-accurate / behavioral) |
+| `Formal` | Formal verification (property-based) |
+| `Transpile` | Transpilation between HDL languages |
 
-## 対応言語（HdlLanguage）
+## Supported Languages (HdlLanguage)
 
-| 言語 | 識別子 |
-|------|--------|
+| Language | Identifier |
+|----------|-----------|
 | SystemVerilog | `systemverilog` |
 | Verilog | `verilog` |
 | VHDL | `vhdl` |
@@ -46,39 +46,39 @@ pub trait RtlToolAdapter: Send + Sync {
 | Amaranth | `amaranth` |
 | MyHDL | `myhdl` |
 
-## 主要アダプター一覧
+## Primary Adapter List
 
-| アダプター | 役割 | 対応言語 | Capability |
-|----------|------|---------|-----------|
+| Adapter | Role | Supported Languages | Capability |
+|----------|------|---------------------|------------|
 | `verilator-lint` | Lint | SystemVerilog / Verilog | Lint |
 | `verible` | Format / Lint | SystemVerilog | Lint |
-| `verilator` | サイクル精度シミュレーション | SystemVerilog / Verilog | Sim |
-| `iverilog` | シミュレーション | Verilog | Sim |
-| `ghdl` | VHDL シミュレーション | VHDL | Sim |
-| `symbiyosys` | 形式検証（プロパティ） | SystemVerilog | Formal |
-| `riscof` | RISC-V 命令セット適合性 | RV32I/M/A/F/D/C | Formal |
-| `cocotb` | Python テストベンチ | 全言語 | Sim |
+| `verilator` | Cycle-accurate simulation | SystemVerilog / Verilog | Sim |
+| `iverilog` | Simulation | Verilog | Sim |
+| `ghdl` | VHDL simulation | VHDL | Sim |
+| `symbiyosys` | Formal verification (properties) | SystemVerilog | Formal |
+| `riscof` | RISC-V ISA compliance | RV32I/M/A/F/D/C | Formal |
+| `cocotb` | Python testbench | All languages | Sim |
 | `chisel-bridge` | Chisel → Verilog | Chisel | Transpile |
 | `spinalhdl-bridge` | SpinalHDL → Verilog | SpinalHDL | Transpile |
 | `amaranth-bridge` | Amaranth → Verilog | Amaranth (Python) | Transpile |
 
-## クレート構成
+## Crate Structure
 
 ```
 crates/rtl-conductor/
 ├── src/
-│   ├── adapter.rs      # RtlToolAdapter トレイト
-│   ├── language.rs     # HDL 言語識別 / トランスパイル管理
-│   ├── lint.rs         # Lint / フォーマット / 静的解析
-│   ├── simulation.rs   # シミュレーション統合
-│   ├── formal.rs       # 形式検証統合
-│   ├── repository.rs   # RTL モジュール台帳
-│   └── handoff.rs      # 下流 conductor へのハンドオフ
+│   ├── adapter.rs      # RtlToolAdapter trait
+│   ├── language.rs     # HDL language identification / transpilation management
+│   ├── lint.rs         # Lint / format / static analysis
+│   ├── simulation.rs   # Simulation integration
+│   ├── formal.rs       # Formal verification integration
+│   ├── repository.rs   # RTL module registry
+│   └── handoff.rs      # Handoff to downstream conductors
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [rtl/config_schema.md](config_schema.md) — rtl.toml スキーマ（[adapters] セクション）
-- [rtl/state_machines.md](state_machines.md) — ビルドステートマシン
-- [rtl/message_methods.md](message_methods.md) — rtl.* メソッド一覧
-- [../fpga/vendor_adapter.md](../fpga/vendor_adapter.md) — FPGA VendorAdapter トレイト
+- [rtl/config_schema.md](config_schema.md) — rtl.toml schema ([adapters] section)
+- [rtl/state_machines.md](state_machines.md) — Build state machine
+- [rtl/message_methods.md](message_methods.md) — rtl.* method list
+- [../fpga/vendor_adapter.md](../fpga/vendor_adapter.md) — FPGA VendorAdapter trait

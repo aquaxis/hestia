@@ -81,12 +81,12 @@ jobs:
         run: cargo test --release -p conductor-sdk --test workspace_tests --locked
 
   verify-no-gap:
-    name: Phase 88 退行検出（agent.log gap matrix）
+    name: Phase 88 regression detection (agent.log gap matrix)
     runs-on: ubuntu-latest
-    # Phase 88: agent.log を成果物として収集できる E2E テストが揃った段階で
-    # build-and-test の後段で実行する。当面は scripts/verify_no_gap.sh の
-    # script 自体の健全性（shellcheck + 既知の baseline agent.log を NG 判定）
-    # を CI で検証する。実 agent.log の検証は user 環境または E2E job で実施。
+    # Phase 88: Run after build-and-test when E2E tests that collect agent.log artifacts
+    # are available. For now, verify the script itself (shellcheck + known baseline
+    # agent.log is detected as NG) in CI. Actual agent.log verification is done in
+    # user environments or E2E jobs.
     steps:
       - uses: actions/checkout@v4
 

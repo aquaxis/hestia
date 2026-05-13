@@ -1,52 +1,52 @@
-# fpga-conductor メッセージメソッド一覧
+# fpga-conductor Message Methods
 
-**対象 Conductor**: fpga-conductor
-**ソース**: 設計仕様書 §14（3492-3630行目付近）, §5（1398-1760行目付近）
+**Target Conductor**: fpga-conductor
+**Source**: Design Specification §14 (around lines 3492-3630), §5 (around lines 1398-1760)
 
-## トランスポート
+## Transport
 
-全通信は agent-cli ネイティブ IPC に統一。peer 名 `fpga`。
+All communication uses agent-cli native IPC. Peer name: `fpga`.
 
-## fpga.* メソッド一覧
+## fpga.* Method List
 
-### ビルドフロー
+### Build Flow
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `fpga.synthesize` | Request | RTL 合成（adapter.synthesize 呼出） |
-| `fpga.implement` | Request | 配置配線（adapter.implement 呼出） |
-| `fpga.bitstream` | Request | bitstream 生成（adapter.generate_bitstream 呼出） |
-| `fpga.simulate` | Request | シミュレーション実行 |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `fpga.synthesize` | Request | RTL synthesis (calls adapter.synthesize) |
+| `fpga.implement` | Request | Place-and-route (calls adapter.implement) |
+| `fpga.bitstream` | Request | Bitstream generation (calls adapter.generate_bitstream) |
+| `fpga.simulate` | Request | Run simulation |
 
-### プログラミング
+### Programming
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `fpga.program` | Request | FPGA へ bitstream 書込（debug-conductor §10 連携） |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `fpga.program` | Request | Write bitstream to FPGA (debug-conductor §10 integration) |
 
-### レポート
+### Reports
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `fpga.build.v1.start` | Request | フルビルド開始（target 指定） |
-| `fpga.build.v1.cancel` | Request | ビルドキャンセル |
-| `fpga.build.v1.status` | Request | ビルド状況取得 |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `fpga.build.v1.start` | Request | Start full build (specify target) |
+| `fpga.build.v1.cancel` | Request | Cancel build |
+| `fpga.build.v1.status` | Request | Get build status |
 
-### conductor-core 共通
+### conductor-core Common
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `system.health.v1` | Request | ヘルスチェック |
-| `system.readiness` | Request | 準備状態確認 |
-| `project_open` | Request | プロジェクトオープン |
-| `project_targets` | Request | ターゲット一覧 |
-| `report_timing` | Request | タイミングレポート |
-| `report_resource` | Request | リソースレポート |
-| `report_messages` | Request | ビルドメッセージ一覧 |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `system.health.v1` | Request | Health check |
+| `system.readiness` | Request | Readiness check |
+| `project_open` | Request | Open project |
+| `project_targets` | Request | List targets |
+| `report_timing` | Request | Timing report |
+| `report_resource` | Request | Resource report |
+| `report_messages` | Request | Build messages list |
 
-## ペイロード例
+## Payload Examples
 
-### fpga.build.v1.start リクエスト
+### fpga.build.v1.start Request
 
 ```json
 {
@@ -60,7 +60,7 @@
 }
 ```
 
-### system.health.v1 応答
+### system.health.v1 Response
 
 ```json
 {
@@ -76,10 +76,10 @@
 }
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [fpga/binary_spec.md](binary_spec.md) — hestia-fpga-cli バイナリ仕様
-- [fpga/error_types.md](error_types.md) — fpga-conductor エラーコード
-- [fpga/state_machines.md](state_machines.md) — ビルドステートマシン
-- [fpga/vendor_adapter.md](vendor_adapter.md) — VendorAdapter トレイト
-- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli メッセージング仕様
+- [fpga/binary_spec.md](binary_spec.md) — hestia-fpga-cli binary specification
+- [fpga/error_types.md](error_types.md) — fpga-conductor error codes
+- [fpga/state_machines.md](state_machines.md) — Build state machine
+- [fpga/vendor_adapter.md](vendor_adapter.md) — VendorAdapter trait
+- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli messaging specification

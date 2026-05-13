@@ -1,60 +1,60 @@
-# ai-conductor 設定スキーマ
+# ai-conductor Configuration Schema
 
-**対象 Conductor**: ai-conductor
-**ソース**: 設計仕様書 §3.8（1109-1164行目付近）, §3.9（1189-...行目付近）
+**Target Conductor**: ai-conductor
+**Source**: Design Specification §3.8 (around lines 1109-1164), §3.9 (around lines 1189-...)
 
 ## container.toml
 
-各 conductor が使用するコンテナ環境を宣言的に定義するファイル。コンテナ実行を選択した場合のみ使用（ローカル実行時は不要）。
+A file that declaratively defines the container environment used by each conductor. Only used when container execution is selected (not needed for local execution).
 
-### セクション一覧
+### Section List
 
-| セクション | 必須 | 説明 |
+| Section | Required | Description |
 |-----------|------|------|
-| `[container]` | 必須 | コンテナ基本設定（名前、ベースイメージ、対象 conductor） |
-| `[tools.*]` | 任意 | インストールするツール定義 |
-| `[env]` | 任意 | 環境変数 |
-| `[[volumes]]` | 任意 | ボリュームマウント定義 |
-| `[health]` | 任意 | ヘルスチェック設定 |
-| `[update]` | 任意 | アップデートポリシー |
+| `[container]` | Required | Container base configuration (name, base image, target conductor) |
+| `[tools.*]` | Optional | Tool definitions to install |
+| `[env]` | Optional | Environment variables |
+| `[[volumes]]` | Optional | Volume mount definitions |
+| `[health]` | Optional | Health check settings |
+| `[update]` | Optional | Update policy |
 
-### `[container]` セクション
+### `[container]` Section
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 |-----------|---|------|
-| `name` | string | コンテナ名 |
-| `base_image` | string | ベースイメージ（例: `ubuntu:24.04`） |
-| `conductor` | string | 対象 conductor 名 |
+| `name` | string | Container name |
+| `base_image` | string | Base image (e.g., `ubuntu:24.04`) |
+| `conductor` | string | Target conductor name |
 
-### `[tools.*]` セクション
+### `[tools.*]` Section
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 |-----------|---|------|
-| `name` | string | ツール表示名 |
-| `version` | string | バージョン制約（semver 例: `>=2025.1`） |
-| `install_script` | string | インストールスクリプト |
-| `version_cmd` | string | バージョン確認コマンド |
+| `name` | string | Tool display name |
+| `version` | string | Version constraint (semver, e.g., `>=2025.1`) |
+| `install_script` | string | Install script |
+| `version_cmd` | string | Version verification command |
 
-### `[health]` セクション
+### `[health]` Section
 
-| フィールド | 型 | 既定値 | 説明 |
+| Field | Type | Default | Description |
 |-----------|---|-------|------|
-| `cmd` | string | — | ヘルスチェックコマンド |
-| `interval_secs` | integer | 60 | ポーリング間隔（秒） |
-| `timeout_secs` | integer | 3 | 応答タイムアウト（秒） |
-| `max_retries` | integer | 3 | 連続リトライ回数 |
-| `escalate_on_fail` | boolean | true | 連続失敗時にフロントエンドへ通知 |
-| `restart_on_fail` | boolean | true | 自動再起動試行 |
+| `cmd` | string | — | Health check command |
+| `interval_secs` | integer | 60 | Polling interval (seconds) |
+| `timeout_secs` | integer | 3 | Response timeout (seconds) |
+| `max_retries` | integer | 3 | Consecutive retry count |
+| `escalate_on_fail` | boolean | true | Notify frontend on consecutive failures |
+| `restart_on_fail` | boolean | true | Attempt automatic restart |
 
-### `[update]` セクション
+### `[update]` Section
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 |-----------|---|------|
-| `auto` | boolean | 自動アップデート有効化 |
-| `schedule` | string | cron スケジュール |
-| `rollback_on_failure` | boolean | 失敗時自動ロールバック |
+| `auto` | boolean | Enable automatic updates |
+| `schedule` | string | Cron schedule |
+| `rollback_on_failure` | boolean | Automatic rollback on failure |
 
-### 設定例
+### Configuration Example
 
 ```toml
 [container]
@@ -100,43 +100,43 @@ rollback_on_failure = true
 
 ## upgrade.toml
 
-持続可能アップグレード（§3.4 UpgradeManager）の設定ファイル。
+Configuration file for sustainable upgrades (§3.4 UpgradeManager).
 
-### セクション一覧
+### Section List
 
-| セクション | 説明 |
+| Section | Description |
 |-----------|------|
-| `[upgrade]` | アップグレード基本設定 |
-| `[strategy.major]` | メジャーバージョン戦略 |
-| `[strategy.minor]` | マイナーバージョン戦略 |
-| `[strategy.patch]` | パッチバージョン戦略 |
-| `[rollback]` | ロールバック設定 |
+| `[upgrade]` | Upgrade base configuration |
+| `[strategy.major]` | Major version strategy |
+| `[strategy.minor]` | Minor version strategy |
+| `[strategy.patch]` | Patch version strategy |
+| `[rollback]` | Rollback configuration |
 
-### `[upgrade]` セクション
+### `[upgrade]` Section
 
-| フィールド | 型 | 説明 |
+| Field | Type | Description |
 |-----------|---|------|
-| `check_interval_hours` | integer | 新バージョン確認間隔（時間） |
-| `auto_upgrade` | boolean | 自動アップグレード有効化 |
-| `notification_email` | string | 通知先メールアドレス |
+| `check_interval_hours` | integer | New version check interval (hours) |
+| `auto_upgrade` | boolean | Enable automatic upgrades |
+| `notification_email` | string | Notification email address |
 
-### `[strategy.*]` セクション
+### `[strategy.*]` Section
 
-| 戦略タイプ | 説明 | 使用場面 |
+| Strategy Type | Description | Use Case |
 |-----------|------|---------|
-| `canary` | 少数環境に先行展開 | メジャーバージョン変更時 |
-| `staging` | ステージング環境で検証後に本番展開 | マイナーバージョン更新 |
-| `production` | 本番環境に直接展開 | パッチリリース |
+| `canary` | Deploy to a small number of environments first | Major version changes |
+| `staging` | Deploy to production after verification in staging environment | Minor version updates |
+| `production` | Deploy directly to production | Patch releases |
 
-### `[rollback]` セクション
+### `[rollback]` Section
 
-| フィールド | 型 | 既定値 | 説明 |
+| Field | Type | Default | Description |
 |-----------|---|-------|------|
-| `auto` | boolean | true | 自動ロールバック有効化 |
-| `timeout_secs` | integer | 300 | タイムアウト（秒） |
-| `max_retries` | integer | 3 | 最大リトライ回数 |
+| `auto` | boolean | true | Enable automatic rollback |
+| `timeout_secs` | integer | 300 | Timeout (seconds) |
+| `max_retries` | integer | 3 | Maximum retry count |
 
-### 設定例
+### Configuration Example
 
 ```toml
 [upgrade]
@@ -160,9 +160,9 @@ timeout_secs = 300
 max_retries = 3
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [ai/binary_spec.md](binary_spec.md) — hestia-ai-cli バイナリ仕様
-- [ai/error_types.md](error_types.md) — ai-conductor エラーコード
-- [ai/state_machines.md](state_machines.md) — タスク状態遷移
-- [../common/container_manager.md](../container/container_manager.md) — コンテナ管理詳細
+- [ai/binary_spec.md](binary_spec.md) — hestia-ai-cli binary specification
+- [ai/error_types.md](error_types.md) — ai-conductor error codes
+- [ai/state_machines.md](state_machines.md) — Task state transitions
+- [../common/container_manager.md](../container/container_manager.md) — Container management details

@@ -1,38 +1,38 @@
-# rtl-conductor CLI バイナリ仕様
+# rtl-conductor CLI Binary Specification
 
-**対象 Conductor**: rtl-conductor
-**ソース**: 設計仕様書 §15（3631-3730行目付近）, §4（1241-1397行目付近）
+**Target Conductor**: rtl-conductor
+**Source**: Design Specification §15 (around lines 3631-3730), §4 (around lines 1241-1397)
 
-## バイナリ名
+## Binary Name
 
 `hestia-rtl-cli`
 
-## サブコマンド一覧
+## Subcommands
 
-| サブコマンド | 説明 |
-|-------------|------|
-| `init` | rtl.toml テンプレート生成 |
-| `lint` | HDL ソースの Lint / フォーマット / 静的解析（Verilator/Verible 等） |
-| `simulate` | シミュレーション実行（`--tb <testbench>` / `--simulator verilator`） |
-| `formal` | 形式検証実行（SymbiYosys、`--properties <file>`） |
-| `transpile` | HDL 言語間トランスパイル（Chisel/SpinalHDL/Amaranth → Verilog） |
-| `handoff` | 下流 conductor へのハンドオフ（`--target fpga` / `--target asic`） |
-| `status` | ビルド状態・ジョブ状況表示 |
+| Subcommand | Description |
+|------------|-------------|
+| `init` | Generate rtl.toml template |
+| `lint` | HDL source Lint / format / static analysis (Verilator/Verible, etc.) |
+| `simulate` | Run simulation (`--tb <testbench>` / `--simulator verilator`) |
+| `formal` | Run formal verification (SymbiYosys, `--properties <file>`) |
+| `transpile` | Transpile between HDL languages (Chisel/SpinalHDL/Amaranth → Verilog) |
+| `handoff` | Handoff to downstream conductor (`--target fpga` / `--target asic`) |
+| `status` | Display build status and job information |
 
-## 共通オプション（CommonOpts）
+## Common Options (CommonOpts)
 
-| オプション | 値 | 説明 |
-|-----------|---|------|
-| `--output` | `human` \| `json` | 出力フォーマット（既定: human） |
-| `--timeout` | `<秒>` | RPC タイムアウト |
-| `--registry` | `<path>` | agent-cli レジストリパス |
-| `--config` | `<path>` | 設定ファイルパス |
-| `--verbose` | — | 詳細ログ出力 |
+| Option | Value | Description |
+|--------|-------|-------------|
+| `--output` | `human` \| `json` | Output format (default: human) |
+| `--timeout` | `<seconds>` | RPC timeout |
+| `--registry` | `<path>` | agent-cli registry path |
+| `--config` | `<path>` | Configuration file path |
+| `--verbose` | — | Verbose logging |
 
-## Exit Code
+## Exit Codes
 
-| Exit Code | 意味 |
-|-----------|------|
+| Exit Code | Meaning |
+|-----------|---------|
 | 0 | SUCCESS |
 | 1 | GENERAL_ERROR |
 | 2 | RPC_ERROR |
@@ -43,33 +43,33 @@
 | 7 | SOCKET_NOT_FOUND |
 | 8 | PERMISSION_DENIED |
 
-## CLI 使用例
+## CLI Usage Examples
 
 ```bash
-# 初期化
+# Initialize
 hestia rtl init
 
-# Lint 実行
+# Run lint
 hestia rtl lint
 
-# シミュレーション
+# Simulation
 hestia rtl simulate --tb tb_alu --simulator verilator
 
-# 形式検証
+# Formal verification
 hestia rtl formal --properties properties.sv
 
-# 下流ハンドオフ
+# Downstream handoff
 hestia rtl handoff --target fpga
 ```
 
-## CLI アーキテクチャ
+## CLI Architecture
 
-Rust 製クライアントバイナリ（`tokio` + `serde` + `clap`）。rtl-conductor の agent-cli peer（peer 名 `rtl`）に対して agent-cli ネイティブ IPC で接続する。
+Rust-based client binary (`tokio` + `serde` + `clap`). Connects to the rtl-conductor agent-cli peer (peer name `rtl`) via agent-cli native IPC.
 
-## 関連ドキュメント
+## Related Documentation
 
-- [rtl/config_schema.md](config_schema.md) — rtl.toml 設定スキーマ
-- [rtl/message_methods.md](message_methods.md) — rtl.* メソッド一覧
-- [rtl/rtl_tool_adapter.md](rtl_tool_adapter.md) — RtlToolAdapter トレイト
-- [rtl/handoff.md](handoff.md) — 下流連携ハンドオフ
-- [../ai/binary_spec.md](../ai/binary_spec.md) — 統合 CLI 仕様
+- [rtl/config_schema.md](config_schema.md) — rtl.toml configuration schema
+- [rtl/message_methods.md](message_methods.md) — rtl.* method list
+- [rtl/rtl_tool_adapter.md](rtl_tool_adapter.md) — RtlToolAdapter trait
+- [rtl/handoff.md](handoff.md) — Downstream handoff
+- [../ai/binary_spec.md](../ai/binary_spec.md) — Unified CLI specification

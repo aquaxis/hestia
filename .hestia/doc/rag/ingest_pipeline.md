@@ -1,94 +1,94 @@
-# rag-conductor 取り込みパイプライン
+# rag-conductor Ingestion Pipeline
 
-**対象 Conductor**: rag-conductor
-**ソース**: 設計仕様書 §13.7.3（3282-3287行目付近）, §13.7.4（3289-3294行目付近）
+**Target Conductor**: rag-conductor
+**Source**: Design Specification §13.7.3 (around lines 3282-3287), §13.7.4 (around lines 3289-3294)
 
-## パイプライン構成
+## Pipeline Configuration
 
-### PDF 7 段パイプライン
+### PDF 7-stage Pipeline
 
-| 段階 | 処理 | 使用ツール |
-|------|------|----------|
-| 1 | テキスト抽出 | PyPDF / pdfplumber |
-| 2 | OCR フォールバック | Tesseract OCR（300 DPI、信頼度 >= 60%） |
-| 3 | 表抽出 | Camelot |
-| 4 | 画像抽出 | PyPDF / pdfplumber |
-| 5 | セクション認識 | ヘッダー・見出し検出 |
-| 6 | メタデータ付与 | ソース・ページ番号・作成日等 |
-| 7 | 共通パイプラインへ | — |
+| Stage | Processing | Tools Used |
+|-------|-----------|------------|
+| 1 | Text extraction | PyPDF / pdfplumber |
+| 2 | OCR fallback | Tesseract OCR (300 DPI, confidence >= 60%) |
+| 3 | Table extraction | Camelot |
+| 4 | Image extraction | PyPDF / pdfplumber |
+| 5 | Section recognition | Header/heading detection |
+| 6 | Metadata attachment | Source, page number, creation date, etc. |
+| 7 | Pass to common pipeline | — |
 
-### Web 8 段パイプライン
+### Web 8-stage Pipeline
 
-| 段階 | 処理 | 使用ツール |
-|------|------|----------|
-| 1 | URL 列挙 | サイトマップ / クロール |
-| 2 | robots.txt 確認 | robots.txt パーサー |
-| 3 | HTTP 取得 | HTTP クライアント |
-| 4 | 本文抽出 | trafilatura |
-| 5 | ノイズ除去 | BeautifulSoup |
-| 6 | 言語検出 | CLD3 / fasttext |
-| 7 | メタデータ付与 | URL・タイトル・日付等 |
-| 8 | 共通パイプラインへ | — |
+| Stage | Processing | Tools Used |
+|-------|-----------|------------|
+| 1 | URL enumeration | Sitemap / crawl |
+| 2 | robots.txt check | robots.txt parser |
+| 3 | HTTP fetch | HTTP client |
+| 4 | Content extraction | trafilatura |
+| 5 | Noise removal | BeautifulSoup |
+| 6 | Language detection | CLD3 / fasttext |
+| 7 | Metadata attachment | URL, title, date, etc. |
+| 8 | Pass to common pipeline | — |
 
-### 共通 6 段パイプライン
+### Common 6-stage Pipeline
 
-| 段階 | 処理 | 説明 |
-|------|------|------|
-| 1 | 正規化 | Unicode 正規化・空白統一・HTML エンティティ展開 |
-| 2 | 品質ゲート | 6 ルールによる品質チェック（不合格 → quarantine） |
-| 3 | チャンク分割 | 既定 1000 トークン / オーバーラップ 200 |
-| 4 | 埋め込み | Ollama `nomic-embed-text`（768 次元） |
-| 5 | upsert | Chroma / Qdrant へのベクトル登録 |
-| 6 | ログ | 取り込み結果ログ記録 |
+| Stage | Processing | Description |
+|-------|-----------|-------------|
+| 1 | Normalization | Unicode normalization, whitespace unification, HTML entity expansion |
+| 2 | Quality gate | Quality check with 6 rules (failure → quarantine) |
+| 3 | Chunking | Default 1000 tokens / overlap 200 |
+| 4 | Embedding | Ollama `nomic-embed-text` (768 dimensions) |
+| 5 | Upsert | Vector registration to Chroma / Qdrant |
+| 6 | Logging | Ingestion result log recording |
 
-## 品質ゲート 6 ルール
+## Quality Gate 6 Rules
 
-| ルール | 条件 | 合格時 | 不合格時 |
-|-------|------|--------|---------|
-| 最小文字数 | チャンク >= 最小閾値 | 次段階へ | quarantine |
-| 最大文字数 | チャンク <= 最大閾値 | 次段階へ | 分割再試行 |
-| 言語検出 | 対応言語である | 次段階へ | quarantine |
-| HTML ノイズ除去 | ノイズなし | 次段階へ | 再処理 |
-| 重複（cosine >= 0.95） | 既存チャンクと非類似 | 次段階へ | スキップ |
-| UTF-8 妁当性 | 正しいエンコーディング | 次段階へ | quarantine |
-| OCR 信頼度 | >= 60% | 次段階へ | quarantine |
+| Rule | Condition | On Pass | On Fail |
+|------|-----------|---------|---------|
+| Minimum character count | Chunk >= minimum threshold | Proceed to next stage | Quarantine |
+| Maximum character count | Chunk <= maximum threshold | Proceed to next stage | Split and retry |
+| Language detection | Supported language | Proceed to next stage | Quarantine |
+| HTML noise removal | No noise | Proceed to next stage | Reprocess |
+| Deduplication (cosine >= 0.95) | Dissimilar to existing chunks | Proceed to next stage | Skip |
+| UTF-8 validity | Valid encoding | Proceed to next stage | Quarantine |
+| OCR confidence | >= 60% | Proceed to next stage | Quarantine |
 
-## 増分更新
+## Incremental Updates
 
-ETag / SHA-256 で変更を検出し、変更のあったソースのみ再取り込みする。全再構築が 180 分かかる処理を、増分更新により約 3 分に短縮する。
+Changes are detected via ETag / SHA-256, and only modified sources are re-ingested. A full rebuild that takes 180 minutes is reduced to approximately 3 minutes with incremental updates.
 
-## ライセンス管理
+## License Management
 
-| ライセンス種別 | 取り込み可否 | 条件 |
-|-------------|------------|------|
-| OSS / free | 許可 | 無条件 |
-| CC-BY-* | 許可 | クレジット表示必須 |
-| vendor-proprietary | 条件付き許可 | `terms_accepted=true` 必須 |
-| unknown | 拒否 | — |
+| License Type | Ingestion Allowed | Condition |
+|-------------|-------------------|-----------|
+| OSS / free | Allowed | Unconditional |
+| CC-BY-* | Allowed | Attribution required |
+| vendor-proprietary | Conditionally allowed | `terms_accepted=true` required |
+| unknown | Rejected | — |
 
-## PII マスキング
+## PII Masking
 
-- 原本: GPG 暗号化で保管
-- インデックス: マスク済みテキストのみ（PII は `[REDACTED]` 等で置換）
-- マスキング対象: 氏名・メールアドレス・電話番号・IP アドレス等
+- Originals: stored with GPG encryption
+- Index: masked text only (PII replaced with `[REDACTED]`, etc.)
+- Masking targets: names, email addresses, phone numbers, IP addresses, etc.
 
-## self_learning 取り込み（§13.7.8）
+## self_learning Ingestion (§13.7.8)
 
-他 conductor からの作業内容自動蓄積パイプライン。
+Automatic accumulation pipeline for work content from other conductors.
 
-| カテゴリ | 内容 | 送信タイミング |
-|---------|------|------------|
-| design_case | 成功した設計パラメータ + ビルド結果 | ビルド成功時 |
-| bugfix_case | エラー → 修正パッチ → 検証結果 | 修正完了時 |
-| build_log | ツール出力要約 | ビルド完了時 |
-| verification_result | 検証通過/失敗履歴 | 検証完了時 |
-| decision_cot | 設計判断の CoT | プランニング/設計完了時 |
-| agent_action_log | 作業ログ | exec_job 完了時 |
-| probe_result | 互換性プローブ結果 | 検証完了時 |
+| Category | Content | Timing |
+|----------|---------|--------|
+| design_case | Successful design parameters + build results | On build success |
+| bugfix_case | Error → fix patch → verification results | On fix completion |
+| build_log | Tool output summary | On build completion |
+| verification_result | Verification pass/fail history | On verification completion |
+| decision_cot | Design decision CoT | On planning/design completion |
+| agent_action_log | Work logs | On exec_job completion |
+| probe_result | Compatibility probe results | On verification completion |
 
-## 関連ドキュメント
+## Related Documentation
 
-- [rag/config_schema.md](config_schema.md) — config.toml [rag] スキーマ
-- [rag/search_engine.md](search_engine.md) — 検索エンジン仕様
-- [rag/state_machines.md](state_machines.md) — インデックス状態遷移
-- [rag/error_types.md](error_types.md) — rag-conductor エラーコード
+- [rag/config_schema.md](config_schema.md) — config.toml [rag] schema
+- [rag/search_engine.md](search_engine.md) — Search engine specification
+- [rag/state_machines.md](state_machines.md) — Index state transitions
+- [rag/error_types.md](error_types.md) — rag-conductor error codes

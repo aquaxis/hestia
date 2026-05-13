@@ -1,63 +1,63 @@
-# ai-conductor タスク状態遷移
+# ai-conductor Task State Transitions
 
-**対象 Conductor**: ai-conductor
-**ソース**: 設計仕様書 §3.3.1（916-955行目付近）, §3.3.2（957-1010行目付近）
+**Target Conductor**: ai-conductor
+**Source**: Design Specification §3.3.1 (around lines 916-955), §3.3.2 (around lines 957-1010)
 
-## タスク処理状態遷移
+## Task Processing State Transitions
 
-ai-conductor の task-router は、フロントエンドからの指示を受領してから配下 conductor への振り分け完了まで、以下の状態遷移を経る。
+ai-conductor's task-router goes through the following state transitions from receiving a frontend instruction to completing dispatch to downstream conductors.
 
 ```
-[受領] → 意図理解 → タスク分解 → ルーティング → 完了
+[Received] → Intent Classification → Task Decomposition → Routing → Completed
                             │                │
-                            │                └→ 失敗（conductor 到達不可）
+                            │                └→ Failed (conductor unreachable)
                             │
-                            └→ 分解失敗
+                            └→ Decomposition failed
 ```
 
-### 状態定義
+### State Definitions
 
-| 状態 | 説明 |
+| State | Description |
 |------|------|
-| Received | フロントエンドから指示を受領（自然言語 or 構造化 JSON） |
-| IntentClassified | 意図理解完了（設計タスク種別判定: fpga build / asic synth / pcb route 等） |
-| Decomposed | タスク分解完了（単一 conductor / 複数 conductor 横断 DAG / 仕様書ベース） |
-| Routed | 配下 conductor へ dispatch 完了（`agent-cli send <peer> <payload>`） |
-| Completed | 結果集約完了 → フロントエンドへ通知 |
-| Failed | 処理失敗（エスカレーション / リトライ判定） |
+| Received | Instruction received from frontend (natural language or structured JSON) |
+| IntentClassified | Intent classification complete (design task type determined: fpga build / asic synth / pcb route, etc.) |
+| Decomposed | Task decomposition complete (single conductor / cross-conductor DAG / specification-based) |
+| Routed | Dispatch to downstream conductor complete (`agent-cli send <peer> <payload>`) |
+| Completed | Result aggregation complete → notify frontend |
+| Failed | Processing failed (escalation / retry determination) |
 
-### 分岐パターン
+### Branching Patterns
 
-**単一 conductor で完結の場合:**
+**Single conductor completion:**
 ```
 Received → IntentClassified → Decomposed → Routed → Completed
 ```
 
-**複数 conductor 横断の場合:**
+**Cross-conductor:**
 ```
-Received → IntentClassified → Decomposed → WorkflowEngine に委譲 → DAG 実行 → Completed
-```
-
-**仕様書ベースの場合:**
-```
-Received → IntentClassified → SpecDriven で DesignSpec 生成 → DAG 化 → WorkflowEngine 実行 → Completed
+Received → IntentClassified → Decomposed → Delegated to WorkflowEngine → DAG execution → Completed
 ```
 
-## ヘルスチェック状態遷移
+**Specification-based:**
+```
+Received → IntentClassified → DesignSpec generated via SpecDriven → DAG creation → WorkflowEngine execution → Completed
+```
 
-health-checker は全 conductor を定期ポーリング（既定 30 秒間隔）し、ConductorStatus を更新する。
+## Health Check State Transitions
+
+health-checker polls all conductors at regular intervals (default 30 seconds) and updates ConductorStatus.
 
 ```
            ┌─────────────────────────────────────┐
            │                                     │
            ▼                                     │
-  Online ──→ Offline ──→ 自動再起動(max 3) ─────┘
+  Online ──→ Offline ──→ Auto restart (max 3) ─────┘
     │           │                       │
-    │           │                  連続3回失敗
+    │           │                  3 consecutive failures
     ▼           │                       │
   Degraded     │                       ▼
-    │           │              フロントエンド通知
-    ▼           │           (agent.alert.v1)
+    │           │              Frontend notification
+    │           │           (agent.alert.v1)
   Upgrading     │
     │           │
     └───────────┘
@@ -65,57 +65,57 @@ health-checker は全 conductor を定期ポーリング（既定 30 秒間隔�
 
 ### ConductorStatus
 
-| 状態 | 説明 | 遷移トリガー |
+| State | Description | Transition Trigger |
 |------|------|------------|
-| Online | 正常稼働中 | 3 秒以内に "online" 応答 |
-| Offline | 停止中 | タイムアウト (3 秒) |
-| Degraded | 劣化状態（一部機能制限あり） | "degraded" 応答 |
-| Upgrading | アップグレード中 | "upgrading" 応答 |
+| Online | Running normally | "online" response within 3 seconds |
+| Offline | Stopped | Timeout (3 seconds) |
+| Degraded | Degraded state (some features restricted) | "degraded" response |
+| Upgrading | Upgrading in progress | "upgrading" response |
 
-### 状態変化時アクション
+### Actions on State Change
 
-| 遷移 | アクション |
+| Transition | Action |
 |------|----------|
-| Online → Offline / Degraded | Observability log + 自動再起動試行 (max 3) |
-| 連続 3 回失敗 | フロントエンド通知 (`agent.alert.v1`) |
-| Upgrading → Online | upgrade-manager に成功通知 |
-| 任意 → 状態履歴を sled に永続化 | §19 オブザーバビリティ連携 |
+| Online → Offline / Degraded | Observability log + auto restart attempt (max 3) |
+| 3 consecutive failures | Frontend notification (`agent.alert.v1`) |
+| Upgrading → Online | Success notification to upgrade-manager |
+| Any → Persist state history to sled | §19 Observability integration |
 
-## ワークフロー実行状態遷移
+## Workflow Execution State Transitions
 
-WorkflowEngine による DAG ベース実行のステップ状態遷移。
+Step state transitions for DAG-based execution by WorkflowEngine.
 
-| StepStatus | 説明 |
+| StepStatus | Description |
 |-----------|------|
-| Pending | 依存ステップ未完了 |
-| Ready | 依存ステップ完了、実行可能 |
-| Running | 実行中 |
-| Completed | 成功完了 |
-| Failed | 失敗 |
-| Skipped | スキップ（依存ステップ失敗等） |
+| Pending | Dependency steps not yet completed |
+| Ready | Dependency steps completed, executable |
+| Running | Currently executing |
+| Completed | Successfully completed |
+| Failed | Failed |
+| Skipped | Skipped (due to dependency step failure, etc.) |
 
-### ダイヤモンド型依存関係の例
+### Diamond Dependency Example
 
 ```
-        [A: FPGA 合成]
+        [A: FPGA Synthesis]
        /              \
-[B: ASIC 合成]    [C: PCB 設計]
+[B: ASIC Synthesis]    [C: PCB Design]
        \              /
-        [D: 統合検証]
+        [D: Integration Verification]
 ```
 
-A → B, A → C, B → D, C → D。A 完了後 B・C は並列実行、D は B・C 両方完了後に実行。
+A → B, A → C, B → D, C → D. After A completes, B and C run in parallel; D runs after both B and C complete.
 
-## 起動順序オーケストレーション
+## Startup Orchestration
 
-| Group | Conductor | 起動方式 |
+| Group | Conductor | Startup Method |
 |-------|-----------|---------|
-| Group 0 | ai-conductor | 直列・最高優先度 |
-| Group 1 | rtl / fpga / asic / pcb / hal / apps / debug / rag | 8 並列（ai readiness 確認後） |
+| Group 0 | ai-conductor | Serial, highest priority |
+| Group 1 | rtl / fpga / asic / pcb / hal / apps / debug / rag | 8 parallel (after ai readiness confirmed) |
 
-## 関連ドキュメント
+## Related Documentation
 
-- [ai/message_methods.md](message_methods.md) — ai.* メソッド一覧
-- [ai/workflow_engine.md](workflow_engine.md) — WorkflowEngine 詳細
-- [ai/agent_hierarchy.md](agent_hierarchy.md) — サブエージェント構成
-- [../common/conductor_startup.md](../common/conductor_startup.md) — 起動順序詳細
+- [ai/message_methods.md](message_methods.md) — ai.* method list
+- [ai/workflow_engine.md](workflow_engine.md) — WorkflowEngine details
+- [ai/agent_hierarchy.md](agent_hierarchy.md) — Sub-agent hierarchy
+- [../common/conductor_startup.md](../common/conductor_startup.md) — Startup sequence details

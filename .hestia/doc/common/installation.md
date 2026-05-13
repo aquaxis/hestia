@@ -1,33 +1,33 @@
-# ビルド手順
+# Build Procedure
 
-**対象領域**: common — インストール
-**ソース**: 設計仕様書 §15.4
+**Domain**: common — Installation
+**Source**: Design Specification §15.4
 
-## 概要
+## Overview
 
-HESTIA の Rust ワークスペースのビルド・テスト手順を定める。全バイナリは `cargo build --release` で一括ビルド可能。
+Defines the build and test procedures for the HESTIA Rust workspace. All binaries can be built in bulk with `cargo build --release`.
 
-## 前提条件
+## Prerequisites
 
-| 要件 | バージョン |
+| Requirement | Version |
 |------|----------|
-| Rust ツールチェーン | stable（最新推奨）|
-| Cargo | Rust 同梱 |
-| Linux ホスト OS | カーネル 5.x 以降推奨 |
-| Podman | コンテナ実行時のみ |
+| Rust toolchain | stable (latest recommended)|
+| Cargo | Included with Rust |
+| Linux host OS | Kernel 5.x or later recommended |
+| Podman | Only when using containers |
 
-## ビルド手順
+## Build Procedure
 
-### 全バイナリ一括ビルド
+### Build All Binaries
 
 ```bash
 cd .hestia/tools
 cargo build --release
 ```
 
-9 conductor + 10 CLI の計 19 バイナリが生成される。
+This generates 9 conductors + 10 CLIs = 19 binaries.
 
-### 特定 conductor のみビルド
+### Build Specific Conductor Only
 
 ```bash
 cargo build --release -p hestia-ai-conductor
@@ -41,36 +41,36 @@ cargo build --release -p hestia-debug-conductor
 cargo build --release -p hestia-rag-conductor
 ```
 
-### 特定クレートのみビルド
+### Build Specific Crate Only
 
 ```bash
 cargo build --release -p container-manager
 cargo build --release -p conductor-sdk
 ```
 
-## テスト実行
+## Running Tests
 
-### 全テスト
+### All Tests
 
 ```bash
 cargo test
 ```
 
-### 特定 conductor のテスト
+### Specific Conductor Tests
 
 ```bash
 cargo test -p hestia-fpga-conductor
 ```
 
-### 特定クレートのテスト
+### Specific Crate Tests
 
 ```bash
 cargo test -p container-manager
 ```
 
-## 生成物の配置
+## Build Artifact Location
 
-ビルド成果物は `.hestia/tools/target/release/` に配置される:
+Build artifacts are placed in `.hestia/tools/target/release/`:
 
 ```
 .hestia/tools/target/release/
@@ -78,22 +78,22 @@ cargo test -p container-manager
 ├── hestia-rtl-conductor
 ├── hestia-fpga-conductor
 ├── ...
-├── hestia                # 統合ランナー CLI
+├── hestia                # Unified runner CLI
 ├── hestia-ai-cli
 ├── hestia-fpga-cli
 └── ...
 ```
 
-## デバッグビルド
+## Debug Build
 
 ```bash
-cargo build                # debug ビルド
-cargo test -- --nocapture  # 標準出力を表示
-RUST_LOG=debug cargo run -p hestia-fpga-conductor  # ログレベル指定
+cargo build                # debug build
+cargo test -- --nocapture  # Show stdout
+RUST_LOG=debug cargo run -p hestia-fpga-conductor  # Specify log level
 ```
 
-## 関連ドキュメント
+## Related Documents
 
-- [cargo_workspace.md](cargo_workspace.md) — ワークスペース構成
-- [conductor_startup.md](conductor_startup.md) — デーモン起動順序
-- [error_handling_strategy.md](error_handling_strategy.md) — エラー処理
+- [cargo_workspace.md](cargo_workspace.md) — Workspace configuration
+- [conductor_startup.md](conductor_startup.md) — Daemon startup order
+- [error_handling_strategy.md](error_handling_strategy.md) — Error handling

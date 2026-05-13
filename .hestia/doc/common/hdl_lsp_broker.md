@@ -1,21 +1,21 @@
 # HDL LSP Broker
 
-**対象領域**: common — HDL 開発支援
-**ソース**: 設計仕様書 §13.1
+**Domain**: common — HDL Development Support
+**Source**: Design Specification §13.1
 
-## 概要
+## Overview
 
-Verilog / SystemVerilog / VHDL / Verilog-AMS の LSP サーバ群を統一インターフェースで提供する LSP プロキシ。フロントエンド（VSCode 拡張 / Tauri IDE）からは単一接続で複数言語の補完・診断・ジャンプ・参照・リネームを利用できる。agent-cli peer `lsp` として提供される。
+An LSP proxy that provides unified access to Verilog / SystemVerilog / VHDL / Verilog-AMS LSP servers. Frontends (VSCode extension / Tauri IDE) can use a single connection for completion, diagnostics, go-to-definition, references, and rename across multiple languages. Provided as agent-cli peer `lsp`.
 
-## 対応 LSP サーバ
+## Supported LSP Servers
 
-| LSP サーバ | バージョン | 対応言語 |
+| LSP Server | Version | Supported Languages |
 |-----------|----------|---------|
 | svls | v0.2.x | SystemVerilog |
 | vhdl_ls | v0.3.x | VHDL |
 | verilog-ams-ls | v0.1.x | Verilog-AMS |
 
-## 主要型
+## Key Types
 
 ### HdlLanguage
 
@@ -30,46 +30,46 @@ pub enum HdlLanguage {
 
 ### LspServerConfig
 
-LSP サーバごとの起動設定。
+Startup configuration for each LSP server.
 
 ### RoutingTable
 
-拡張子 → LSP サーバのルーティングテーブル。
+Routing table mapping file extensions to LSP servers.
 
-## 拡張子マップ
+## Extension Map
 
-| 拡張子 | 言語 | ルーティング先 |
+| Extension | Language | Routing Target |
 |--------|------|-------------|
-| `.v` | Verilog | svls（Verilog モード）|
+| `.v` | Verilog | svls (Verilog mode)|
 | `.sv` / `.svh` | SystemVerilog | svls |
 | `.vhd` / `.vhdl` | VHDL | vhdl_ls |
 | `.va` / `.vams` | Verilog-AMS | verilog-ams-ls |
 
-## パラメータ既定値
+## Default Parameters
 
-| パラメータ | 既定値 | 説明 |
+| Parameter | Default | Description |
 |----------|-------|------|
-| `max_instances` | 4 | 同時起動可能な LSP サーバインスタンス数 |
-| `idle_timeout_secs` | 300 | アイドル時の自動終了タイムアウト |
+| `max_instances` | 4 | Maximum number of simultaneously running LSP server instances |
+| `idle_timeout_secs` | 300 | Auto-shutdown timeout when idle |
 
-## 動作フロー
+## Operation Flow
 
 ```
-[VSCode / Tauri IDE] → 単一 LSP 接続 → HDL LSP Broker
-                                              │
-                                              ├── 拡張子判定 → HdlLanguage
-                                              ├── RoutingTable で LSP サーバ選択
-                                              ├── サーバ未起動なら起動（max_instances 制限内）
-                                              └── LSP リクエスト転送 → 応答返却
+[VSCode / Tauri IDE] -> Single LSP connection -> HDL LSP Broker
+                                              |
+                                              +-- Extension detection -> HdlLanguage
+                                              +-- RoutingTable selects LSP server
+                                              +-- Start server if not running (within max_instances limit)
+                                              +-- Forward LSP request -> Return response
 ```
 
-## 統合先
+## Integration Targets
 
-- VSCode 拡張: Monaco Editor に HDL ハイライト・補完・診断を統合（§16.1）
-- Tauri IDE: 同エディタ機能を提供
+- VSCode extension: Integrates HDL highlighting, completion, and diagnostics into Monaco Editor (§16.1)
+- Tauri IDE: Provides the same editor functionality
 
-## 関連ドキュメント
+## Related Documents
 
-- [wasm_waveform_viewer.md](wasm_waveform_viewer.md) — WASM 波形ビューア
-- [constraint_bridge.md](constraint_bridge.md) — 制約ファイル変換
-- [observability.md](observability.md) — 監視
+- [wasm_waveform_viewer.md](wasm_waveform_viewer.md) — WASM Waveform Viewer
+- [constraint_bridge.md](constraint_bridge.md) — Constraint file conversion
+- [observability.md](observability.md) — Monitoring

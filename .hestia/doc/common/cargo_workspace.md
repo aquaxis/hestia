@@ -1,18 +1,18 @@
-# Rust ワークスペース構成
+# Rust Workspace Configuration
 
-**対象領域**: common — ビルド構成
-**ソース**: 設計仕様書 §15.4, §1.6, §2.1
+**Domain**: common — Build Configuration
+**Source**: Design Specification §15.4, §1.6, §2.1
 
-## 概要
+## Overview
 
-HESTIA の Rust プロジェクトは `.hestia/tools/Cargo.toml` をルートとする Cargo ワークスペースで構成される。resolver = "2" を採用し、9 conductor デーモン + 10 CLI バイナリを一元管理する。
+The HESTIA Rust project is structured as a Cargo workspace rooted at `.hestia/tools/Cargo.toml`. It uses resolver = "2" and centrally manages 9 conductor daemons + 10 CLI binaries.
 
-## ワークスペース構成
+## Workspace Configuration
 
 ```
 .hestia/tools/
-├── Cargo.toml                    # ワークスペースルート（resolver = "2"）
-├── conductors/                   # Rust デーモン x9
+├── Cargo.toml                    # Workspace root (resolver = "2")
+├── conductors/                   # Rust daemons x9
 │   ├── hestia-ai-conductor/
 │   ├── hestia-rtl-conductor/
 │   ├── hestia-fpga-conductor/
@@ -23,7 +23,7 @@ HESTIA の Rust プロジェクトは `.hestia/tools/Cargo.toml` をルートと
 │   ├── hestia-debug-conductor/
 │   └── hestia-rag-conductor/
 ├── clis/                         # CLI x10
-│   ├── hestia/                   # 統合ランナー
+│   ├── hestia/                   # Unified runner
 │   ├── hestia-ai-cli/
 │   ├── hestia-rtl-cli/
 │   ├── hestia-fpga-cli/
@@ -33,18 +33,18 @@ HESTIA の Rust プロジェクトは `.hestia/tools/Cargo.toml` をルートと
 │   ├── hestia-apps-cli/
 │   ├── hestia-debug-cli/
 │   └── hestia-rag-cli/
-└── crates/                       # 共通クレート
+└── crates/                       # Shared crates
     ├── conductor-sdk/            # transport / message / agent / config / error
-    ├── adapter-core/             # ToolAdapter / VendorAdapter トレイト
-    ├── hestia-mcp-server/        # MCP サーバー
-    └── project-model/            # TOML パーサー・設定モデル
+    ├── adapter-core/             # ToolAdapter / VendorAdapter traits
+    ├── hestia-mcp-server/        # MCP server
+    └── project-model/            # TOML parser and configuration model
 ```
 
-## バイナリ一覧（19 バイナリ）
+## Binary Listing (19 binaries)
 
-### Conductor デーモン（9）
+### Conductor Daemons (9)
 
-| バイナリ | 対応 conductor |
+| Binary | Corresponding conductor |
 |---------|---------------|
 | `hestia-ai-conductor` | ai-conductor |
 | `hestia-rtl-conductor` | rtl-conductor |
@@ -56,9 +56,9 @@ HESTIA の Rust プロジェクトは `.hestia/tools/Cargo.toml` をルートと
 | `hestia-debug-conductor` | debug-conductor |
 | `hestia-rag-conductor` | rag-conductor |
 
-### CLI クライアント（10）
+### CLI Clients (10)
 
-| バイナリ | 主要サブコマンド |
+| Binary | Major Subcommands |
 |---------|----------------|
 | `hestia` | `init` / `start [domain]` / `status` / `ai` / `rtl` / `fpga` / `asic` / `pcb` / `hal` / `apps` / `debug` / `rag` |
 | `hestia-ai-cli` | `exec` / `run --file` / `agent ls` / `container ls|start|stop|create` / `workflow run` |
@@ -71,32 +71,32 @@ HESTIA の Rust プロジェクトは `.hestia/tools/Cargo.toml` をルートと
 | `hestia-debug-cli` | `create` / `connect` / `disconnect` / `program` / `capture` / `signals` / `trigger` / `reset` |
 | `hestia-rag-cli` | `ingest` / `search` / `cleanup` / `status` |
 
-## 共通依存
+## Common Dependencies
 
-| クレート | 用途 |
+| Crate | Purpose |
 |---------|------|
-| `tokio` | 非同期ランタイム（multi_thread, 4 workers）|
-| `serde` | TOML/JSON シリアライゼーション |
-| `tracing` | 構造化ログ |
-| `thiserror` / `anyhow` | エラー処理（ライブラリ / バイナリ使い分け）|
-| `clap` | CLI パーサー |
-| `sled` | Rust ネイティブ KV ストア |
-| `minijinja` | テンプレートエンジン |
-| `petgraph` | DAG 解決 |
+| `tokio` | Async runtime (multi_thread, 4 workers)|
+| `serde` | TOML/JSON serialization |
+| `tracing` | Structured logging |
+| `thiserror` / `anyhow` | Error handling (library / binary differentiation)|
+| `clap` | CLI parser |
+| `sled` | Rust-native KV store |
+| `minijinja` | Template engine |
+| `petgraph` | DAG resolution |
 
-## ビルドコマンド
+## Build Commands
 
 ```bash
 cd .hestia/tools
-cargo build --release                                    # 全バイナリ
-cargo build --release -p hestia-fpga-conductor           # 特定 conductor
-cargo test                                               # 全テスト
-cargo test -p hestia-fpga-conductor                      # 特定 conductor
-cargo test -p container-manager                          # 特定クレート
+cargo build --release                                    # All binaries
+cargo build --release -p hestia-fpga-conductor           # Specific conductor
+cargo test                                               # All tests
+cargo test -p hestia-fpga-conductor                      # Specific conductor
+cargo test -p container-manager                          # Specific crate
 ```
 
-## 関連ドキュメント
+## Related Documents
 
-- [installation.md](installation.md) — ビルド手順詳細
-- [error_handling_strategy.md](error_handling_strategy.md) — エラー処理戦略
-- [conductor_startup.md](conductor_startup.md) — デーモン起動順序
+- [installation.md](installation.md) — Build procedure details
+- [error_handling_strategy.md](error_handling_strategy.md) — Error handling strategy
+- [conductor_startup.md](conductor_startup.md) — Daemon startup order

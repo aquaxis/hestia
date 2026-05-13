@@ -1,21 +1,21 @@
-# agent-cli メッセージ仕様
+# agent-cli Message Specification
 
-**対象領域**: common — メッセージング
-**ソース**: 設計仕様書 §14.1
+**Domain**: common — Messaging
+**Source**: Design Specification §14.1
 
-## 概要
+## Overview
 
-HESTIA の全通信は agent-cli ネイティブ IPC に統一されている。本章は agent-cli IPC 上で送受される構造化メッセージ（JSON ペイロード）の仕様を詳述する。自然言語ペイロードは agent-cli の persona / LLM が直接処理するため対象外。
+All HESTIA communications are unified under agent-cli native IPC. This chapter details the specification for structured messages (JSON payloads) sent and received over agent-cli IPC. Natural language payloads are handled directly by agent-cli's persona / LLM and are out of scope.
 
-## トランスポートとフレーム
+## Transport and Framing
 
-- **トランスポート**: agent-cli ネイティブ IPC（`$XDG_RUNTIME_DIR/agent-cli/` 配下の Unix Domain Socket、agent-cli が自動管理）
-- **権限**: レジストリディレクトリは `0700`（owner のみ）、各 peer ソケットは `0600`
-- **フレーミング**: agent-cli ネイティブフレーム（length-delimited、本体最大 16 MiB）
-- **接続**: peer 探索は `agent-cli list`、送信は `agent-cli send <peer> <payload>` または REPL 内 `/send <peer> <payload>`
-- **ペイロード判定**: 先頭 `{` の場合は構造化 JSON、それ以外は自然言語テキストとして解釈（§2.3）
+- **Transport**: agent-cli native IPC (Unix Domain Socket under `$XDG_RUNTIME_DIR/agent-cli/`, managed automatically by agent-cli)
+- **Permissions**: Registry directory `0700` (owner only), each peer socket `0600`
+- **Framing**: agent-cli native frame (length-delimited, body max 16 MiB)
+- **Connection**: Peer discovery via `agent-cli list`, sending via `agent-cli send <peer> <payload>` or REPL `/send <peer> <payload>`
+- **Payload dispatch**: If the payload starts with `{`, interpret as structured JSON; otherwise, interpret as natural language text (§2.3)
 
-## 構造化ペイロード形式
+## Structured Payload Format
 
 ### Request
 
@@ -48,7 +48,7 @@ HESTIA の全通信は agent-cli ネイティブ IPC に統一されている。
 }
 ```
 
-### Notification（id なし、応答なし）
+### Notification (no id, no response)
 
 ```json
 {
@@ -58,7 +58,7 @@ HESTIA の全通信は agent-cli ネイティブ IPC に統一されている。
 }
 ```
 
-### Batch（同順応答）
+### Batch (responses in same order)
 
 ```json
 [
@@ -67,37 +67,37 @@ HESTIA の全通信は agent-cli ネイティブ IPC に統一されている。
 ]
 ```
 
-## ID 規約
+## ID Conventions
 
-- `id` 形式: `msg_{ISO8601 timestamp}_{random}`（agent-cli の慣習に整合）
-- `trace_id`: ワークフロー横断のトレース ID（§19 観測性プラクティスと連鎖）
-- レガシー JSON-RPC 2.0 の `"jsonrpc": "2.0"` フィールドは不要（agent-cli IPC 自体がトランスポートを規定）
+- `id` format: `msg_{ISO8601 timestamp}_{random}` (consistent with agent-cli conventions)
+- `trace_id`: Cross-workflow trace ID (chained with §19 observability practices)
+- The legacy JSON-RPC 2.0 `"jsonrpc": "2.0"` field is unnecessary (agent-cli IPC itself defines the transport)
 
-## エラー応答 data フィールド
+## Error Response data Field
 
-エラー応答 `data` には以下を含める:
+The error response `data` must include the following:
 
-| フールド | 説明 |
+| Field | Description |
 |---------|------|
-| `tool` | 発生元ツール名 |
-| `exit_code` | プロセス終了コード |
-| `log_path` | ログファイルパス |
-| `errors[]` | エラー詳細配列 |
-| `retry_possible` | リトライ可否 |
-| `suggested_action` | 推奨対応 |
+| `tool` | Originating tool name |
+| `exit_code` | Process exit code |
+| `log_path` | Log file path |
+| `errors[]` | Error detail array |
+| `retry_possible` | Whether retry is possible |
+| `suggested_action` | Recommended action |
 
-## ペイロード選択指針
+## Payload Selection Guidelines
 
-| 通信種別 | 推奨ペイロード | 理由 |
+| Communication Type | Recommended Payload | Reason |
 |---------|-------------|------|
-| 構造化操作（build / test / query / status） | 構造化 JSON | 型安全、エラーコード規約、SDK 互換 |
-| conductor 間の構造化ツール呼出 | 構造化 JSON | 再現性、トレース ID 連鎖 |
-| conductor 間の自然言語協調 | 自然言語テキスト | 自由形式、CoT 文脈共有 |
-| イベント通知 | 構造化 JSON（id なし） | 購読 / フィルタ可能 |
+| Structured operations (build / test / query / status) | Structured JSON | Type-safe, error code conventions, SDK-compatible |
+| Inter-conductor structured tool calls | Structured JSON | Reproducibility, trace ID chaining |
+| Inter-conductor natural language collaboration | Natural language text | Free-form, CoT context sharing |
+| Event notifications | Structured JSON (no id) | Subscribable / filterable |
 
-## 関連ドキュメント
+## Related Documents
 
-- [api_versioning.md](api_versioning.md) — メソッド名前空間・バージョニング
-- [error_registry.md](error_registry.md) — エラーコード全一覧
-- [agent_cli_messaging.md](agent_cli_messaging.md) — 完全なメッセージング仕様
-- [observability.md](observability.md) — trace_id 連鎖
+- [api_versioning.md](api_versioning.md) — Method namespace and versioning
+- [error_registry.md](error_registry.md) — Error code complete listing
+- [agent_cli_messaging.md](agent_cli_messaging.md) — Complete messaging specification
+- [observability.md](observability.md) — trace_id chaining

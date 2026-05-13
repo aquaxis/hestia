@@ -1,9 +1,9 @@
-//! 永続 session 実装。
+//! Persistent session implementation.
 //!
-//! `Run` subcommand から呼び出され、`claude` プロセスを子として保持し、
-//! FIFO 経由で受信した text を Claude の stdin に流し込み、Claude の
-//! stream-json stdout を `transcoder` 経由で agent-cli 互換 JSONL に
-//! 変換して log に追記する。
+//! Called from the `Run` subcommand, keeps a `claude` process as a child,
+//! feeds text received via FIFO into Claude's stdin, and converts Claude's
+//! stream-json stdout into agent-cli compatible JSONL via `transcoder`,
+//! appending to the log.
 
 use crate::{config, ipc, log as shim_log, registry, transcoder};
 use anyhow::{anyhow, Context, Result};
@@ -27,23 +27,23 @@ pub async fn run(opts: RunOpts) -> Result<()> {
     let registry_dir = config::registry_dir(opts.registry_path.clone());
     let log_dir_root = config::log_dir(opts.log_path.clone());
 
-    // persona ファイルを読込、フロントマター解析
+    // Read persona file and parse frontmatter
     let persona_text = std::fs::read_to_string(&opts.persona)
         .with_context(|| format!("read persona {}", opts.persona.display()))?;
     let persona = parse_persona(&persona_text);
 
-    // agent ID 生成
+    // Generate agent ID
     let agent_id = format!("shim-{}", uuid::Uuid::new_v4());
 
-    // log writer 起動
+    // Start log writer
     let (mut log, log_path) = shim_log::LogWriter::open(&log_dir_root, &agent_id)?;
     log.write_simple("system", &format!("claude-cli-shim run start peer={}", opts.name))?;
 
-    // FIFO 作成
+    // Create FIFO
     let fifo_path = config::fifo_path(&opts.name);
     ipc::ensure_fifo(&fifo_path)?;
 
-    // registry 登録
+    // Register in registry
     let entry = registry::PeerEntry {
         id: agent_id.clone(),
         name: opts.name.clone(),
@@ -61,7 +61,7 @@ pub async fn run(opts: RunOpts) -> Result<()> {
     };
     registry::write_entry(&registry_dir, &entry)?;
 
-    // claude プロセス起動
+    // Spawn claude process
     let mut claude = spawn_claude(&opts, &persona).await?;
     let stdin = claude
         .stdin
@@ -76,8 +76,8 @@ pub async fn run(opts: RunOpts) -> Result<()> {
         .take()
         .ok_or_else(|| anyhow!("failed to capture claude stderr"))?;
 
-    // Phase 113: claude の stderr を log_dir/<agent_id>/claude_stderr.log に記録。
-    // stream-json の起動失敗（モデル不正、API キー欠如等）を診断するための情報源。
+    // Phase 113: log claude's stderr to log_dir/<agent_id>/claude_stderr.log.
+    // This is a diagnostic source for stream-json startup failures (invalid model, missing API key, etc.).
     let stderr_log_path = log_path
         .parent()
         .map(|p| p.join("claude_stderr.log"))
@@ -125,7 +125,7 @@ pub async fn run(opts: RunOpts) -> Result<()> {
         }
     });
 
-    // FIFO reader task: 受信 text を Claude stdin にフィード
+    // FIFO reader task: feed received text into Claude's stdin
     let stdin_arc = std::sync::Arc::new(tokio::sync::Mutex::new(stdin));
     let stdin_for_fifo = stdin_arc.clone();
     let fifo_path_clone = fifo_path.clone();
@@ -161,12 +161,12 @@ pub async fn run(opts: RunOpts) -> Result<()> {
         }
     });
 
-    // claude プロセス終了 or 外部 SIGTERM 待機
+    // Wait for claude process exit or external SIGTERM
     let status = claude.wait().await.context("claude process wait")?;
     let _ = reader_handle.await;
     fifo_handle.abort();
 
-    // クリーンアップ: registry / fifo
+    // Cleanup: registry / fifo
     let _ = registry::remove_entry(&registry_dir, &opts.name);
     let _ = std::fs::remove_file(&fifo_path);
 
@@ -192,7 +192,7 @@ fn parse_persona(text: &str) -> PersonaMeta {
         meta.body = text.to_string();
         return meta;
     }
-    // ---\n ... \n---\n の YAML フロントマター
+    // ---\n ... \n---\n YAML frontmatter
     let after_first = &trimmed[3..];
     let Some(end_idx) = after_first.find("\n---") else {
         meta.body = text.to_string();
@@ -202,7 +202,7 @@ fn parse_persona(text: &str) -> PersonaMeta {
     let body_after = &after_first[end_idx + 4..]; // skip "\n---"
     meta.body = body_after.trim_start_matches('\n').to_string();
 
-    // YAML フロントマター解析（簡易: 必要なキーのみ抽出）
+    // YAML frontmatter parsing (simplified: extract only required keys)
     for line in yaml_text.lines() {
         let line = line.trim_end();
         if let Some(rest) = line.strip_prefix("name:") {
@@ -212,8 +212,8 @@ fn parse_persona(text: &str) -> PersonaMeta {
         } else if let Some(rest) = line.strip_prefix("role:") {
             meta.role = rest.trim().trim_matches('"').to_string();
         } else if line.trim() == "skills:" {
-            // 次行以降の `- xxx` を集める処理は簡易実装で省略
-            // skills は配列形式想定だが、ここでは空のまま（registry には空 vec）
+            // Collecting subsequent `- xxx` lines is simplified and omitted
+            // skills are expected in array format, but left as empty vec here (registry gets empty vec)
         } else if let Some(rest) = line.strip_prefix("-") {
             let s = rest.trim().to_string();
             if !s.is_empty() && !meta.role.is_empty() {
@@ -222,7 +222,7 @@ fn parse_persona(text: &str) -> PersonaMeta {
         }
     }
     if meta.role.is_empty() {
-        // role が persona に無ければ name を fallback
+        // If role is missing in persona, fall back to name
         meta.role = meta.name.clone();
     }
     meta
@@ -230,10 +230,10 @@ fn parse_persona(text: &str) -> PersonaMeta {
 
 async fn spawn_claude(opts: &RunOpts, persona: &PersonaMeta) -> Result<Child> {
     let mut cmd = Command::new("claude");
-    // Phase 113 注: claude の `--input-format stream-json` / `--output-format
-    // stream-json` は `--print` + `--verbose` の組み合わせが必須。stream-json
-    // input は EOF まで複数 message を受け付けるため、shim は stdin を keep open
-    // にしたまま FIFO 経由で input を流し込み、永続 session を実現する。
+    // Phase 113 note: claude's `--input-format stream-json` / `--output-format
+    // stream-json` requires `--print` + `--verbose`. stream-json input accepts
+    // multiple messages until EOF, so the shim keeps stdin open and feeds input
+    // via FIFO to implement persistent sessions.
     cmd.arg("--print")
         .arg("--verbose")
         .arg("--input-format")
@@ -247,22 +247,22 @@ async fn spawn_claude(opts: &RunOpts, persona: &PersonaMeta) -> Result<Child> {
     if let Some(model) = &opts.model {
         cmd.arg("--model").arg(model);
     }
-    // persona 本文を `--append-system-prompt` で渡す。
+    // Pass persona body via `--append-system-prompt`.
     //
-    // Phase 119: persona は dispatch 命令として `agent-cli send <peer>` 等を
-    // ハードコード文字列で含むが、claude-cli-shim engine 環境では `agent-cli`
-    // の独立 registry に peer が無いため、LLM が忠実に Bash で実行しても失敗
-    // する。shim が claude へ persona を渡す直前に `agent-cli` を
-    // `claude-cli-shim` に置換することで、persona ファイル無改修のまま
-    // dispatch 経路が機能する (agent-cli engine では shim 自体が呼ばれない
-    // ため、置換は claude_cli_shim engine 配下でのみ発生する)。
+    // Phase 119: The persona contains dispatch directives like `agent-cli send <peer>`
+    // as hardcoded strings, but in the claude-cli-shim engine environment, the independent
+    // agent-cli registry has no peers, so the LLM faithfully executing via Bash would fail.
+    // The shim replaces `agent-cli` with `claude-cli-shim` just before passing the persona
+    // to claude, so the dispatch path works without modifying the persona file (in the
+    // agent-cli engine the shim itself is never called, so the replacement only occurs
+    // under the claude-cli-shim engine).
     if !persona.body.is_empty() {
         let persona_body = persona.body.replace("agent-cli", "claude-cli-shim");
         cmd.arg("--append-system-prompt").arg(persona_body);
     }
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        // Phase 113: stderr は log dir の `claude_stderr.log` に記録して診断容易化。
+        // Phase 113: stderr is logged to `claude_stderr.log` in the log dir for easier diagnostics.
         .stderr(Stdio::piped());
     cmd.spawn().context("spawn claude")
 }

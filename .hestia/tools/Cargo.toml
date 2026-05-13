@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    # Conductor デーモン (9)
+    # Conductor daemons (9)
     "conductors/hestia-ai-conductor",
     "conductors/hestia-rtl-conductor",
     "conductors/hestia-fpga-conductor",
@@ -11,7 +11,7 @@ members = [
     "conductors/hestia-apps-conductor",
     "conductors/hestia-debug-conductor",
     "conductors/hestia-rag-conductor",
-    # CLI クライアント (10)
+    # CLI clients (10)
     "clis/hestia",
     "clis/hestia-ai-cli",
     "clis/hestia-rtl-cli",
@@ -22,14 +22,14 @@ members = [
     "clis/hestia-apps-cli",
     "clis/hestia-debug-cli",
     "clis/hestia-rag-cli",
-    # Phase 113: Claude Code wrapper shim (案 C)
+    # Phase 113: Claude Code wrapper shim (Plan C)
     "clis/claude-cli-shim",
-    # 共通クレート (4)
+    # Common crates (4)
     "crates/conductor-sdk",
     "crates/adapter-core",
     "crates/project-model",
     "crates/hestia-mcp-server",
-    # 共有サービス層 (6)
+    # Shared services layer (6)
     "crates/hdl-lsp-broker",
     "crates/waveform-core",
     "crates/constraint-bridge",
@@ -45,42 +45,42 @@ rust-version = "1.75"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-# 非同期ランタイム
+# Async runtime
 tokio = { version = "1", features = ["full"] }
-# シリアライゼーション
+# Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
 toml = "0.8"
-# エラー処理
+# Error handling
 thiserror = "1"
 anyhow = "1"
 # CLI
 clap = { version = "4", features = ["derive"] }
-# ロギング
+# Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-# 永続化
+# Persistence
 sled = "0.34"
-# テンプレート
+# Templates
 minijinja = "2"
 # DAG
 petgraph = "0.6"
-# 非同期トレイト
+# Async traits
 async-trait = "0.1"
-# 日時
+# Date/time
 chrono = { version = "0.4", features = ["serde"] }
 # UUID
 uuid = { version = "1", features = ["v4", "serde"] }
-# 正規表現
+# Regex
 regex = "1"
-# プロセス管理
+# Process management
 command-group = "2"
-# ホームディレクトリ
+# Home directory
 dirs = "5"
 # POSIX API (FIFO)
 libc = "0.2"
-# 内部クレート
+# Internal crates
 conductor-sdk = { path = "crates/conductor-sdk" }
 adapter-core = { path = "crates/adapter-core" }
 project-model = { path = "crates/project-model" }

@@ -1,70 +1,70 @@
-# container-manager 全体仕様
+# container-manager Full Specification
 
-**対象領域**: container — コンテナ管理
-**ソース**: 設計仕様書 §12
+**Domain**: container — Container Management
+**Source**: Design Specification §12
 
-## 概要
+## Overview
 
-container-manager はコンテナ実行を選択した場合に使用されるコンテナライフサイクル管理システム。Containerfile 自動生成、ビルドフロー、プロビジョニング、署名、レジストリ、CI/CD 統合、運用ルールを提供する。ローカル実行を選択した場合は適用外。
+container-manager is the container lifecycle management system used when container execution is selected. It provides Containerfile auto-generation, build flow, provisioning, signing, registry, CI/CD integration, and operational rules. Not applicable when local execution is selected.
 
-## モジュール構成
+## Module Structure
 
-| モジュール | 役割 |
+| Module | Role |
 |-----------|------|
-| builder | Containerfile 自動生成・ビルド（ツール定義ファイルに基づく）|
-| registry | コンテナイメージのレジストリ管理（ローカル/リモート）|
-| updater | イメージの差分更新・バージョン管理・自動リビルド |
-| provisioner | ツール定義ファイルに基づくプロビジョニング（パッケージインストール）|
-| tool_updater | ツールバージョン検出・互換性チェック・段階的更新 |
+| builder | Containerfile auto-generation and build (based on tool definition files) |
+| registry | Container image registry management (local/remote) |
+| updater | Image differential update, version management, and automatic rebuild |
+| provisioner | Provisioning based on tool definition files (package installation) |
+| tool_updater | Tool version detection, compatibility checking, and staged updates |
 
-## Containerfile 自動生成（FR-CTN-11）
+## Containerfile Auto-Generation (FR-CTN-11)
 
-`container.toml` を入力として、minijinja テンプレートエンジンで Containerfile を自動生成する。
+Takes `container.toml` as input and auto-generates a Containerfile using the minijinja template engine.
 
 ```
-container.toml → builder::parse → Container Spec (Rust 構造体)
-    → Containerfile テンプレート（minijinja）
-    → Containerfile（テキスト）
-    → podman build（§12.3）
+container.toml → builder::parse → Container Spec (Rust struct)
+    → Containerfile template (minijinja)
+    → Containerfile (text)
+    → podman build (§12.3)
 ```
 
-### 8 イメージ構成
+### 8 Image Configuration
 
-| イメージ | ベース | 主要ツール | ライセンス取扱 |
+| Image | Base | Primary Tools | License Handling |
 |---------|-------|----------|--------------|
 | `fpga/vivado:2025.2` | `ubi9/ubi:9.5` | AMD Vivado 2025.2 | FlexLM |
 | `fpga/quartus:25.1` | `ubi9/ubi:9.5` | Intel Quartus Prime Pro 25.1 | FlexLM |
 | `fpga/efinity:2025.2` | `ubuntu:24.04` | Efinix Efinity 2025.2 | Efinity Python |
 | `fpga/radiant:2024.2` | `ubi9/ubi:9.5` | Lattice Radiant 2024.2 | FlexLM |
-| `fpga/oss:latest` | `ubuntu:24.04` | Yosys + nextpnr + icestorm + Verilator | 不要（OSS）|
-| `asic/openlane:latest` | `ubuntu:24.04` | OpenLane 2 + Yosys + OpenROAD + Magic | 不要（OSS）|
-| `pcb/kicad:latest` | `ubuntu:24.04` | KiCad + SKiDL + Freerouting | 不要（OSS）|
-| `debug/tools:latest` | `ubuntu:24.04` | OpenOCD + sigrok + PulseView + pyOCD | 不要（OSS）|
+| `fpga/oss:latest` | `ubuntu:24.04` | Yosys + nextpnr + icestorm + Verilator | Not required (OSS) |
+| `asic/openlane:latest` | `ubuntu:24.04` | OpenLane 2 + Yosys + OpenROAD + Magic | Not required (OSS) |
+| `pcb/kicad:latest` | `ubuntu:24.04` | KiCad + SKiDL + Freerouting | Not required (OSS) |
+| `debug/tools:latest` | `ubuntu:24.04` | OpenOCD + sigrok + PulseView + pyOCD | Not required (OSS) |
 
-## ビルドフロー（FR-CTN-12）
+## Build Flow (FR-CTN-12)
 
-### マルチステージ戦略
+### Multi-Stage Strategy
 
-- **Stage 1（install / build）**: インストーラ・ビルド依存を含む大きいレイヤ（最終イメージには残さない）
-- **Stage 2（runtime）**: 必要最小限のランタイム（サイズは Stage 1 の 30〜50%）
+- **Stage 1 (install / build)**: Large layer containing installers and build dependencies (not retained in the final image)
+- **Stage 2 (runtime)**: Minimal runtime only (size is 30-50% of Stage 1)
 
-### レイヤキャッシュ戦略
+### Layer Cache Strategy
 
-| レイヤ種別 | 頻度 | 配置 |
+| Layer Type | Frequency | Placement |
 |----------|-----|------|
-| ベース OS | 低頻度 | 最上位 |
-| 依存ライブラリ | 中頻度 | 2 番目 |
-| EDA ツール本体 | 低頻度 | 3 番目（個別 stage）|
-| 設定 / スクリプト | 高頻度 | 最下位 |
+| Base OS | Low | Topmost |
+| Dependency libraries | Medium | Second |
+| EDA tool binaries | Low | Third (separate stage) |
+| Configuration / scripts | High | Bottom |
 
-### ビルド所要時間監視
+### Build Duration Monitoring
 
-- OSS イメージ < 10 分、商用イメージ < 30 分
-- `hestia_container_build_duration_seconds{image,stage}` メトリクスで監視
+- OSS images < 10 minutes, commercial images < 30 minutes
+- Monitored via `hestia_container_build_duration_seconds{image,stage}` metric
 
-## プロビジョニング（FR-CTN-13）
+## Provisioning (FR-CTN-13)
 
-| install_method | コマンド |
+| install_method | Command |
 |---------------|---------|
 | `apt` | `apt-get install -y ${package}` |
 | `dnf` | `dnf install -y ${package}` |
@@ -73,60 +73,60 @@ container.toml → builder::parse → Container Spec (Rust 構造体)
 | `pip` | `pip install --no-cache-dir ${package}` |
 | `cargo` | `cargo install ${package}` |
 
-## 成果物署名・SBOM（FR-CTN-14）
+## Artifact Signing & SBOM (FR-CTN-14)
 
 ```
-podman build → イメージ生成 → syft で SBOM 生成 → grype で脆弱性スキャン
-    → 評価ゲート → cosign sign（keyless） → podman push
+podman build → Image generation → SBOM generation via syft → Vulnerability scan via grype
+    → Evaluation gate → cosign sign (keyless) → podman push
 ```
 
-### 評価ゲート閾値
+### Evaluation Gate Thresholds
 
-| 重大度 | 閾値 | 挙動 |
+| Severity | Threshold | Behavior |
 |-------|-----|------|
-| Critical | 0 | ビルド失敗（push 不可）|
-| High（修正可能）| 0 | ビルド失敗 |
-| High（修正不可）| 記録 | 警告 + 例外承認 |
-| Medium 以下 | 記録 | 通常 push 可 |
+| Critical | 0 | Build fails (push blocked) |
+| High (fixable) | 0 | Build fails |
+| High (unfixable) | Log | Warning + exception approval |
+| Medium or below | Log | Normal push allowed |
 
-## CI/CD 統合
+## CI/CD Integration
 
-週次ビルド（毎週月曜 02:00 UTC）、パッチバージョンは自動、マイナーは Review Agent 承認必須、メジャーは手動トリガ（Canary 戦略）。
+Weekly build (every Monday 02:00 UTC), patch versions are automatic, minor versions require Review Agent approval, major versions require manual trigger (Canary strategy).
 
-## 運用ルール
+## Operational Rules
 
-1. 週次ビルドでベースイメージ + 依存更新を取り込み再ビルド
-2. パッチバージョン: 自動ビルド + 自動 push
-3. マイナーバージョン: 自動ビルド後、Review Agent 経由で 1 人承認必須
-4. メジャーバージョン: 手動トリガ、Canary 戦略で段階的展開
-5. 失敗時: `action-log` に記録、PatcherAgent に通知
-6. イメージサイズ上限: OSS 5GB、商用 20GB
-7. BuildKit secret 管理: `.hestia/secure/` は 0700 権限、Git 管理外
-8. CVE 通知: Critical 発生時は即座セキュリティチームへエスカレーション
+1. Weekly build incorporates base image + dependency updates and rebuilds
+2. Patch version: automatic build + automatic push
+3. Minor version: automatic build, then 1 approval required via Review Agent
+4. Major version: manual trigger, staged deployment via Canary strategy
+5. On failure: log to `action-log`, notify PatcherAgent
+6. Image size limits: OSS 5GB, commercial 20GB
+7. BuildKit secret management: `.hestia/secure/` has 0700 permissions, excluded from Git
+8. CVE notification: escalate to security team immediately on Critical occurrence
 
-## 実装クレート構成
+## Implementation Crate Structure
 
 ```
 container-manager/
 ├── Cargo.toml
 └── src/
     ├── lib.rs
-    ├── builder/         # Containerfile 生成 + podman build
+    ├── builder/         # Containerfile generation + podman build
     │   ├── mod.rs
     │   ├── templates/*.j2
     │   └── parser.rs    # container.toml → ContainerSpec
-    ├── registry/        # push/pull/retention（skopeo ラッパー）
-    ├── updater/          # 差分更新 / 自動リビルド
-    ├── provisioner/      # [tools.*] → インストールコマンド翻訳
-    ├── tool_updater/     # バージョン検出・semver マッチ
-    ├── signer/          # cosign ラッパー
-    ├── sbom/            # syft / grype ラッパー
-    └── observability.rs # メトリクス送信
+    ├── registry/        # push/pull/retention (skopeo wrapper)
+    ├── updater/          # Differential update / automatic rebuild
+    ├── provisioner/      # [tools.*] → install command translation
+    ├── tool_updater/     # Version detection / semver matching
+    ├── signer/          # cosign wrapper
+    ├── sbom/            # syft / grype wrapper
+    └── observability.rs # Metrics dispatch
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [vivado_container.md](vivado_container.md) — Vivado コンテナ詳細
-- [quartus_container.md](quartus_container.md) — Quartus コンテナ詳細
-- [security_hardening.md](security_hardening.md) — セキュリティ強化
-- [registry_config.md](registry_config.md) — レジストリ管理
+- [vivado_container.md](vivado_container.md) — Vivado container details
+- [quartus_container.md](quartus_container.md) — Quartus container details
+- [security_hardening.md](security_hardening.md) — Security hardening
+- [registry_config.md](registry_config.md) — Registry management

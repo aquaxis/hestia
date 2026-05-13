@@ -1,36 +1,36 @@
-# 知識基盤オーケストレーター
+# Knowledge Base Orchestrator
 
-**対象領域**: rag-conductor
-**ソース**: 設計仕様書 §13.7（3252-3491行目）
-
----
-
-## 概要
-
-rag-conductor は知識基盤の構築（Ingest）・管理・検索を独立プロセスで提供する Conductor である。旧 `ai-conductor::rag-engine`（TypeScript + LangChain）と `rag-ingest`（Rust）は完全に rag-conductor に移行済み。ai-conductor からは agent-cli IPC の `rag` peer に対して `rag.*` 構造化メッセージで呼び出す。
+**Target Domain**: rag-conductor
+**Source**: Design Specification §13.7 (lines 3252-3491)
 
 ---
 
-## 構成と技術スタック
+## Overview
 
-| 区分 | 技術 |
-|------|------|
-| バイナリ | `hestia-rag-conductor`（Rust + tokio） |
-| ベクトル DB | Chroma（既定） / Qdrant |
-| 埋め込み | Ollama `nomic-embed-text`（768 次元） |
-| Rust 部分 | `rag-ingest` クレート（PDF 7 段 / Web 8 段パイプライン） |
-| TS 部分 | `rag-engine`（Vector Search / Embedding / Citation Generation） |
-| PDF 解析 | PyPDF / pdfplumber / Tesseract OCR（300 DPI、信頼度 >= 60%）/ Camelot（表抽出） |
-| Web 取得 | trafilatura / BeautifulSoup / CLD3 / fasttext |
+rag-conductor is a Conductor that provides knowledge base construction (Ingest), management, and search as an independent process. The legacy `ai-conductor::rag-engine` (TypeScript + LangChain) and `rag-ingest` (Rust) have been fully migrated to rag-conductor. Other conductors call it via agent-cli IPC using structured `rag.*` messages to the `rag` peer.
 
 ---
 
-## ナレッジベース構成
+## Configuration and Technology Stack
+
+| Category | Technology |
+|----------|------------|
+| Binary | `hestia-rag-conductor` (Rust + tokio) |
+| Vector DB | Chroma (default) / Qdrant |
+| Embedding | Ollama `nomic-embed-text` (768 dimensions) |
+| Rust part | `rag-ingest` crate (PDF 7-stage / Web 8-stage pipeline) |
+| TS part | `rag-engine` (Vector Search / Embedding / Citation Generation) |
+| PDF parsing | PyPDF / pdfplumber / Tesseract OCR (300 DPI, confidence >= 60%) / Camelot (table extraction) |
+| Web fetching | trafilatura / BeautifulSoup / CLD3 / fasttext |
+
+---
+
+## Knowledge Base Structure
 
 ```
 .hestia/rag/
-├── sources/                    # 取得元の生データ（PDF・HTML スナップショット）
-│   ├── conductor-work-logs/    # 自己学習用蓄積領域
+├── sources/                    # Raw data from sources (PDF/HTML snapshots)
+│   ├── conductor-work-logs/    # Self-learning accumulation area
 │   │   ├── ai/        YYYY-MM-DD_<task_id>.md
 │   │   ├── rtl/       YYYY-MM-DD_<task_id>.md
 │   │   ├── fpga/      YYYY-MM-DD_<task_id>.md
@@ -39,86 +39,86 @@ rag-conductor は知識基盤の構築（Ingest）・管理・検索を独立プ
 │   │   ├── hal/       YYYY-MM-DD_<task_id>.md
 │   │   ├── apps/      YYYY-MM-DD_<task_id>.md
 │   │   └── debug/     YYYY-MM-DD_<task_id>.md
-│   ├── datasheets/             # 外部資料
-│   └── vendor-guides/          # ベンダーガイド
-├── chunks/                     # チャンク分割済みテキスト
-├── embeddings/                  # ベクトル化済み（Chroma/Qdrant にインデックス）
+│   ├── datasheets/             # External reference materials
+│   └── vendor-guides/          # Vendor guides
+├── chunks/                     # Chunked text
+├── embeddings/                 # Vectorized (indexed in Chroma/Qdrant)
 ├── index-metadata.toml
-├── queries/                     # クエリログ・ヒット率
-├── quarantine/                  # 品質ゲート不合格データ（保留）
-└── queue/                       # rag offline 時のローカルバッファ
+├── queries/                    # Query logs and hit rates
+├── quarantine/                  # Data that failed quality gate (held)
+└── queue/                       # Local buffer when rag is offline
 ```
 
 ---
 
-## 取り込みパイプライン
+## Ingestion Pipeline
 
-### PDF 7段
+### PDF 7-stage pipeline
 
-テキスト抽出 → OCR フォールバック → 表抽出 → 画像抽出 → セクション認識 → メタデータ付与 → 共通パイプラインへ
+Text extraction → OCR fallback → Table extraction → Image extraction → Section recognition → Metadata attachment → Common pipeline
 
-### Web 8段
+### Web 8-stage pipeline
 
-URL 列挙 → robots.txt 確認 → HTTP 取得 → 本文抽出 → ノイズ除去 → 言語検出 → メタデータ付与 → 共通パイプラインへ
+URL enumeration → robots.txt check → HTTP fetch → Content extraction → Noise removal → Language detection → Metadata attachment → Common pipeline
 
-### 共通6段
+### Common 6-stage pipeline
 
-正規化 → 品質ゲート → チャンク分割（既定 1000 トークン / オーバーラップ 200）→ 埋め込み（Ollama）→ upsert（Chroma/Qdrant）→ ログ
-
----
-
-## 品質ゲート6ルール
-
-1. 最小／最大文字数
-2. 言語検出
-3. HTML ノイズ除去
-4. 重複（cosine >= 0.95）
-5. UTF-8 妥当性
-6. OCR 信頼度
+Normalization → Quality gate → Chunking (default 1000 tokens / overlap 200) → Embedding (Ollama) → Upsert (Chroma/Qdrant) → Logging
 
 ---
 
-## 増分更新と運用
+## Quality Gate 6 Rules
 
-- ETag / SHA-256 で変更検出 → 増分更新（180 分の全再構築 → 3 分相当に短縮）
-- ライセンス管理: OSS / free 許可、`vendor-proprietary`（`terms_accepted=true` 必須）、`CC-BY-*`（クレジット表示）、`unknown` 拒否
-- PII マスキング: 原本は GPG 暗号化保管、インデックスはマスク済みテキストのみ
-- キャッシュ保持: PDF 無期限 / Web 90 日 / quarantine 30 日
+1. Minimum/maximum character count
+2. Language detection
+3. HTML noise removal
+4. Deduplication (cosine >= 0.95)
+5. UTF-8 validity
+6. OCR confidence
 
 ---
 
-## RPC / CLI / メトリクス
+## Incremental Updates and Operations
 
-### 主要 RPC
+- Change detection via ETag / SHA-256 → incremental updates (full rebuild of 180 minutes reduced to approximately 3 minutes)
+- License management: OSS / free allowed, `vendor-proprietary` (requires `terms_accepted=true`), `CC-BY-*` (attribution required), `unknown` rejected
+- PII masking: originals stored with GPG encryption, index contains only masked text
+- Cache retention: PDF unlimited / Web 90 days / quarantine 30 days
 
-| メソッド | 役割 |
-|---------|------|
-| `rag.ingest` | 取り込み（source_type/file_path/url/source_id/all、force・incremental）|
-| `rag.search` | 検索（query・top_k・filter・trace_id）|
-| `rag.cleanup` | クリーンアップ |
-| `rag.status` | ステータス確認 |
+---
 
-### 自己学習 RPC
+## RPC / CLI / Metrics
 
-| メソッド | 役割 |
-|---------|------|
-| `rag.ingest_work.v1` | conductor 作業内容の永続化（category 指定）|
-| `rag.search_similar.v1` | 類似タスク検索（fpga.build, asic.synth 等）|
-| `rag.search_bugfix.v1` | エラーシグネチャから過去修正事例検索 |
-| `rag.search_design.v1` | 過去採用された設計パラメータ検索 |
+### Primary RPCs
+
+| Method | Role |
+|--------|------|
+| `rag.ingest` | Ingestion (source_type/file_path/url/source_id/all, force/incremental) |
+| `rag.search` | Search (query/top_k/filter/trace_id) |
+| `rag.cleanup` | Cleanup |
+| `rag.status` | Status check |
+
+### Self-learning RPCs
+
+| Method | Role |
+|--------|------|
+| `rag.ingest_work.v1` | Persist conductor work content (category specified) |
+| `rag.search_similar.v1` | Search for similar tasks (fpga.build, asic.synth, etc.) |
+| `rag.search_bugfix.v1` | Search past fix cases from error signatures |
+| `rag.search_design.v1` | Search past adopted design parameters |
 
 - `IngestJobStatus`: `Queued` / `Processing` / `Completed` / `Failed` / `PartiallyCompleted`
 - TypeScript I/F: `RagQuery { text, top_k, filter, trace_id }` / `RagResult { chunks, citations, embedding_time_ms, retrieval_time_ms }`
-- MCP ツール: `hestia_rag_search`
+- MCP tool: `hestia_rag_search`
 - CLI: `hestia rag ingest|search|cleanup`
 
-### Prometheus メトリクス
+### Prometheus Metrics
 
 `ingest_duration` / `docs_total` / `chunks_total` / `quarantine_total` / `incremental_skipped` / `license_violations` / `cache_size` / `retrieval_seconds` / `hit_ratio` / `work_log_ingested_total` / `similar_task_hits` / `bugfix_search_latency_seconds`
 
 ---
 
-## config.toml [rag] 設定
+## config.toml [rag] Settings
 
 ```toml
 [rag]
@@ -129,66 +129,66 @@ chunk_size = 1000
 chunk_overlap = 200
 vector_db_url = "http://localhost:8000"
 batch_size = 32
-retention_days = 90                # 既存ソース（datasheets / web 等）
-retention_days_work_log = 365      # 自己学習 conductor-work-logs/ の保持期間（design_case / bugfix_case は無期限）
-self_learning_enabled = true       # 自己学習機能の ON/OFF
-queue_dir = ".hestia/rag/queue"    # rag offline 時のローカルバッファ
+retention_days = 90                # Existing sources (datasheets / web, etc.)
+retention_days_work_log = 365      # Self-learning conductor-work-logs/ retention period (design_case / bugfix_case are permanent)
+self_learning_enabled = true       # Self-learning feature ON/OFF
+queue_dir = ".hestia/rag/queue"    # Local buffer when rag is offline
 ```
 
 ---
 
-## サブエージェント構成
+## Sub-agent Configuration
 
-rag-conductor は **planner / designer / ingest（複数）/ search / quality_gate / archivist** の6種類のサブエージェントを持ち、知識ベース構築・検索フローを分担する。各サブエージェントは独立した agent-cli プロセスとして起動され、`agent-cli send <peer>` IPC で rag-conductor 本体（peer 名 `rag`）と協調する。
+rag-conductor has 6 types of sub-agents: **planner / designer / ingest (multiple) / search / quality_gate / archivist**, each sharing the knowledge base construction and search workflow. Each sub-agent runs as an independent agent-cli process and coordinates with the rag-conductor main body (peer name `rag`) via `agent-cli send <peer>` IPC.
 
-| サブエージェント | peer 名 | 役割 | 多重度 |
-|----------------|---------|------|-------|
-| **planner** | `rag-planner` | 取り込みプランニング（クロール戦略、ソース優先度、増分更新スケジュール）| 1 |
-| **designer** | `rag-designer` | 知識ベース仕様（チャンク戦略、メタデータスキーマ、埋め込みモデル選定、retention ポリシー）| 1 |
-| **ingest** | `rag-ingest-{source}` | ドキュメント取り込み（PDF 7 段パイプライン / Web 8 段パイプライン）| **N**（ソース数だけ並列起動）|
-| **search** | `rag-search` | ベクトル検索 + reranking（Chroma/Qdrant、`top_k` 取得、citation 生成）| 1（高負荷時 N）|
-| **quality_gate** | `rag-quality` | 品質チェック（PII 検出 / ライセンス判定 / 重複排除 / quarantine 管理）| 1 |
-| **archivist** | `rag-archivist` | 自己学習用 conductor-work-logs/ への蓄積パイプライン管理。メタデータ正規化、PII 再マスキング検証、古いログの集約・要約 | 1（高負荷時 N）|
+| Sub-agent | Peer Name | Role | Multiplicity |
+|-----------|-----------|------|--------------|
+| **planner** | `rag-planner` | Ingestion planning (crawl strategy, source priority, incremental update schedule) | 1 |
+| **designer** | `rag-designer` | Knowledge base specification (chunk strategy, metadata schema, embedding model selection, retention policy) | 1 |
+| **ingest** | `rag-ingest-{source}` | Document ingestion (PDF 7-stage pipeline / Web 8-stage pipeline) | **N** (started in parallel per source) |
+| **search** | `rag-search` | Vector search + reranking (Chroma/Qdrant, `top_k` retrieval, citation generation) | 1 (N under high load) |
+| **quality_gate** | `rag-quality` | Quality checks (PII detection / license determination / deduplication / quarantine management) | 1 |
+| **archivist** | `rag-archivist` | Self-learning conductor-work-logs/ accumulation pipeline management. Metadata normalization, PII re-masking verification, old log aggregation and summarization | 1 (N under high load) |
 
-**フロー**: planner → designer → ingest（ソース並列）→ quality_gate → search（検索リクエスト時）。自己学習は archivist が独立フローで他 conductor からの `rag.ingest_work.v1` を処理。
-
----
-
-## 自己学習機能
-
-rag-conductor が稼働中の場合、他の全 conductor および各サブエージェントは完了した作業内容を自動的に rag-conductor へ送信し、知識ベースに永続化する。蓄積された事例は次回以降の同種タスクで検索され、AI エージェントの判断材料として注入される（自己学習ループ）。
-
-### 自動蓄積カテゴリ
-
-| カテゴリ | 内容 | 送信元 | 送信タイミング |
-|---------|------|--------|------------|
-| **design_case** | 成功した設計パラメータ + ビルド結果サマリ | 全 conductor | ビルド成功時 |
-| **bugfix_case** | エラー → 原因分析 → 修正パッチ → 検証結果の対 | 全 conductor + ai-conductor | 修正完了時 |
-| **build_log** | ツール出力の要約 | fpga / asic / rtl / apps / hal | ビルド完了時 |
-| **verification_result** | シミュレーション / 形式検証 / DRC / LVS / signoff の通過/失敗履歴 | テスト系サブエージェント | 検証完了時 |
-| **decision_cot** | 重要な設計判断の chain-of-thought | 各 planner / designer サブエージェント | プランニング完了時 |
-| **agent_action_log** | 各 agent-cli ワークスペースの AI_LOG | 全 agent-cli プロセス | exec_job 完了時 |
-| **probe_result** | WatcherAgent / ProbeAgent / ValidatorAgent の検証ログ | ai-conductor | 検証完了時 |
-
-### 知識検索の発火タイミング
-
-| シナリオ | 発火元 | クエリ | 注入先 |
-|---------|-------|-------|-------|
-| 新規ビルド開始時 | ai-conductor task-router | `rag.search_similar.v1` | planner サブエージェントの context |
-| エラー発生時 | 任意 conductor | `rag.search_bugfix.v1` | exec_job の reasoning context |
-| 設計レビュー時 | designer サブエージェント | `rag.search_design.v1` | designer の判断材料 |
-| パッチ生成時 | ai-conductor UpgradeManager | `rag.search_bugfix.v1` | パッチ生成プロンプト |
-
-### rag offline 時の挙動
-
-各 conductor は `.hestia/rag/queue/<peer>/` に作業ログをバッファ。rag 復旧（health-checker で `online` 検知）後、ai-conductor が一括 flush。
+**Flow**: planner → designer → ingest (source-parallel) → quality_gate → search (on search request). Self-learning is handled by archivist in an independent flow processing `rag.ingest_work.v1` from other conductors.
 
 ---
 
-## 関連ドキュメント
+## Self-learning Feature
 
-- [master_agent_design.md](master_agent_design.md) — ai-conductor 詳細設計
-- [ai_conductor.md](ai_conductor.md) — ai-conductor 全体概要
-- [fpga_conductor.md](fpga_conductor.md) — FPGA 設計フローオーケストレーター
-- [asic_conductor.md](asic_conductor.md) — ASIC 設計フローオーケストレーター
-- [apps_conductor.md](apps_conductor.md) — アプリケーションソフトウェア開発オーケストレーター
+When rag-conductor is running, all other conductors and their sub-agents automatically send completed work content to rag-conductor for persistence in the knowledge base. Accumulated cases are searched during subsequent similar tasks and injected as decision-making context for AI agents (self-learning loop).
+
+### Auto-accumulation Categories
+
+| Category | Content | Sender | Timing |
+|----------|---------|--------|--------|
+| **design_case** | Successful design parameters + build result summary | All conductors | On build success |
+| **bugfix_case** | Error → root cause analysis → fix patch → verification result pair | All conductors + ai-conductor | On fix completion |
+| **build_log** | Tool output summary | fpga / asic / rtl / apps / hal | On build completion |
+| **verification_result** | Simulation / formal verification / DRC / LVS / signoff pass/fail history | Test sub-agents | On verification completion |
+| **decision_cot** | Chain-of-thought for important design decisions | Each planner / designer sub-agent | On planning completion |
+| **agent_action_log** | AI_LOG from each agent-cli workspace | All agent-cli processes | On exec_job completion |
+| **probe_result** | Verification logs from WatcherAgent / ProbeAgent / ValidatorAgent | ai-conductor | On verification completion |
+
+### Knowledge Search Trigger Timing
+
+| Scenario | Trigger | Query | Injection Target |
+|----------|---------|-------|------------------|
+| New build start | ai-conductor task-router | `rag.search_similar.v1` | planner sub-agent context |
+| Error occurrence | Any conductor | `rag.search_bugfix.v1` | exec_job reasoning context |
+| Design review | designer sub-agent | `rag.search_design.v1` | designer decision material |
+| Patch generation | ai-conductor UpgradeManager | `rag.search_bugfix.v1` | Patch generation prompt |
+
+### Behavior When rag Is Offline
+
+Each conductor buffers work logs to `.hestia/rag/queue/<peer>/`. After rag recovers (detected as `online` by health-checker), ai-conductor flushes them in batch.
+
+---
+
+## Related Documentation
+
+- [master_agent_design.md](master_agent_design.md) — ai-conductor detailed design
+- [ai_conductor.md](ai_conductor.md) — ai-conductor overall overview
+- [fpga_conductor.md](fpga_conductor.md) — FPGA design flow orchestrator
+- [asic_conductor.md](asic_conductor.md) — ASIC design flow orchestrator
+- [apps_conductor.md](apps_conductor.md) — Application software development orchestrator

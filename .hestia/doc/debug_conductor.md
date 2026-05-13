@@ -1,119 +1,119 @@
-# デバッグ環境オーケストレーター
+# Debug Environment Orchestrator
 
-**対象領域**: debug-conductor
-**ソース**: 設計仕様書 §10（2401-2550行目）
-
----
-
-## 概要
-
-debug-conductor はハードウェアデバッグ環境を統合管理するオーケストレーターである。JTAG / SWD プロトコルによるターゲット接続、オンチップデバッグ（ILA / SignalTap / Reveal）、ロジックアナライザ（sigrok）、波形キャプチャ（VCD / FST）を統一的に管理し、セッションベースのデバッグワークフローを提供する。debug-conductor は **ローカル専用**（USB プローブアクセスが必要）であり、全サブエージェントもローカル実行となる。
+**Domain**: debug-conductor
+**Source**: Design Specification §10 (around lines 2401-2550)
 
 ---
 
-## クレート構成
+## Overview
+
+debug-conductor is an orchestrator that integrates and manages hardware debug environments. It provides unified management of target connections via JTAG / SWD protocols, on-chip debug (ILA / SignalTap / Reveal), logic analyzers (sigrok), and waveform capture (VCD / FST), delivering a session-based debug workflow. debug-conductor is **local only** (USB probe access required), and all sub-agents also run locally.
+
+---
+
+## Crate Structure
 
 ```
 debug-conductor/
 ├── Cargo.toml
 ├── crates/
-│   ├── conductor-core/             # agent-cli persona・main.rs
-│   ├── project-model/              # debug.toml パーサー
-│   ├── plugin-registry/            # ツール登録・解決
-│   ├── adapter-jtag/               # JTAG デバッグ (OpenOCD 統合)
-│   ├── adapter-swd/                # SWD デバッグ
-│   ├── adapter-ila/                # オンチップデバッグ統合
+│   ├── conductor-core/             # agent-cli persona, main.rs
+│   ├── project-model/              # debug.toml parser
+│   ├── plugin-registry/            # Tool registration and resolution
+│   ├── adapter-jtag/               # JTAG debug (OpenOCD integration)
+│   ├── adapter-swd/                # SWD debug
+│   ├── adapter-ila/                # On-chip debug integration
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── xilinx_ila.rs       # Xilinx ILA
 │   │       ├── intel_signaltap.rs  # Intel SignalTap
 │   │       └── lattice_reveal.rs   # Lattice Reveal
-│   ├── waveform-capture/           # 波形キャプチャ
-│   ├── protocol-analyzer/          # プロトコル解析 (sigrok 統合)
-│   └── podman-runtime/             # コンテナ管理
-├── debug-cli/                      # Rust 製 CLI
+│   ├── waveform-capture/           # Waveform capture
+│   ├── protocol-analyzer/          # Protocol analysis (sigrok integration)
+│   └── podman-runtime/             # Container management
+├── debug-cli/                      # Rust CLI
 └── conductor-sdk/
 ```
 
 ---
 
-## デバッグフロー
+## Debug Flow
 
 ```
-デバッグセッション開始
+Debug session start
     │
-    ▼ デバッグプローブ検出
-    │  ├── JTAG: OpenOCD 経由 (USB デバイスアクセス)
-    │  └── SWD: OpenOCD / pyOCD 経由
+    ▼ Debug probe detection
+    │  ├── JTAG: via OpenOCD (USB device access)
+    │  └── SWD: via OpenOCD / pyOCD
     │
-    ├─── オンチップデバッグ
-    │    ├── ILA (Xilinx) — Vivado hw_server 経由
-    │    ├── SignalTap (Intel) — Quartus Signal Tap 経由
-    │    └── Reveal (Lattice) — Radiant Reveal 経由
+    ├─── On-chip debug
+    │    ├── ILA (Xilinx) — via Vivado hw_server
+    │    ├── SignalTap (Intel) — via Quartus Signal Tap
+    │    └── Reveal (Lattice) — via Radiant Reveal
     │
-    ├─── ロジックアナライザ
-    │    ├── sigrok — 汎用ロジアナフレームワーク
-    │    └── PulseView — GUI 波形ビューア
+    ├─── Logic analyzer
+    │    ├── sigrok — Generic logic analyzer framework
+    │    └── PulseView — GUI waveform viewer
     │
-    └─── 波形キャプチャ・表示・解析
-         ├── VCD / FST 形式での波形保存
-         └── WASM ベース波形ビューア (100万サンプル、60fps)
+    └─── Waveform capture, display, and analysis
+         ├── Waveform saving in VCD / FST format
+         └── WASM-based waveform viewer (1 million samples, 60fps)
 ```
 
 ---
 
-## セッション管理ステートマシン
+## Session Management State Machine
 
 ```
 Idle → Connecting → Connected → Running → Paused → Capturing → Disconnected
                                                                      │
-                                                               Error ←─ 任意の状態
+                                                               Error ←─ Any state
 ```
 
-| 状態 | 説明 |
+| State | Description |
 |------|------|
-| Idle | セッション未開始 |
-| Connecting | デバッグプローブに接続中 |
-| Connected | 接続完了、コマンド受付可能 |
-| Running | ターゲット実行中 |
-| Paused | ターゲット一時停止中 |
-| Capturing | 波形キャプチャ中 |
-| Disconnected | 切断済み |
-| Error | エラー発生 |
+| Idle | Session not started |
+| Connecting | Connecting to debug probe |
+| Connected | Connection established, accepting commands |
+| Running | Target executing |
+| Paused | Target paused |
+| Capturing | Waveform capture in progress |
+| Disconnected | Disconnected |
+| Error | Error occurred |
 
 ```rust
 pub enum ResetType {
-    Hardware,  // ハードウェアリセット（SRST/TRST ピン使用）
-    Software,  // ソフトウェアリセット（レジスタ書き込み）
-    System,    // システムリセット（プロセッサ全体）
+    Hardware,  // Hardware reset (using SRST/TRST pins)
+    Software,  // Software reset (register write)
+    System,    // System reset (entire processor)
 }
 ```
 
 ---
 
-## 公開 method
+## Published Methods
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `connect` | Request | ターゲットデバイスへ接続 |
-| `disconnect` | Request | ターゲットデバイスから切断 |
-| `reset` | Request | ターゲットデバイスをリセット |
-| `setBreakpoint` | Request | ブレークポイント設定（Source/Address/Symbol 3方式） |
-| `removeBreakpoint` | Request | ブレークポイント削除 |
-| `run` | Request | ターゲットプログラム実行 |
-| `pause` | Request | 一時停止 |
-| `stepOver` / `stepInto` | Request | ステップ実行 |
-| `readMemory` / `writeMemory` | Request | メモリ読み書き |
-| `startCapture` / `stopCapture` | Request | 波形キャプチャ開始/停止 |
-| `sessionStateChanged` | Notification | セッション状態変化通知 |
-| `breakpointHit` | Notification | ブレークポイント到達通知 |
-| `captureComplete` | Notification | キャプチャ完了通知 |
+| `connect` | Request | Connect to target device |
+| `disconnect` | Request | Disconnect from target device |
+| `reset` | Request | Reset target device |
+| `setBreakpoint` | Request | Set breakpoint (Source/Address/Symbol 3 modes) |
+| `removeBreakpoint` | Request | Remove breakpoint |
+| `run` | Request | Execute target program |
+| `pause` | Request | Pause |
+| `stepOver` / `stepInto` | Request | Step execution |
+| `readMemory` / `writeMemory` | Request | Memory read/write |
+| `startCapture` / `stopCapture` | Request | Start/stop waveform capture |
+| `sessionStateChanged` | Notification | Session state change notification |
+| `breakpointHit` | Notification | Breakpoint hit notification |
+| `captureComplete` | Notification | Capture complete notification |
 
 ---
 
-## JTAG TAP ステートマシン
+## JTAG TAP State Machine
 
-adapter-jtag は IEEE 1149.1 準拠の TAP ステートマシンを実装する。TMS 信号で状態遷移を制御する。
+adapter-jtag implements a TAP state machine compliant with IEEE 1149.1. State transitions are controlled by the TMS signal.
 
 ```rust
 pub enum TapState {
@@ -125,52 +125,52 @@ pub enum TapState {
 
 ---
 
-## SWD プロトコル
+## SWD Protocol
 
-adapter-swd は ARM Serial Wire Debug（2線式: SWCLK / SWDIO）を実装する。
+adapter-swd implements ARM Serial Wire Debug (2-wire: SWCLK / SWDIO).
 
-| リクエスト種別 | 説明 | 対象 |
+| Request Type | Description | Target |
 |---------------|------|------|
-| `ReadDP` | Debug Port レジスタ読み出し | DPIDR, CTRL/STAT, SELECT 等 |
-| `WriteDP` | Debug Port レジスタ書き込み | SELECT, ABORT 等 |
-| `ReadAP` | Access Port レジスタ読み出し | CSW, TAR, DRW 等 |
-| `WriteAP` | Access Port レジスタ書き込み | CSW, TAR, DRW 等 |
+| `ReadDP` | Debug Port register read | DPIDR, CTRL/STAT, SELECT, etc. |
+| `WriteDP` | Debug Port register write | SELECT, ABORT, etc. |
+| `ReadAP` | Access Port register read | CSW, TAR, DRW, etc. |
+| `WriteAP` | Access Port register write | CSW, TAR, DRW, etc. |
 
 ---
 
-## プロトコルデコーダ
+## Protocol Decoders
 
-debug-conductor は以下のプロトコルデコーダを内蔵する。
+debug-conductor includes the following built-in protocol decoders.
 
-| プロトコル | デコード対象 |
+| Protocol | Decode Target |
 |-----------|------------|
-| UART | ボーレート自動検出、8N1/7E1 等のフレーム設定 |
-| SPI | Mode 0〜3、CPOL/CPHA 設定 |
-| I2C | 7bit/10bit アドレス、ACK/NACK 解析 |
-| CAN | Standard/Extended ID、DLC、データフィールド |
-| LIN | Break/Sync/PID/Data/Checksum 解析 |
+| UART | Baud rate auto-detection, 8N1/7E1 and other frame settings |
+| SPI | Mode 0-3, CPOL/CPHA settings |
+| I2C | 7-bit/10-bit address, ACK/NACK analysis |
+| CAN | Standard/Extended ID, DLC, data field |
+| LIN | Break/Sync/PID/Data/Checksum analysis |
 
 ---
 
-## サブエージェント構成
+## Sub-Agent Structure
 
-debug-conductor は **planner / designer / session_manager / analyzer / programmer** の5種類のサブエージェントを持ち、デバッグセッション管理・波形解析・ファームウェア書込を分担する。各サブエージェントは独立した agent-cli プロセスとして起動され、`agent-cli send <peer>` IPC で debug-conductor 本体（peer 名 `debug`）と協調する。debug-conductor は **ローカル専用**（USB プローブアクセス）のため全サブエージェントもローカル実行。
+debug-conductor has 5 sub-agent types: **planner / designer / session_manager / analyzer / programmer**, which share debug session management, waveform analysis, and firmware programming. Each sub-agent is launched as an independent agent-cli process and coordinates with the debug-conductor main body (peer name `debug`) via `agent-cli send <peer>` IPC. Since debug-conductor is **local only** (USB probe access), all sub-agents also run locally.
 
-| サブエージェント | peer 名 | 役割 | 多重度 |
+| Sub-Agent | Peer Name | Role | Multiplicity |
 |----------------|---------|------|-------|
-| **planner** | `debug-planner` | デバッグプランニング（テストポイント選定、トリガ条件、キャプチャ深さ）| 1 |
-| **designer** | `debug-designer` | 検証シナリオ仕様（信号定義、ステート遷移確認項目、期待波形）| 1 |
-| **session_manager** | `debug-session` | デバッグセッション管理（JTAG / SWD 接続、OpenOCD/pyOCD 制御、break point/watchpoint 設定）| 1（target ごとに並列可）|
-| **analyzer** | `debug-analyzer` | 波形解析 / プロトコルデコード / ロジックアナライザ集計（sigrok/PulseView、ILA/SignalTap/Reveal）| 1 |
-| **programmer** | `debug-programmer` | ファームウェア書込（probe-rs、OpenOCD、SVF / JAM）| 1 |
+| **planner** | `debug-planner` | Debug planning (test point selection, trigger conditions, capture depth) | 1 |
+| **designer** | `debug-designer` | Verification scenario specification (signal definition, state transition verification items, expected waveforms) | 1 |
+| **session_manager** | `debug-session` | Debug session management (JTAG / SWD connection, OpenOCD/pyOCD control, breakpoint/watchpoint setup) | 1 (can be parallel per target) |
+| **analyzer** | `debug-analyzer` | Waveform analysis / protocol decode / logic analyzer aggregation (sigrok/PulseView, ILA/SignalTap/Reveal) | 1 |
+| **programmer** | `debug-programmer` | Firmware programming (probe-rs, OpenOCD, SVF / JAM) | 1 |
 
-**フロー**: planner → designer → session_manager（接続）→ programmer（書込）→ analyzer（実行 + 解析）。
+**Flow**: planner → designer → session_manager (connection) → programmer (programming) → analyzer (execution + analysis).
 
 ---
 
-## 関連ドキュメント
+## Related Documentation
 
-- [master_agent_design.md](master_agent_design.md) — ai-conductor 詳細設計
-- [fpga_conductor.md](fpga_conductor.md) — FPGA 設計フローオーケストレーター
-- [asic_conductor.md](asic_conductor.md) — ASIC 設計フローオーケストレーター
-- [apps_conductor.md](apps_conductor.md) — アプリケーションソフトウェア開発オーケストレーター
+- [master_agent_design.md](master_agent_design.md) — ai-conductor detailed design
+- [fpga_conductor.md](fpga_conductor.md) — FPGA design flow orchestrator
+- [asic_conductor.md](asic_conductor.md) — ASIC design flow orchestrator
+- [apps_conductor.md](apps_conductor.md) — Application software development orchestrator

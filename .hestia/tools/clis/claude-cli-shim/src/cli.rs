@@ -1,4 +1,4 @@
-//! agent-cli 互換のコマンドライン定義。
+//! agent-cli compatible command-line definitions.
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -27,10 +27,10 @@ pub enum SubCmd {
         /// Pass `--dangerously-skip-permissions` to claude.
         #[arg(long, default_value_t = false)]
         auto_approve_tools: bool,
-        /// agent-cli 互換 (`--provider claude` 等)。shim では `claude` 固定だが受け取る。
+        /// agent-cli compatible (`--provider claude` etc.). Fixed to `claude` in shim but accepted anyway.
         #[arg(long)]
         provider: Option<String>,
-        /// Claude model id (例: `claude-opus-4-7`)。
+        /// Claude model id (e.g. `claude-opus-4-7`).
         #[arg(long)]
         model: Option<String>,
         /// Override registry directory (default: `~/.local/share/claude-cli-shim/registry`).

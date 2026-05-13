@@ -1,62 +1,62 @@
-# 通信仕様（Agent Communication）
+# Communication Specification (Agent Communication)
 
-**対象領域**: Hestia 全体
-**ソース**: 設計仕様書 §2.3（通信アーキテクチャ）, §14（インターフェース定義）, §20（agent-cli エンドポイント設定）
+**Scope**: Hestia overall
+**Source**: Design specification §2.3 (Communication Architecture), §14 (Interface Definition), §20 (agent-cli Endpoint Configuration)
 
 ---
 
-## 1. 通信アーキテクチャ概要
+## 1. Communication Architecture Overview
 
-全 conductor は [`agent-cli`](https://github.com/aquaxis/agent-cli) プロセスとして起動された AI エージェントであり、フロントエンドおよび conductor 間のすべての通信は **agent-cli ネイティブ IPC** に統一される。
+All conductors are AI agents launched as [`agent-cli`](https://github.com/aquaxis/agent-cli) processes. All communication between the frontend and between conductors is unified under **agent-cli native IPC**.
 
-レガシー JSON-RPC 2.0 over Unix Domain Socket（`/var/run/hestia/*.sock`）は廃止し、`agent-cli send <peer> <payload>` API および共有レジストリ（`$XDG_RUNTIME_DIR/agent-cli/`）による peer 探索で接続する。
+The legacy JSON-RPC 2.0 over Unix Domain Socket (`/var/run/hestia/*.sock`) has been deprecated. Connections are made via the `agent-cli send <peer> <payload>` API and shared registry (`$XDG_RUNTIME_DIR/agent-cli/`) for peer discovery.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│           通信プロトコルスタック (agent-cli 単一チャンネル)         │
+│        Communication Protocol Stack (agent-cli single channel)  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  ━━━ agent-cli ネイティブ IPC（唯一の通信手段）━━━                │
+│  ━━━ agent-cli native IPC (sole communication means) ━━━       │
 │                                                                 │
-│  全 9 conductor + フロントエンドクライアントが peer 参加          │
-│      レジストリ: $XDG_RUNTIME_DIR/agent-cli/  (パーミッション 0700)│
-│      探索:       agent-cli list                                  │
-│      送信:       agent-cli send <peer> <payload>                 │
-│                  または REPL 内コマンド /send <peer> <payload>    │
+│  All 9 conductors + frontend clients join as peers              │
+│      Registry: $XDG_RUNTIME_DIR/agent-cli/  (permissions 0700) │
+│      Discovery: agent-cli list                                  │
+│      Send:       agent-cli send <peer> <payload>                │
+│                  or REPL command /send <peer> <payload>          │
 │                                                                 │
-│      peer 名 (= ConductorId 文字列):                             │
+│      Peer names (= ConductorId strings):                         │
 │        ai / rtl / fpga / asic / pcb /                           │
 │        hal / apps / debug / rag                                  │
 │                                                                 │
-│      フロントエンドの peer 名: vscode / tauri / cli (任意)       │
+│      Frontend peer names: vscode / tauri / cli (arbitrary)      │
 │                                                                 │
-│  ━━━ ペイロード形式（同一チャンネルで併存可）━━━                   │
+│  ━━━ Payload formats (coexist on the same channel) ━━━          │
 │                                                                 │
-│  (a) 構造化メッセージ — JSON ペイロード                           │
-│      method 名前空間規約に従う（§14 メッセージング仕様）           │
+│  (a) Structured message — JSON payload                           │
+│      Follows method namespace conventions (§14 Messaging spec)   │
 │                                                                 │
-│  (b) 自然言語メッセージ — プレーンテキスト                         │
-│      自由形式、CoT 文脈共有、エージェント本来の協調モデル          │
+│  (b) Natural language message — plain text                       │
+│      Free-form, CoT context sharing, agent-native coordination │
 │                                                                 │
-│  ━━━ 共有サービス層（横断ツール、agent-cli の peer として実装）━━━│
+│  ━━━ Shared services layer (cross-cutting tools, as agent-cli peers) ━━━│
 │                                                                 │
-│  共有サービス peer 名: lsp / constraint-bridge / ip-manager /    │
+│  Shared service peer names: lsp / constraint-bridge / ip-manager /    │
 │                       cicd / observability / waveform / mcp     │
 │                                                                 │
-│  ━━━ 外部アダプター（agent-cli IPC の境界外）━━━                  │
+│  ━━━ External adapters (outside agent-cli IPC boundary) ━━━    │
 │                                                                 │
-│  Remote アダプター: gRPC (proto3)                               │
-│      サービス: VendorAdapterService                              │
-│      （ベンダーツール等、外部システムとの境界に限り gRPC を使用） │
+│  Remote adapters: gRPC (proto3)                                 │
+│      Service: VendorAdapterService                               │
+│      (gRPC used only at the boundary with external systems such as vendor tools) │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. ペイロード形式
+## 2. Payload Formats
 
-### 2.1 構造化リクエスト / 応答 / 通知
+### 2.1 Structured Request / Response / Notification
 
 ```json
 // Request payload
@@ -81,59 +81,59 @@
   "trace_id": "trace_xyz789"
 }
 
-// Notification payload（id なし、応答なし）
+// Notification payload (no id, no response)
 {
   "method": "agent.status_update",
   "params": { ... },
   "trace_id": "trace_xyz789"
 }
 
-// Batch payload（同順応答）
+// Batch payload (responses in same order)
 [ { "method":"...", "params":{}, "id":"msg_1" },
   { "method":"...", "params":{}, "id":"msg_2" } ]
 ```
 
-- `id` は `msg_{ISO8601 timestamp}_{random}` 形式
-- `trace_id` はワークフロー横断のトレース ID
-- レガシー JSON-RPC 2.0 の `"jsonrpc": "2.0"` フィールドは不要
+- `id` follows the format `msg_{ISO8601 timestamp}_{random}`
+- `trace_id` is a cross-workflow trace ID
+- The legacy JSON-RPC 2.0 `"jsonrpc": "2.0"` field is not required
 
-### 2.2 ペイロード判定
+### 2.2 Payload Determination
 
-受信側 agent-cli persona は payload の先頭を判定:
-- `{` で始まる → JSON 構造化メッセージとしてツール呼出に変換
-- それ以外 → 自然言語として LLM に直接渡す
+The receiving agent-cli persona determines the payload type by inspecting the beginning:
+- Starts with `{` → Parse as a JSON structured message and convert to a tool call
+- Otherwise → Pass directly to the LLM as natural language
 
-### 2.3 ペイロード選択指針
+### 2.3 Payload Selection Guidelines
 
-| 通信種別 | 推奨ペイロード | 理由 |
+| Communication type | Recommended payload | Reason |
 |---------|-------------|------|
-| フロントエンドからの構造化操作 | (a) 構造化 JSON | 型安全、エラーコード規約、SDK 互換性 |
-| conductor 間の構造化ツール呼出 | (a) 構造化 JSON | 再現性、トレース ID 連鎖、Sled 状態永続化との整合 |
-| conductor 間の自然言語協調 | (b) 自然言語テキスト | 自由形式、CoT 文脈共有 |
-| 進捗・CoT・思考過程の共有 | (b) 自然言語テキスト | 軽量伝搬、observability log 連携 |
-| エラーエスカレーション | (b) 自然言語で ai-conductor に集約 → (a) 構造化通知でフロントエンドへ |
-| イベント通知 | (a) 構造化 JSON（id なし = 通知）| 購読 / フィルタ可能、UI 即時反映 |
+| Structured operations from frontend | (a) Structured JSON | Type safety, error code conventions, SDK compatibility |
+| Structured tool calls between conductors | (a) Structured JSON | Reproducibility, trace ID chaining, consistency with sled state persistence |
+| Natural language coordination between conductors | (b) Natural language text | Free-form, CoT context sharing |
+| Progress / CoT / thought process sharing | (b) Natural language text | Lightweight propagation, observability log integration |
+| Error escalation | (b) Natural language aggregated to ai-conductor → (a) Structured notification to frontend |
+| Event notifications | (a) Structured JSON (no id = notification) | Subscribable / filterable, immediate UI reflection |
 
 ---
 
-## 3. メソッド名前空間
+## 3. Method Namespace
 
-### 3.1 命名規則
+### 3.1 Naming Convention
 
-`{domain}.{method_group}.{version_prefix}.{action}`（例: `fpga.build.v1.synthesize`）
+`{domain}.{method_group}.{version_prefix}.{action}` (e.g., `fpga.build.v1.synthesize`)
 
-簡略形 `{domain}.{action}` も同義（v1 既定）。
+The short form `{domain}.{action}` is equivalent (defaults to v1).
 
-### 3.2 バージョニング
+### 3.2 Versioning
 
 - `ApiVersion { major, minor }`
-- 必須パラメータ追加・既存型変更・メソッド削除は `major` バンプ
-- 任意パラメータ／応答フィールド追加は後方互換
-- 廃止予告: `DeprecationNotice { deprecated_since, removal_scheduled, replacement }`
+- Adding required parameters, changing existing types, or removing methods requires a `major` bump
+- Adding optional parameters / response fields is backward compatible
+- Deprecation notice: `DeprecationNotice { deprecated_since, removal_scheduled, replacement }`
 
-### 3.3 ドメイン一覧
+### 3.3 Domain List
 
-| ドメイン | 例 |
+| Domain | Examples |
 |---------|----|
 | `ai.*`   | `ai.spec.init` / `ai.spec.update` / `ai.spec.review` / `ai.exec` / `agent_spawn` / `agent_list` |
 | `fpga.*` | `fpga.synthesize` / `fpga.implement` / `fpga.bitstream` / `fpga.simulate` / `fpga.program` |
@@ -141,70 +141,70 @@
 | `pcb.*`  | `pcb.generate_schematic` / `pcb.run_drc` / `pcb.run_erc` / `pcb.generate_bom` / `pcb.place_components` / `pcb.route_traces` / `pcb.generate_output` / `pcb.ai_synthesize` / `pcb.status` |
 | `debug.*`| `debug.connect` / `debug.disconnect` / `debug.program` / `debug.start_capture` / `debug.stop_capture` / `debug.read_signals` / `debug.set_trigger` / `debug.reset` / `debug.status` |
 | `rag.*`  | `rag.ingest` / `rag.search` / `rag.cleanup` / `rag.status` |
-| `meta.*` | `meta.dualBuild` / `meta.boardWithFpga` ほかクロス Conductor ワークフロー |
+| `meta.*` | `meta.dualBuild` / `meta.boardWithFpga` and other cross-Conductor workflows |
 | `system.*` | `system.readiness` / `system.health` / `system.shutdown` |
 
 ---
 
-## 4. エラーコード規約
+## 4. Error Code Conventions
 
-| 範囲 | 領域 |
+| Range | Domain |
 |------|------|
-| `-32700` | Parse Error（JSON ペイロードのパース失敗）|
-| `-32600` 〜 `-32603` | リクエスト標準エラー（Invalid Request / Method not found / Invalid params / Internal）|
-| `-32000` 〜 `-32099` | HESTIA 共通（Timeout / NotFound / AlreadyExists / PermissionDenied / InvalidState 等）|
-| `-32100` 〜 `-32199` | ai-conductor（Orchestration / Agent mgmt / Spec-driven / Version tracking / LLM）|
-| `-32200` 〜 `-32299` | fpga-conductor（Synthesis / Implementation / Bitstream / Timing / Debug / HLS / Device / Simulation / Constraints / Adapter）|
-| `-32300` 〜 `-32399` | asic-conductor（RTL Synth / Floorplan / Placement / CTS / Routing / 他）|
-| `-32400` 〜 `-32499` | pcb-conductor（Schematic / DRC・ERC / BOM・Placement / Gerber / AI Synthesis / KG / Constraint Verify）|
-| `-32500` 〜 `-32599` | debug-conductor（JTAG / SWD / Session / Waveform / Programming / Signal / Trigger / Reset / Protocol）|
-| `-32600` 〜 `-32699` | rag-conductor（Ingest / PDF / Web / Quality gate / Chunk・Embed / Vector・Search / License・PII / Scheduler / Cache）|
+| `-32700` | Parse Error (JSON payload parse failure) |
+| `-32600` to `-32603` | Standard request errors (Invalid Request / Method not found / Invalid params / Internal) |
+| `-32000` to `-32099` | HESTIA common (Timeout / NotFound / AlreadyExists / PermissionDenied / InvalidState etc.) |
+| `-32100` to `-32199` | ai-conductor (Orchestration / Agent mgmt / Spec-driven / Version tracking / LLM) |
+| `-32200` to `-32299` | fpga-conductor (Synthesis / Implementation / Bitstream / Timing / Debug / HLS / Device / Simulation / Constraints / Adapter) |
+| `-32300` to `-32399` | asic-conductor (RTL Synth / Floorplan / Placement / CTS / Routing / etc.) |
+| `-32400` to `-32499` | pcb-conductor (Schematic / DRC/ERC / BOM/Placement / Gerber / AI Synthesis / KG / Constraint Verify) |
+| `-32500` to `-32599` | debug-conductor (JTAG / SWD / Session / Waveform / Programming / Signal / Trigger / Reset / Protocol) |
+| `-32600` to `-32699` | rag-conductor (Ingest / PDF / Web / Quality gate / Chunk/Embed / Vector/Search / License/PII / Scheduler / Cache) |
 
-エラー応答 `data` には `tool` / `exit_code` / `log_path` / `errors[]` / `retry_possible` / `suggested_action` を含める。
+Error response `data` should include `tool` / `exit_code` / `log_path` / `errors[]` / `retry_possible` / `suggested_action`.
 
 ---
 
-## 5. conductor-core 共通 API
+## 5. conductor-core Common API
 
 ```rust
 pub trait ConductorRpc {
-    // プロジェクト管理
+    // Project management
     async fn project_open(&self, path: String) -> ProjectInfo;
     async fn project_targets(&self) -> Vec<Target>;
     async fn project_files(&self) -> FileTree;
 
-    // ビルド
+    // Build
     async fn build_start(&self, target: String, steps: Vec<BuildStep>) -> BuildJobId;
     async fn build_cancel(&self, job_id: BuildJobId) -> ();
     async fn build_status(&self, job_id: BuildJobId) -> BuildStatus;
 
-    // レポート
+    // Reports
     async fn report_timing(&self, job_id: BuildJobId) -> TimingReport;
     async fn report_resource(&self, job_id: BuildJobId) -> ResourceReport;
     async fn report_messages(&self, job_id: BuildJobId) -> Vec<AnnotatedMessage>;
 
-    // プログラミング
+    // Programming
     async fn program_targets(&self) -> Vec<ProgramTarget>;
     async fn program_flash(&self, target: String, bitfile: String) -> ();
 
-    // ツールチェーン
+    // Toolchain
     async fn toolchain_list(&self) -> Vec<ToolInstall>;
     async fn toolchain_install(&self, id: String) -> InstallProgress;
     async fn toolchain_select(&self, target: String, version: String) -> ();
 
-    // エージェント
+    // Agent
     async fn agent_status(&self) -> AgentSystemStatus;
     async fn agent_patch_list(&self) -> Vec<PatchProposal>;
     async fn agent_apply_patch(&self, patch_id: String) -> ();
     async fn agent_reject_patch(&self, patch_id: String, reason: String) -> ();
 
-    // コンテナ
+    // Container
     async fn container_list(&self) -> Vec<ContainerInfo>;
     async fn container_start(&self, id: String) -> ();
     async fn container_stop(&self, id: String) -> ();
     async fn container_update(&self, id: String) -> UpdateResult;
 
-    // システム
+    // System
     async fn system_readiness(&self) -> ReadinessStatus;
     async fn system_health(&self) -> HealthStatus;
 }
@@ -212,92 +212,88 @@ pub trait ConductorRpc {
 
 ---
 
-## 6. agent-cli エンドポイント設定
+## 6. agent-cli Endpoint Configuration
 
-### 6.1 概要
+### 6.1 Overview
 
-各 conductor は agent-cli プロセスとして起動される。agent-cli は Claude Code 等価のツール/思考機能を提供する Rust 製スタンドアロン CLI バイナリ。バックエンド LLM は `config.toml::[agent_cli]` で設定。
+Each conductor is launched as an agent-cli process. agent-cli is a standalone Rust CLI binary that provides Claude Code-equivalent tool/thinking capabilities. The backend LLM is configured in `config.toml::[agent_cli]`.
 
-4種類のバックエンドから選択可能:
-- Anthropic Claude（既定）
+Four backend options are available:
+- Anthropic Claude (default)
 - OpenAI Codex
-- Ollama（ローカル）
-- llama.cpp（OpenAI 互換）
+- Ollama (local)
+- llama.cpp (OpenAI compatible)
 
-### 6.2 `[agent_cli]` スキーマ
+### 6.2 `[agent_cli]` Schema
 
 ```toml
 [agent_cli]
 backend = "claude"                            # "claude" | "codex" | "ollama" | "llama_cpp"
-binary_path = ""                              # 空 = $PATH 解決 / フルパス指定可
-anthropic_base_url = ""                       # 空 = Anthropic 公式
-anthropic_api_key_env = "ANTHROPIC_API_KEY"   # API キーを格納する環境変数名
-model = "claude-opus-4-7"                     # LLM モデル識別子
-max_tokens = 4096                             # 応答上限トークン数
-registry_dir = ""                             # エージェント間 IPC レジストリ（空 = $XDG_RUNTIME_DIR/agent-cli）
+binary_path = ""                              # Empty = $PATH resolution / full path can be specified
+anthropic_base_url = ""                       # Empty = Anthropic official
+anthropic_api_key_env = "ANTHROPIC_API_KEY"   # Environment variable name storing the API key
+model = "claude-opus-4-7"                     # LLM model identifier
+max_tokens = 4096                             # Response token limit
+registry_dir = ""                             # Inter-agent IPC registry (empty = $XDG_RUNTIME_DIR/agent-cli)
 ```
 
-### 6.3 環境変数フォワーディング
+### 6.3 Environment Variable Forwarding
 
-1. `config.toml` を読む
-2. `anthropic_api_key_env` で指定された環境変数をホストから取得（未設定 → fail-fast）
-3. `anthropic_base_url` が空でなければ `ANTHROPIC_BASE_URL` を子プロセスに inject
-4. API キーを `ANTHROPIC_API_KEY` として子プロセスに inject
-5. `agent-cli` を子プロセスとして起動
+1. Read `config.toml`
+2. Retrieve the environment variable specified by `anthropic_api_key_env` from the host (unset → fail-fast)
+3. If `anthropic_base_url` is non-empty, inject `ANTHROPIC_BASE_URL` into the child process
+4. Inject the API key as `ANTHROPIC_API_KEY` into the child process
+5. Launch `agent-cli` as a child process
 
-### 6.4 セキュリティ考慮
+### 6.4 Security Considerations
 
-- **平文 API キー禁止**: `config.toml` に直接 API キーを書かない
-- **環境変数経由のみ**: `anthropic_api_key_env` で環境変数名を指定
-- **未設定時の明示エラー**: fail-fast で起動前に失敗
-- **ログ出力時の masking**: API キー値そのものを出力せず長さのみ表示
-- **IPC レジストリ**: パーミッション 0700 で他ユーザーからのなりすまし防止
+- **No plaintext API keys**: Never write API keys directly in `config.toml`
+- **Environment variable only**: Specify the environment variable name via `anthropic_api_key_env`
+- **Explicit error on unset**: Fail-fast before startup if the environment variable is missing
+- **Logging masking**: Display only the length, not the actual API key value in logs
+- **IPC registry**: Created with permissions 0700 to prevent impersonation by other users
 
-### 6.5 Engine 抽象化（Phase 125）
+### 6.5 Engine Abstraction (Phase 125)
 
-`conductor_sdk::transport::AgentCliClient` は `HESTIA_ENGINE_BINARY` env を sole source of
-truth として engine 別 transport を選択する:
+`conductor_sdk::transport::AgentCliClient` uses `HESTIA_ENGINE_BINARY` env as the sole source of truth to select engine-specific transport:
 
-| Engine | registry path 既定 | send transport |
+| Engine | Default registry path | Send transport |
 |--------|------------------|---------------|
 | `agent-cli` (default) | `$XDG_RUNTIME_DIR/agent-cli/` | Unix socket round-trip |
-| `claude-cli-shim` | `~/.local/share/claude-cli-shim/registry/` | `<engine_bin> send <peer> <text>` subprocess (FIFO unidirectional のため synthesized OK レスポンスを返す) |
+| `claude-cli-shim` | `~/.local/share/claude-cli-shim/registry/` | `<engine_bin> send <peer> <text>` subprocess (returns synthesized OK response due to FIFO unidirectional) |
 
-`config.agent_cli_registry_dir` で明示指定があればそれを最優先。詳細は
-`.aiprj/AI_PRJ_DESIGN.md` §10〜§12 と Phase 125 commit `af52ffe` を参照。
+If `config.agent_cli_registry_dir` is explicitly specified, it takes highest priority. See `.aiprj/AI_PRJ_DESIGN.md` §10-§12 and Phase 125 commit `af52ffe` for details.
 
-### 6.6 並列度制御（Phase 126）
+### 6.6 Concurrency Control (Phase 126)
 
-ai-conductor の `dispatch_to_conductor` ループおよび各 conductor の `dispatch_coders.v1`
-ハンドラは `conductor_sdk::concurrency::ConductorLimiter` (tokio::sync::Semaphore +
-acquire timeout) で並列度を cap する。詳細は [`user_guide.md`](user_guide.md) §3.12 参照。
+The ai-conductor's `dispatch_to_conductor` loop and each conductor's `dispatch_coders.v1` handler cap concurrency via `conductor_sdk::concurrency::ConductorLimiter` (tokio::sync::Semaphore + acquire timeout). See [`user_guide.md`](user_guide.md) §3.12 for details.
 
 ---
 
-## 7. 実装イメージ
+## 7. Implementation Image
 
-各 conductor は単一プロセスとして起動:
+Each conductor is launched as a single process:
 
 ```bash
 agent-cli run --persona-file ./.hestia/personas/<conductor>.md --name <conductor>
 ```
 
-persona ファイルで「構造化メッセージハンドラ tool」と「自然言語応答 tool」を宣言する。フロントエンド（VSCode / Tauri / CLI）も agent-cli の peer として参加し、`agent-cli send ai <payload>` で ai-conductor に接続する。
+The persona file declares a "structured message handler tool" and a "natural language response tool." The frontend (VSCode / Tauri / CLI) also joins as an agent-cli peer and connects to ai-conductor via `agent-cli send ai <payload>`.
 
-### 設計上のメリット
+### Design Benefits
 
-- 通信路が agent-cli IPC 1 系統に集約され、運用・障害切り分けが単純化
-- peer モデルにより全エージェントが対等に discoverable
-- 構造化呼出と自然言語が同チャンネルで併存
-- 開発者は `agent-cli list` / `agent-cli send` で任意 conductor と直接対話可能
-- 各 conductor の LLM バックエンドは個別または一括切替可能
+- Communication paths are consolidated to a single agent-cli IPC channel, simplifying operations and fault isolation
+- All agents are equally discoverable via the peer model
+- Structured calls and natural language coexist on the same channel
+- Developers can directly interact with any conductor via `agent-cli list` / `agent-cli send`
+- Each conductor's LLM backend can be switched individually or in bulk
 
 ---
 
-## 関連ドキュメント
+## Related Documentation
 
-- [architecture_overview.md](architecture_overview.md) — アーキテクチャ概要
-- [glossary.md](glossary.md) — 用語集
-- [common/agent_cli_messaging.md](common/agent_cli_messaging.md) — agent-cli メッセージング詳細
-- [common/api_versioning.md](common/api_versioning.md) — API バージョニング詳細
-- [common/error_registry.md](common/error_registry.md) — エラーコード一覧
+- [architecture_overview.md](architecture_overview.md) — Architecture overview
+- [glossary.md](glossary.md) — Glossary
+- [common/agent_cli_messaging.md](common/agent_cli_messaging.md) — agent-cli messaging details
+- [common/api_versioning.md](common/api_versioning.md) — API versioning details
+- [common/error_registry.md](common/error_registry.md) — Error code registry

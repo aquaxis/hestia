@@ -119,7 +119,7 @@ async fn invoke_with_peers(method: &str, params: serde_json::Value, alive_peers:
     std::env::set_var("HESTIA_PROJECT_ROOT", tmp.path());
     std::env::set_var("HESTIA_PEER_ALIVE_FORCE", alive_peers);
     std::env::set_var("HESTIA_PEER_SEND_NOOP", "1");
-    // Phase 88: default strict ON のため fallback path テスト用に opt-out
+    // Phase 88: opt-out of default strict ON for fallback path testing
     std::env::set_var("HESTIA_STRICT_SUBAGENT", "0");
 
     let handler = FpgaHandler;

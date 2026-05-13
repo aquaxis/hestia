@@ -1,99 +1,99 @@
-# hal-conductor 多言語コード生成
+# hal-conductor Multi-language Code Generation
 
-**対象 Conductor**: hal-conductor
-**ソース**: 設計仕様書 §8（2175-2280行目付近）
+**Target Conductor**: hal-conductor
+**Source**: Design specification §8 (around lines 2175-2280)
 
-## 概要
+## Overview
 
-hal-conductor は RegisterMap から複数言語のドライバスケルトン・レジスタアクセス API・メモリマップ定義を自動生成する。`codegen.rs` に実装される。
+hal-conductor auto-generates driver skeletons, register access APIs, and memory map definitions from a RegisterMap in multiple languages. Implemented in `codegen.rs`.
 
-## 対応出力言語
+## Supported Output Languages
 
-| 出力言語 | 識別子 | 説明 |
-|---------|--------|------|
-| C | `c` | C ヘッダファイル（レジスタアクセスマクロ・構造体定義） |
-| Rust | `rust` | Rust crate（embedded-hal 互換のドライバ） |
-| Python | `python` | Python モジュール（MMIO アクセスラッパー） |
-| Markdown | `markdown` | レジスタドキュメント |
-| SVD | `svd` | CMSIS SVD XML（デバッガ・IDE 連携用） |
+| Output Language | Identifier | Description |
+|----------------|------------|-------------|
+| C | `c` | C header file (register access macros, struct definitions) |
+| Rust | `rust` | Rust crate (embedded-hal compatible driver) |
+| Python | `python` | Python module (MMIO access wrapper) |
+| Markdown | `markdown` | Register documentation |
+| SVD | `svd` | CMSIS SVD XML (for debugger/IDE integration) |
 
-## C ヘッダ生成
+## C Header Generation
 
-生成内容:
-- レジスタベースアドレスマクロ（`#define SOC_BASE 0x10000000`）
-- レジスタオフセットマクロ（`#define REG_CTRL_OFFSET 0x00`）
-- レジスタ構造体定義（ビットフィールド対応）
-- 読み書きヘルパーマクロ（`REG_READ` / `REG_WRITE`）
+Generated content:
+- Register base address macros (`#define SOC_BASE 0x10000000`)
+- Register offset macros (`#define REG_CTRL_OFFSET 0x00`)
+- Register struct definitions (with bitfield support)
+- Read/write helper macros (`REG_READ` / `REG_WRITE`)
 
-出力パス: hal.toml `[outputs] c_header` で指定
+Output path: specified in hal.toml `[outputs] c_header`
 
-## Rust Crate 生成
+## Rust Crate Generation
 
-生成内容:
-- `embedded-hal` トレイト互換のドライバ構造体
-- MMIO レジスタアクセス（`read()` / `write()` / `modify()`）
-- 型安全なビットフィールド操作
-- PAC（Peripheral Access Crate）形式
+Generated content:
+- `embedded-hal` trait-compatible driver structs
+- MMIO register access (`read()` / `write()` / `modify()`)
+- Type-safe bitfield operations
+- PAC (Peripheral Access Crate) format
 
-出力パス: hal.toml `[outputs] rust_crate` で指定
+Output path: specified in hal.toml `[outputs] rust_crate`
 
-関連アダプター:
-- `peakrdl-rust`: SystemRDL → Rust（embedded-hal 互換）
-- `svd2rust-bridge`: SVD → Rust（svd2rust 互換）
+Related adapters:
+- `peakrdl-rust`: SystemRDL → Rust (embedded-hal compatible)
+- `svd2rust-bridge`: SVD → Rust (svd2rust compatible)
 
-## Python モジュール生成
+## Python Module Generation
 
-生成内容:
-- MMIO アクセスクラス（`/dev/mem` または UIO 経由）
-- レジスタフィールドプロパティ（`@property` デコレータ）
-- 列挙型マッピング
+Generated content:
+- MMIO access class (`/dev/mem` or UIO-based)
+- Register field properties (`@property` decorators)
+- Enum mappings
 
-出力パス: hal.toml `[outputs] python_module` で指定
+Output path: specified in hal.toml `[outputs] python_module`
 
-## SVD 生成
+## SVD Generation
 
-CMSIS SVD（System View Description）XML 形式。デバッガ・IDE がレジスタ情報を表示するために使用する。
+CMSIS SVD (System View Description) XML format. Used by debuggers and IDEs to display register information.
 
-生成内容:
-- `<peripheral>` エレメント（ベースアドレス・サイズ）
-- `<register>` エレメント（オフセット・アクセス権・リセット値）
-- `<field>` エレメント（ビット幅・オフセット・列挙値）
+Generated content:
+- `<peripheral>` elements (base address, size)
+- `<register>` elements (offset, access rights, reset values)
+- `<field>` elements (bit width, offset, enum values)
 
-出力パス: hal.toml `[outputs] svd` で指定
+Output path: specified in hal.toml `[outputs] svd`
 
-関連アダプター:
-- `cmsis-svd-gen`: 内部モデル → SVD XML
+Related adapters:
+- `cmsis-svd-gen`: Internal model → SVD XML
 
-## Markdown ドキュメント生成
+## Markdown Documentation Generation
 
-生成内容:
-- レジスタブロック概要
-- レジスタテーブル（アドレス・名前・アクセス権・リセット値）
-- ビットフィールド図
+Generated content:
+- Register block overview
+- Register table (address, name, access rights, reset values)
+- Bitfield diagrams
 
-出力パス: hal.toml `[outputs] documentation` で指定
+Output path: specified in hal.toml `[outputs] documentation`
 
-## 並列コード生成
+## Parallel Code Generation
 
-出力言語が複数ある場合、coder サブエージェント（`hal-coder-c` / `hal-coder-rust` / `hal-coder-python` / `hal-coder-svd`）が言語ごとに並列起動し、同時にコード生成を行う。
+When multiple output languages are specified, coder sub-agents (`hal-coder-c` / `hal-coder-rust` / `hal-coder-python` / `hal-coder-svd`) launch in parallel for each language and generate code simultaneously.
 
-## 下流連携
+## Downstream Integration
 
-### apps-conductor（§9）
+### apps-conductor (§9)
 
-生成された C ヘッダ / Rust crate / Python モジュールは apps-conductor の `[hal] import = "..."` で取り込まれる。
+Generated C headers / Rust crates / Python modules are imported via apps-conductor's `[hal] import = "..."`.
 
-### debug-conductor（§10）
+### debug-conductor (§10)
 
-SVD ファイルは debug-conductor が再利用し、ライブデバッグ時のレジスタ表示・編集 UI に活用する。
+SVD files are reused by debug-conductor for live debugging register display and editing UI.
 
 ### asic-conductor / fpga-conductor
 
-`export-rtl` で出力した SystemVerilog テンプレートを、対応する conductor の `[sources]` に直接渡せる。
+SystemVerilog templates exported via `export-rtl` can be passed directly to the corresponding conductor's `[sources]`.
 
-## 関連ドキュメント
+## Related Documentation
 
-- [hal/register_map.md](register_map.md) — レジスタマップ定義
-- [hal/binary_spec.md](binary_spec.md) — hestia-hal-cli バイナリ仕様
-- [hal/config_schema.md](config_schema.md) — hal.toml [outputs] セクション
-- [../apps/config_schema.md](../apps/config_schema.md) — apps.toml [hal] セクション
+- [hal/register_map.md](register_map.md) — Register map definition
+- [hal/binary_spec.md](binary_spec.md) — hestia-hal-cli binary specification
+- [hal/config_schema.md](config_schema.md) — hal.toml [outputs] section
+- [../apps/config_schema.md](../apps/config_schema.md) — apps.toml [hal] section

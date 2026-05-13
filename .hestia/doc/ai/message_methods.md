@@ -1,66 +1,66 @@
-# ai-conductor メッセージメソッド一覧
+# ai-conductor Message Method List
 
-**対象 Conductor**: ai-conductor
-**ソース**: 設計仕様書 §14（3492-3630行目付近）, §3（745-1240行目付近）
+**Target Conductor**: ai-conductor
+**Source**: Design Specification §14 (around lines 3492-3630), §3 (around lines 745-1240)
 
-## トランスポート
+## Transport
 
-全通信は agent-cli ネイティブ IPC に統一。`agent-cli send <peer> <payload>` で送信。ペイロードが先頭 `{` の場合は構造化 JSON、それ以外は自然言語として解釈される。
+All communication is unified via agent-cli native IPC. Messages are sent with `agent-cli send <peer> <payload>`. If the payload starts with `{`, it is interpreted as structured JSON; otherwise, it is treated as natural language.
 
-## ai.* メソッド一覧
+## ai.* Method List
 
-### 仕様書駆動開発（SpecDriven）
+### Spec-Driven Development
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `ai.spec.init` | Request | 仕様書セッション初期化。自然言語仕様から DesignSpec 生成を開始 |
-| `ai.spec.update` | Request | 既存 DesignSpec の更新。REQ/CON/IF プレフィックスで要件・制約・インターフェースを追記 |
-| `ai.spec.review` | Request | 仕様書レビュー開始。レビュー結果 + 修正提案を返却 |
+| `ai.spec.init` | Request | Initialize specification session. Start DesignSpec generation from natural language specification |
+| `ai.spec.update` | Request | Update an existing DesignSpec. Append requirements, constraints, and interfaces using REQ/CON/IF prefixes |
+| `ai.spec.review` | Request | Start specification review. Returns review results + modification suggestions |
 
-### 実行・制御
+### Execution and Control
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `ai.exec` | Request | 自然言語または構造化指示の直接実行。task-router が意図理解→タスク分解→振り分けを実行 |
+| `ai.exec` | Request | Direct execution of natural language or structured instructions. task-router performs intent understanding → task decomposition → routing |
 
-### エージェント管理
+### Agent Management
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `agent_spawn` | Request | サブエージェント（planner/designer/coder-N/tester）の新規起動 |
-| `agent_list` | Request | 登録済みサブエージェント一覧取得。agent-cli list に相当 |
-| `agent.status_update` | Notification | エージェント状態変化通知（id なし、応答なし） |
+| `agent_spawn` | Request | Launch a new sub-agent (planner/designer/coder-N/tester) |
+| `agent_list` | Request | Get list of registered sub-agents. Equivalent to agent-cli list |
+| `agent.status_update` | Notification | Agent state change notification (no id, no response) |
 
-### コンテナ管理
+### Container Management
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `container.list` | Request | コンテナ一覧取得 |
-| `container.start` | Request | コンテナ起動 |
-| `container.stop` | Request | コンテナ停止 |
-| `container.create` | Request | container.toml から Containerfile 生成・ビルド |
-| `container.update` | Request | コンテナイメージ差分更新 |
+| `container.list` | Request | Get container list |
+| `container.start` | Request | Start a container |
+| `container.stop` | Request | Stop a container |
+| `container.create` | Request | Generate and build a Containerfile from container.toml |
+| `container.update` | Request | Differential update of container image |
 
-### ワークフロー
+### Workflow
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `meta.dualBuild` | Request | 複数 conductor 並列ビルド（DAG: fpga.build ‖ asic.synth → meta.collect） |
-| `meta.boardWithFpga` | Request | クロス conductor ワークフロー（FPGA + PCB 連携等） |
-| `meta.handoff` | Notification | conductor 間ハンドオフイベント（rtl → fpga/asic 等） |
+| `meta.dualBuild` | Request | Parallel build across multiple conductors (DAG: fpga.build ‖ asic.synth → meta.collect) |
+| `meta.boardWithFpga` | Request | Cross-conductor workflow (e.g., FPGA + PCB integration) |
+| `meta.handoff` | Notification | Inter-conductor handoff event (rtl → fpga/asic, etc.) |
 
-### システム共通
+### System Common
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `system.readiness` | Request | ai-conductor の準備状態確認（`{ ready: bool }`） |
-| `system.health` | Request | ヘルスチェック（Online / Offline / Degraded / Upgrading） |
-| `system.shutdown` | Request | ai-conductor シャットダウン |
-| `agent.alert` | Notification | フロントエンドへのアラート通知（連続ヘルスチェック失敗時等） |
+| `system.readiness` | Request | Check ai-conductor readiness state (`{ ready: bool }`) |
+| `system.health` | Request | Health check (Online / Offline / Degraded / Upgrading) |
+| `system.shutdown` | Request | Shut down ai-conductor |
+| `agent.alert` | Notification | Alert notification to frontend (e.g., on consecutive health check failures) |
 
-## ペイロードフォーマット
+## Payload Format
 
-### リクエスト
+### Request
 
 ```json
 {
@@ -71,7 +71,7 @@
 }
 ```
 
-### 成功応答
+### Success Response
 
 ```json
 {
@@ -81,7 +81,7 @@
 }
 ```
 
-### エラー応答
+### Error Response
 
 ```json
 {
@@ -91,18 +91,18 @@
 }
 ```
 
-## メソッド名前空間規約
+## Method Namespace Convention
 
-`{domain}.{method_group}.{version_prefix}.{action}`（例: `fpga.build.v1.synthesize`）。簡略形 `{domain}.{action}` も同義（v1 既定）。
+`{domain}.{method_group}.{version_prefix}.{action}` (e.g., `fpga.build.v1.synthesize`). The short form `{domain}.{action}` is equivalent (v1 default).
 
 - `ApiVersion { major, minor }`
-- 互換性: 必須パラメータ追加・既存型変更・メソッド削除は `major` バンプ
-- 廃止予告: `DeprecationNotice { deprecated_since, removal_scheduled, replacement }`
+- Compatibility: Adding required parameters, changing existing types, or removing methods requires a `major` bump
+- Deprecation notice: `DeprecationNotice { deprecated_since, removal_scheduled, replacement }`
 
-## 関連ドキュメント
+## Related Documentation
 
-- [ai/binary_spec.md](binary_spec.md) — hestia-ai-cli バイナリ仕様
-- [ai/error_types.md](error_types.md) — ai-conductor エラーコード
-- [ai/workflow_engine.md](workflow_engine.md) — WorkflowEngine 詳細
-- [ai/skills_system.md](skills_system.md) — SkillSystem 詳細
-- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli メッセージング仕様
+- [ai/binary_spec.md](binary_spec.md) — hestia-ai-cli binary specification
+- [ai/error_types.md](error_types.md) — ai-conductor error codes
+- [ai/workflow_engine.md](workflow_engine.md) — WorkflowEngine details
+- [ai/skills_system.md](skills_system.md) — SkillSystem details
+- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli messaging specification

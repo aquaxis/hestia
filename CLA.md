@@ -1,318 +1,319 @@
 # HESTIA Contributor License Agreement (CLA)
 
-Version 1.0 ドラフト
+Version 1.0 Draft
 
 Copyright (C) 2026 AQUAXIS TECHNOLOGY. All Rights Reserved.
 
 ---
 
-## 序文
+## Preamble
 
-本ドキュメントは、HESTIA（以下「本プロジェクト」）に対してコードその他の成果物を貢献いただく方と、AQUAXIS TECHNOLOGY（以下「ライセンサー」）との間の合意条件を定めるものである。本プロジェクトは、License A（GNU Affero General Public License version 3.0）、License B（相互主義商用ライセンス）、および License C（商用サブスクリプションライセンス）の3種類のライセンスの下で配布される（詳細は `LICENSE.md` を参照）。
+This document sets forth the terms of agreement between individuals contributing code or other works to HESTIA (hereinafter "this Project") and AQUAXIS TECHNOLOGY (hereinafter "the Licensor"). This Project is distributed under three types of licenses: License A (GNU Affero General Public License version 3.0), License B (Reciprocal Commercial License), and License C (Commercial Subscription License) (see `LICENSE.md` for details).
 
-この持続可能なデュアルライセンスモデルを維持するため、ライセンサーは、すべてのコントリビュータから本CLAへの同意を取得する必要がある。本CLAは、貢献されたコードの著作権をコントリビュータから剥奪するものではなく、ライセンサーに**再ライセンスの自由**を与えるための広範な著作権ライセンスを付与するものである。
+To maintain this sustainable dual-license model, the Licensor must obtain agreement to this CLA from all contributors. This CLA does not strip contributors of their copyright over contributed code; rather, it grants the Licensor a **broad copyright license providing the freedom to re-license**.
 
-本CLAには2つの形式がある。
+This CLA has two forms:
 
-- **パートI：個人用 CLA（ICLA）** — 個人として貢献する方が同意する
-- **パートII：法人用 CLA（CCLA）** — 会社・団体として、その従業員・業務委託先の貢献を包括的にカバーする場合に同意する
+- **Part I: Individual CLA (ICLA)** -- For individuals contributing in their personal capacity
+- **Part II: Corporate CLA (CCLA)** -- For companies or organizations making an encompassing agreement covering contributions by their employees and contractors
 
-個人の身分として貢献を行うがその著作権が雇用主に帰属する場合、雇用主による CCLA の締結が必要となる場合がある（詳細はパートI第7条を参照）。
-
----
-
-## 共通定義
-
-本CLAにおいて、以下の用語は以下の意味を有する。
-
-(a) 「**本プロジェクト**」とは、HESTIA およびライセンサーが管理する関連するすべてのソフトウェア、ドキュメント、ウェブサイト、その他のプロジェクト成果物をいう。
-
-(b) 「**貢献**」とは、コントリビュータが本プロジェクトに対して提出する、ソースコード、バイナリ、ドキュメント、図表、試験、設計、アイデア、バグ報告、機能提案、翻訳、その他の成果物または情報の一切をいう。提出の方法を問わず、GitHub のプルリクエスト、Issue、パッチファイル、メール、Slack、その他のチャネルを通じた提出を含む。
-
-(c) 「**コントリビュータ**」とは、本CLAに同意して貢献を提出する個人または法人をいう。
-
-(d) 「**ライセンサー**」とは、AQUAXIS TECHNOLOGY をいう。
-
-(e) 「**プロジェクトライセンス**」とは、現在の License A、License B、License C、および将来ライセンサーが定める本プロジェクトのライセンスを総称していう。
+If you contribute in a personal capacity but your copyright is assigned to your employer, your employer may need to execute a CCLA (see Part I, Section 7 for details).
 
 ---
 
-## パートI：個人用 CLA（Individual CLA / ICLA）
+## Common Definitions
 
-本パートは、個人として貢献を行う方のための合意である。
+In this CLA, the following terms shall have the following meanings:
 
-### I-1. 同意
+(a) "**This Project**" means HESTIA and all related software, documentation, websites, and other project works managed by the Licensor.
 
-コントリビュータは、本ICLAに同意することにより、以下のすべての条項に法的に拘束されることに合意する。同意は、第I-10条に定める方法によって行う。
+(b) "**Contribution**" means any and all source code, binaries, documentation, diagrams, tests, designs, ideas, bug reports, feature suggestions, translations, or other works or information submitted by a contributor to this Project. This includes submissions regardless of the method, including via GitHub pull requests, issues, patch files, email, Slack, or other channels.
 
-### I-2. 著作権ライセンスの付与
+(c) "**Contributor**" means an individual or entity who agrees to this CLA and submits a Contribution.
 
-コントリビュータは、ライセンサーおよびライセンサーを通じて本プロジェクトを受領する者（再配布者、エンドユーザー、およびサブライセンシーを含む）に対し、貢献およびその派生物について、**永続的、全世界的、非独占的、無償、ロイヤリティフリー、取消不能**な著作権ライセンスを付与する。このライセンスは以下の行為を含むが、これらに限られない。
+(d) "**Licensor**" means AQUAXIS TECHNOLOGY.
 
-(a) 貢献を複製、公開、配布、公衆送信（送信可能化を含む）、上演、展示する権利
-
-(b) 貢献を改変し、派生物を作成する権利
-
-(c) 貢献を、プロジェクトライセンスまたはライセンサーが将来選択する任意のライセンス条件（オープンソースライセンス、商用ライセンス、サブスクリプションライセンス、プロプライエタリライセンス、その他を問わない）の下で再ライセンスおよびサブライセンスする権利
-
-(d) 前各号の権利を第三者に対して付与し、サブライセンスする権利
-
-### I-3. 特許ライセンスの付与
-
-コントリビュータは、ライセンサーおよびライセンサーを通じて本プロジェクトを受領する者に対し、コントリビュータが保有し、または将来取得する特許のうち、貢献、貢献を組み込んだ本プロジェクト、または貢献とその他の本プロジェクト構成要素との組合せにおいて必然的に侵害される特許について、**永続的、全世界的、非独占的、無償、ロイヤリティフリー、取消不能**（ただし本第I-3条の最終項を除く）な特許ライセンスを付与する。
-
-コントリビュータまたはその関連当事者が、本プロジェクト、ライセンサー、または他のコントリビュータに対し、本プロジェクトまたは貢献が特許を侵害していると主張する特許訴訟を提起した場合、本条に基づき当該コントリビュータに付与された特許ライセンスは、当該訴訟提起の時点で自動的に終了する。
-
-### I-4. 著作権の保持
-
-本ICLAは、**コントリビュータから著作権を剥奪、移転、または譲渡するものではない**。コントリビュータは、貢献に対する著作権を引き続き保持する。本ICLAは、ライセンサーに対して上記第I-2条および第I-3条に定める広範な利用権を付与するのみである。
-
-### I-5. 著作者人格権の不行使
-
-コントリビュータは、日本国著作権法第18条から第20条に定める著作者人格権（公表権、氏名表示権、同一性保持権を含む）および外国法における同等の権利（moral rights）を、ライセンサーおよびプロジェクトライセンスの下で貢献を利用するすべての者に対して**行使しない**ことに合意する。法令上、行使しない合意が認められない範囲については、コントリビュータは、法令が認める最大限の範囲で、これらの権利の行使を差し控えることに合意する。
-
-### I-6. 表明および保証
-
-コントリビュータは、以下の事項を表明し、保証する。
-
-(a) **オリジナリティ**：貢献はコントリビュータ自身が創作したオリジナルの著作物であるか、またはコントリビュータが本ICLAに定める条件で貢献を提出する適切な権限を有していること
-
-(b) **第三者権利の非侵害**：コントリビュータが知る限り、貢献は第三者の著作権、特許権、商標権、営業秘密、その他の知的財産権を侵害しないこと
-
-(c) **第三者材料の開示**：貢献に、コントリビュータがオリジナルで創作したものでない第三者材料（オープンソースコード、第三者ライブラリ、コピー・改変された既存コード等）が含まれる場合、コントリビュータは当該部分およびその適用ライセンスを、貢献の提出時にライセンサーに明示的に開示すること
-
-(d) **権限**：コントリビュータは、本ICLAに同意し、本ICLAに定める義務を履行する法的能力および権限を有すること
-
-### I-7. 雇用主関連の事項
-
-コントリビュータは、以下のいずれかを表明する（該当するものにチェックを付する）。
-
-```
-□ (1) 貢献は、私の雇用主・委託元・その他の第三者が所有する権利を
-       一切含まない。私は、完全に個人の時間、個人のリソース、および
-       個人の立場で貢献を作成した。
-
-□ (2) 貢献の一部または全部に、私の雇用主・委託元が所有する権利が
-       関与する可能性がある。この場合、当該雇用主・委託元は、
-       別途「パートII：法人用 CLA（CCLA）」に同意するか、または
-       書面で当該貢献の提出を許可する文書をライセンサーに提出した。
-
-       関連する雇用主・委託元の名称：________________________
-       許可文書の参照：________________________
-```
-
-コントリビュータは、雇用主・委託元との契約上、自己の貢献がこれらの者に帰属する可能性があることを認識しており、かつ上記(1)または(2)のいずれかの状況が真実であることを確認する。
-
-### I-8. 継続的貢献
-
-コントリビュータが本ICLAに同意した後に行うすべての貢献は、別段の合意がない限り、本ICLAの条件に従うものとする。コントリビュータは、後日の貢献について個別の同意を行う必要はない。
-
-コントリビュータは、本ICLAを終了する意思をライセンサーに書面で通知することができる。ただし、終了は将来の貢献にのみ適用され、**終了前に提出された貢献に関する第I-2条および第I-3条のライセンスは、永続的・取消不能**のままである。
-
-### I-9. 無保証
-
-本ICLAに基づきライセンサーに提供される貢献は、明示黙示を問わず一切の保証なしに、「現状有姿（AS IS）」で提供される。ただし、本項は第I-6条の表明保証の効力を妨げるものではない。
-
-コントリビュータは、貢献が本プロジェクトに受け入れられることを保証されない。ライセンサーは、貢献を受け入れ、拒否し、または修正する完全な裁量権を有する。
-
-### I-10. 同意の方法
-
-本ICLAへの同意は、以下のいずれかの方法で行うものとする。
-
-(a) **電子署名**：ライセンサーが指定する電子署名サービス（CLA Assistant、DocuSign、等）を通じた署名
-
-(b) **GitHub 連携**：ライセンサーが指定する GitHub ベースのCLAボット（例：CLA Assistant、EasyCLA）を通じた、プルリクエスト時の電子的同意
-
-(c) **書面署名**：本ICLAを印刷し、署名した文書をライセンサーに提出（郵送または電子メール添付）
-
-いずれの方法でも、コントリビュータは、以下の情報を明確に提供するものとする。
-
-- 氏名（本名・フルネーム）
-- 電子メールアドレス
-- GitHub ユーザー名（該当する場合）
-- 本ICLAへの同意日
-- 第I-7条の雇用主関連の表明
-
-### I-11. 一般条項
-
-(a) **準拠法**：本ICLAは、日本国法を準拠法とする。
-
-(b) **管轄**：本ICLAに関する一切の紛争については、**東京地方裁判所** を第一審の専属的合意管轄裁判所とする。
-
-(c) **分離可能性**：本ICLAの一部の規定が無効と判断された場合でも、他の規定は有効性を失わない。
-
-(d) **完全合意**：本ICLAは、貢献に関するコントリビュータとライセンサーの間の完全合意を構成する。
-
-(e) **言語および正文**：本ICLAは、**日本語を正文**とする。翻訳版（英語版その他の言語版）が作成された場合であっても、翻訳版は参考のためのものであり、解釈上の相違または矛盾がある場合は、**日本語正文が優先して適用される**。本項は、コントリビュータが日本国外に所在する場合においても同様に適用される。日本語を解さないコントリビュータは、本ICLAに同意する前に、自己の費用と責任において日本語正文の内容を十分に理解する義務を負う。
+(e) "**Project Licenses**" means the current License A, License B, License C, and any future licenses established by the Licensor for this Project, collectively.
 
 ---
 
-## パートII：法人用 CLA（Corporate CLA / CCLA）
+## Part I: Individual CLA (ICLA)
 
-本パートは、会社・団体（以下「**会社**」）として、その従業員・業務委託先による貢献を包括的にカバーする場合のための合意である。
+This Part is the agreement for individuals contributing in their personal capacity.
 
-### II-1. 目的と範囲
+### I-1. Agreement
 
-会社は、本CCLAに同意することにより、以下の両方に合意する。
+By agreeing to this ICLA, the Contributor agrees to be legally bound by all of the following terms. Agreement is made in the manner specified in Section I-10.
 
-(a) 会社または会社の指定従業員・業務委託先（以下「**指定貢献者**」）が提出する貢献に対して、ライセンサーに第II-2条および第II-3条に定めるライセンスを付与すること
+### I-2. Copyright License Grant
 
-(b) 指定貢献者が提出する貢献が、会社の知的財産方針および雇用契約に照らして、本CCLAの条件で提出することが適切であることを会社の責任において確認すること
+The Contributor grants the Licensor and those who receive this Project through the Licensor (including redistributors, end users, and sublicensees) a **perpetual, worldwide, non-exclusive, royalty-free, irrevocable** copyright license in the Contribution and its derivative works. This license includes, but is not limited to, the following rights:
 
-### II-2. 著作権ライセンスの付与
+(a) The right to reproduce, publish, distribute, transmit to the public (including making available to the public), perform, and display the Contribution
 
-会社は、ライセンサーおよびライセンサーを通じて本プロジェクトを受領する者に対し、指定貢献者が提出する貢献およびその派生物について、**永続的、全世界的、非独占的、無償、ロイヤリティフリー、取消不能**な著作権ライセンスを付与する。このライセンスは以下の行為を含む。
+(b) The right to modify the Contribution and create derivative works
 
-(a) 貢献を複製、公開、配布、公衆送信（送信可能化を含む）、上演、展示する権利
+(c) The right to re-license and sublicense the Contribution under the Project Licenses or any other license terms chosen by the Licensor in the future (whether open source, commercial, subscription, proprietary, or otherwise)
 
-(b) 貢献を改変し、派生物を作成する権利
+(d) The right to grant and sublicense the foregoing rights to third parties
 
-(c) 貢献を、プロジェクトライセンスまたはライセンサーが将来選択する任意のライセンス条件の下で再ライセンスおよびサブライセンスする権利
+### I-3. Patent License Grant
 
-(d) 前各号の権利を第三者に対して付与し、サブライセンスする権利
+The Contributor grants the Licensor and those who receive this Project through the Licensor a **perpetual, worldwide, non-exclusive, royalty-free, irrevocable** (except as provided in the final paragraph of this Section I-3) patent license under patents owned or hereafter acquired by the Contributor that are necessarily infringed by the Contribution, this Project incorporating the Contribution, or the combination of the Contribution with other components of this Project.
 
-### II-3. 特許ライセンスの付与
+If the Contributor or its affiliated parties file a patent infringement lawsuit alleging that this Project or the Contribution infringes a patent, the patent license granted to that Contributor under this section shall automatically terminate at the time such lawsuit is filed.
 
-会社は、ライセンサーおよびライセンサーを通じて本プロジェクトを受領する者に対し、会社が保有し、または将来取得する特許のうち、指定貢献者の貢献、貢献を組み込んだ本プロジェクト、または貢献とその他の本プロジェクト構成要素との組合せにおいて必然的に侵害される特許について、**永続的、全世界的、非独占的、無償、ロイヤリティフリー、取消不能**（ただし本条の最終項を除く）な特許ライセンスを付与する。
+### I-4. Retention of Copyright
 
-会社またはその関連当事者が、本プロジェクト、ライセンサー、または他のコントリビュータに対し、本プロジェクトまたは貢献が特許を侵害していると主張する特許訴訟を提起した場合、本条に基づき会社に付与された特許ライセンスは、当該訴訟提起の時点で自動的に終了する。
+This ICLA does **not divest, transfer, or assign copyright from the Contributor to the Licensor**. The Contributor retains copyright in the Contribution. This ICLA only grants the Licensor the broad usage rights defined in Sections I-2 and I-3 above.
 
-### II-4. 著作者人格権の取扱い
+### I-5. Non-Assertion of Moral Rights
 
-会社は、指定貢献者から著作者人格権の不行使についての有効な同意を取得することを保証し、当該同意がライセンサーおよびプロジェクトライセンスの下で貢献を利用するすべての者に対して有効となるように手配する。
+The Contributor agrees **not to assert** moral rights (including the right of publication, right of attribution, and right of integrity as defined in Articles 18 through 20 of the Japanese Copyright Act) and equivalent rights under foreign laws (moral rights) against the Licensor and all persons who use the Contribution under the Project Licenses. To the extent that a non-assertion agreement is not legally permitted, the Contributor agrees to refrain from exercising these rights to the maximum extent permitted by law.
 
-### II-5. 表明および保証
+### I-6. Representations and Warranties
 
-会社は、以下の事項を表明し、保証する。
+The Contributor represents and warrants that:
 
-(a) **権限**：会社は、日本国法または適用される設立準拠法の下で有効に設立され、存続する法人であり、本CCLAに同意し、本CCLAに定める義務を履行する権限を有すること
+(a) **Originality**: The Contribution is an original work of authorship created by the Contributor, or the Contributor has the appropriate rights to submit the Contribution under the terms of this ICLA
 
-(b) **権利保有**：指定貢献者が提出する貢献に対する著作権および特許権が、会社に有効に帰属していること、または会社が第三者からこれらを本CCLAの条件で再ライセンスする権限を取得していること
+(b) **Non-Infringement of Third-Party Rights**: To the Contributor's knowledge, the Contribution does not infringe any third-party copyrights, patents, trademarks, trade secrets, or other intellectual property rights
 
-(c) **オリジナリティ**：指定貢献者が提出する貢献は、指定貢献者または会社が創作したオリジナルの著作物であるか、または会社が本CCLAに定める条件で貢献を提出する適切な権限を有していること
+(c) **Disclosure of Third-Party Materials**: If the Contribution contains third-party materials not originally created by the Contributor (open source code, third-party libraries, copied or modified existing code, etc.), the Contributor shall explicitly disclose such portions and their applicable licenses to the Licensor at the time of submission
 
-(d) **第三者権利の非侵害**：会社が知る限り、貢献は第三者の著作権、特許権、商標権、営業秘密、その他の知的財産権を侵害しないこと
+(d) **Authority**: The Contributor has the legal capacity and authority to agree to this ICLA and to fulfill the obligations defined in this ICLA
 
-(e) **第三者材料の開示**：貢献に第三者材料（オープンソースコード、第三者ライブラリ等）が含まれる場合、会社は当該部分およびその適用ライセンスを貢献の提出時にライセンサーに明示的に開示すること
+### I-7. Employer-Related Matters
 
-### II-6. 指定貢献者の登録・変更
+The Contributor represents one of the following (check the applicable box):
 
-会社は、本CCLA締結時および変更時に、以下の情報をライセンサーに提出するものとする。
-
-**初期登録情報：**
 ```
-会社名              : ________________________
-代表者氏名・役職     : ________________________
-連絡担当者氏名       : ________________________
-連絡担当者電子メール : ________________________
+[ ] (1) The Contribution does not contain any rights owned by my employer,
+       client, or any other third party. I created the Contribution entirely
+       on my own time, using my own resources, and in my personal capacity.
 
-指定貢献者リスト（氏名、電子メール、GitHub ユーザー名）：
+[ ] (2) Some or all of the Contribution may involve rights owned by my
+       employer or client. In this case, my employer or client has either
+       agreed to Part II: Corporate CLA (CCLA) separately, or has provided
+       the Licensor with written permission for the submission of the
+       Contribution.
+
+       Name of relevant employer or client: __________________________
+       Reference to permission document: __________________________
+```
+
+The Contributor acknowledges that under contracts with their employer or client, their contributions may be assigned to such parties, and confirms that one of the above situations (1) or (2) is true.
+
+### I-8. Ongoing Contributions
+
+All Contributions made by the Contributor after agreeing to this ICLA shall, unless otherwise agreed, be subject to the terms of this ICLA. The Contributor is not required to provide individual consent for subsequent Contributions.
+
+The Contributor may notify the Licensor in writing of the intention to terminate this ICLA. However, termination applies only to future Contributions, and **the licenses under Sections I-2 and I-3 for Contributions submitted prior to termination remain perpetual and irrevocable**.
+
+### I-9. Disclaimer of Warranties
+
+Contributions provided to the Licensor under this ICLA are provided "AS IS," without any warranty of any kind, express or implied. However, this provision does not affect the validity of the representations and warranties in Section I-6.
+
+The Contributor is not guaranteed that Contributions will be accepted by this Project. The Licensor has complete discretion to accept, reject, or modify Contributions.
+
+### I-10. Method of Agreement
+
+Agreement to this ICLA shall be made by one of the following methods:
+
+(a) **Electronic Signature**: Signature via an electronic signature service designated by the Licensor (CLA Assistant, DocuSign, etc.)
+
+(b) **GitHub Integration**: Electronic consent at the time of a pull request via a GitHub-based CLA bot designated by the Licensor (e.g., CLA Assistant, EasyCLA)
+
+(c) **Written Signature**: Print this ICLA, sign it, and submit the signed document to the Licensor (by mail or email attachment)
+
+Regardless of the method, the Contributor shall clearly provide the following information:
+
+- Full legal name
+- Email address
+- GitHub username (if applicable)
+- Date of agreement to this ICLA
+- Employer-related representation under Section I-7
+
+### I-11. General Provisions
+
+(a) **Governing Law**: This ICLA shall be governed by Japanese law.
+
+(b) **Jurisdiction**: Any and all disputes arising in connection with this ICLA shall be submitted to the **Tokyo District Court** as the court of exclusive agreed jurisdiction of first instance.
+
+(c) **Severability**: If any provision of this ICLA is held invalid, the remaining provisions shall not lose their validity.
+
+(d) **Entire Agreement**: This ICLA constitutes the entire agreement between the Contributor and the Licensor regarding Contributions.
+
+(e) **Language and Authoritative Text**: This ICLA is **written in Japanese as the authoritative text**. Even if a translation (English or other languages) of this ICLA is produced, the translation is provided for reference only, and in the event of any interpretive differences or contradictions, **the Japanese authoritative text shall prevail**. This provision applies equally when the Contributor is located outside Japan. Contributors who do not read Japanese are obligated to adequately understand the content of the Japanese authoritative text at their own expense and responsibility before agreeing to this ICLA.
+
+---
+
+## Part II: Corporate CLA (CCLA)
+
+This Part is the agreement for companies or organizations (hereinafter "**Company**") making an encompassing agreement covering contributions by their employees and contractors.
+
+### II-1. Purpose and Scope
+
+By agreeing to this CCLA, the Company agrees to both of the following:
+
+(a) To grant the Licensor the licenses defined in Sections II-2 and II-3 for Contributions submitted by the Company or its Designated Contributors (as defined below)
+
+(b) To confirm, at the Company's responsibility, that Contributions submitted by Designated Contributors are appropriate for submission under the terms of this CCLA in light of the Company's intellectual property policies and employment agreements
+
+### II-2. Copyright License Grant
+
+The Company grants the Licensor and those who receive this Project through the Licensor a **perpetual, worldwide, non-exclusive, royalty-free, irrevocable** copyright license in Contributions submitted by Designated Contributors and their derivative works. This license includes:
+
+(a) The right to reproduce, publish, distribute, transmit to the public (including making available to the public), perform, and display the Contribution
+
+(b) The right to modify the Contribution and create derivative works
+
+(c) The right to re-license and sublicense the Contribution under the Project Licenses or any other license terms chosen by the Licensor in the future
+
+(d) The right to grant and sublicense the foregoing rights to third parties
+
+### II-3. Patent License Grant
+
+The Company grants the Licensor and those who receive this Project through the Licensor a **perpetual, worldwide, non-exclusive, royalty-free, irrevocable** (except as provided in the final paragraph of this section) patent license under patents owned or hereafter acquired by the Company that are necessarily infringed by Designated Contributors' Contributions, this Project incorporating the Contributions, or the combination of the Contributions with other components of this Project.
+
+If the Company or its affiliated parties file a patent infringement lawsuit alleging that this Project or a Contribution infringes a patent, the patent license granted to the Company under this section shall automatically terminate at the time such lawsuit is filed.
+
+### II-4. Moral Rights Handling
+
+The Company shall ensure that valid consent regarding the non-assertion of moral rights is obtained from Designated Contributors, and shall arrange for such consent to be effective against the Licensor and all persons who use the Contribution under the Project Licenses.
+
+### II-5. Representations and Warranties
+
+The Company represents and warrants that:
+
+(a) **Authority**: The Company is a corporation validly organized and existing under the laws of Japan or its applicable jurisdiction of incorporation, and has the authority to agree to this CCLA and to fulfill the obligations defined in this CCLA
+
+(b) **Ownership of Rights**: The copyrights and patent rights in Contributions submitted by Designated Contributors are validly owned by the Company, or the Company has obtained the right to sublicense these under the terms of this CCLA from third parties
+
+(c) **Originality**: Contributions submitted by Designated Contributors are original works of authorship created by the Designated Contributors or the Company, or the Company has the appropriate rights to submit the Contributions under the terms of this CCLA
+
+(d) **Non-Infringement of Third-Party Rights**: To the Company's knowledge, Contributions do not infringe any third-party copyrights, patents, trademarks, trade secrets, or other intellectual property rights
+
+(e) **Disclosure of Third-Party Materials**: If Contributions contain third-party materials (open source code, third-party libraries, etc.), the Company shall explicitly disclose such portions and their applicable licenses to the Licensor at the time of submission
+
+### II-6. Designated Contributor Registration and Changes
+
+The Company shall submit the following information to the Licensor at the time of executing this CCLA and whenever changes occur:
+
+**Initial Registration Information:**
+```
+Company Name                     : ________________________
+Representative Name and Title    : ________________________
+Contact Person Name              : ________________________
+Contact Person Email             : ________________________
+
+Designated Contributor List (name, email, GitHub username):
 1. ____________________________________________
 2. ____________________________________________
 3. ____________________________________________
-(必要に応じて別紙にて追記)
+(Attach additional sheets as needed)
 ```
 
-指定貢献者の追加・削除は、連絡担当者から電子メールでライセンサーに通知することにより行う。ライセンサーは、指定貢献者リストの更新記録を保持する。
+Additions or removals of Designated Contributors shall be made by notifying the Licensor via email from the contact person. The Licensor shall maintain a record of changes to the Designated Contributor list.
 
-### II-7. 継続的貢献と終了
+### II-7. Ongoing Contributions and Termination
 
-本CCLAへの同意後、指定貢献者による貢献は本CCLAの条件に従うものとする。会社は、本CCLAを終了する意思をライセンサーに書面で通知することができる。ただし、終了は将来の貢献にのみ適用され、**終了前に提出された貢献に関する第II-2条および第II-3条のライセンスは、永続的・取消不能**のままである。
+After agreement to this CCLA, Contributions by Designated Contributors shall be subject to the terms of this CCLA. The Company may notify the Licensor in writing of the intention to terminate this CCLA. However, termination applies only to future Contributions, and **the licenses under Sections II-2 and II-3 for Contributions submitted prior to termination remain perpetual and irrevocable**.
 
-### II-8. 会社による従業員の管理
+### II-8. Company Management of Employees
 
-会社は、指定貢献者に対し、本CCLAの条件を遵守させる責任を負う。指定貢献者が会社を離職した場合、会社は速やかに連絡担当者を通じてライセンサーに通知する。離職後の当該個人の貢献は、当該個人が別途ICLAに同意しない限り、本CCLAの対象外となる。
+The Company is responsible for ensuring that Designated Contributors comply with the terms of this CCLA. If a Designated Contributor leaves the Company, the Company shall promptly notify the Licensor through the contact person. Contributions by such individuals after departure are no longer covered by this CCLA unless the individual separately agrees to an ICLA.
 
-### II-9. 無保証
+### II-9. Disclaimer of Warranties
 
-第I-9条（無保証）の規定は、本CCLAにも適用される。
+The provisions of Section I-9 (Disclaimer of Warranties) apply to this CCLA as well.
 
-### II-10. 同意の方法
+### II-10. Method of Agreement
 
-本CCLAへの同意は、以下の方法で行うものとする。
+Agreement to this CCLA shall be made by the following methods:
 
-(a) 会社を代表する権限を有する役員・管理者による書面署名（記名押印または電子署名）
+(a) Written signature by an officer or administrator with authority to represent the Company (with seal or electronic signature)
 
-(b) 連絡担当者の指定および指定貢献者リストを添付した上での、ライセンサーへの提出
+(b) Submission to the Licensor with designation of the contact person and attachment of the Designated Contributor list
 
-(c) ライセンサーが指定する電子署名サービスまたは CLA 管理システムを通じた署名
+(c) Signature via an electronic signature service or CLA management system designated by the Licensor
 
-### II-11. 一般条項
+### II-11. General Provisions
 
-第I-11条（一般条項）の規定は、本CCLAにも準用される。
+The provisions of Section I-11 (General Provisions) apply mutatis mutandis to this CCLA.
 
 ---
 
-## パートIII：運用に関する実装ノート（ライセンサー向け）
+## Part III: Implementation Notes for Operations (For Licensor Use)
 
-**※このセクションは、ライセンサーのための運用メモであり、コントリビュータの同意対象ではない。**
+**Note: This section is an operations memo for the Licensor and is not subject to Contributor agreement.**
 
-### III-1. CLA 管理システムの選定
+### III-1. CLA Management System Selection
 
-CLA の同意取得と管理を効率化するため、以下のいずれかのシステムの導入を推奨する。
+To streamline CLA agreement collection and management, implementing one of the following systems is recommended:
 
-| システム | 特徴 | 費用 |
+| System | Features | Cost |
 |---|---|---|
-| **CLA Assistant** | GitHub 連携、オープンソース、無料ホスティング | 無料 |
-| **EasyCLA (LF)** | Linux Foundation 運営、大規模プロジェクト向け | 有料 |
-| **CLAHub** | シンプル、GitHub 連携 | 無料／有料 |
-| **CLA Assistant Lite** | GitHub Actions 連携、最小構成 | 無料 |
-| **DocuSign / Adobe Sign** | 法人用CCLAの書面処理に適する | 有料 |
+| **CLA Assistant** | GitHub integration, open source, free hosting | Free |
+| **EasyCLA (LF)** | Linux Foundation operated, for large projects | Paid |
+| **CLAHub** | Simple, GitHub integration | Free/Paid |
+| **CLA Assistant Lite** | GitHub Actions integration, minimal setup | Free |
+| **DocuSign / Adobe Sign** | Suitable for written CCLA processing for corporations | Paid |
 
-### III-2. GitHub における運用フロー
+### III-2. GitHub Operations Flow
 
-1. コントリビュータが Pull Request を提出
-2. CLA ボットが未同意の PR をブロック
-3. コントリビュータが CLA 同意フォームにアクセス
-4. 電子署名後、CLA ボットが同意を記録
-5. PR のマージが解放される
+1. Contributor submits a Pull Request
+2. CLA bot blocks PRs from contributors who have not agreed
+3. Contributor accesses the CLA agreement form
+4. After electronic signature, CLA bot records the agreement
+5. PR merge is unlocked
 
-### III-3. CLA のバージョン管理
+### III-3. CLA Version Management
 
-- CLA の改訂は、再同意を必要とする重要変更と、再同意を必要としない軽微な変更を区別する
-- 重要変更（ライセンス付与範囲の変更、権利義務の変更等）の場合、既存コントリビュータに再同意を求める
-- 既存の同意記録は、バージョン番号と同意日付を紐付けて保管する
+- Distinguish between material changes requiring re-agreement and minor changes not requiring re-agreement
+- For material changes (changes to the scope of license grants, changes to rights and obligations), request re-agreement from existing contributors
+- Maintain existing agreement records with version numbers and agreement dates
 
-### III-4. 監査ログ
+### III-4. Audit Logs
 
-以下の情報を最低5年間保存する。
+The following information shall be retained for a minimum of 5 years:
 
-- 各同意の日時、同意者氏名、電子メール、IPアドレス（可能な場合）、GitHub ユーザー名
-- CLA のバージョン
-- CCLA の場合、指定貢献者リストの変更履歴
+- Date and time of each agreement, contributor name, email, IP address (if possible), GitHub username
+- CLA version
+- For CCLAs, change history of Designated Contributor lists
 
-### III-5. 国際化
+### III-5. Internationalization
 
-本ドラフトは日本国法を準拠法として作成されている。海外コントリビュータからの貢献を受け入れる場合、以下の対応が必要になる。
+This draft is written under Japanese law as the governing law. When accepting contributions from international contributors, the following measures may be needed:
 
-- **英語版 CLA の作成**（Apache Software Foundation CCLA 等を参考にすると効率的）
-- **準拠法・管轄裁判所の調整**（国際仲裁条項の導入検討）
-- **GDPR 等のプライバシー法令への対応**（同意記録の保管・削除請求への対応）
+- **Creation of an English CLA** (referencing Apache Software Foundation CCLA etc. is efficient)
+- **Adjustment of governing law and jurisdiction** (considering international arbitration clauses)
+- **Compliance with GDPR and other privacy regulations** (handling consent record retention and deletion requests)
 
-### III-6. 既存のオープンソースツールの活用
+### III-6. Leveraging Existing Open Source Tools
 
-以下の既存ツール・テンプレートを参考にすると、貴社CLAのレビューが効率化する。
+Referencing the following existing tools and templates can streamline your CLA review:
 
-- **Apache Software Foundation**（ICLA / CCLA）：https://www.apache.org/licenses/contributor-agreements.html
-- **Harmony Agreements**：https://www.harmonyagreements.org/ — CAA（Copyright Assignment Agreement）と CLA の両モデルを提供
-- **Google CLA**：https://cla.developers.google.com/
-- **Django CLA**、**Python Software Foundation CLA** 等
+- **Apache Software Foundation** (ICLA / CCLA): https://www.apache.org/licenses/contributor-agreements.html
+- **Harmony Agreements**: https://www.harmonyagreements.org/ -- Provides both CAA (Copyright Assignment Agreement) and CLA models
+- **Google CLA**: https://cla.developers.google.com/
+- **Django CLA**, **Python Software Foundation CLA**, etc.
 
-これらと本ドラフトを比較し、貴社に最も適した条項を選択・追記することを推奨する。
+We recommend comparing these with this draft and selecting and supplementing provisions most appropriate for your company.
 
 ---
 
-## 末尾注意
+## Closing Note
 
-**本ドラフトは一般的なテンプレートであり、法律助言ではありません。**
+**This draft is a general template and does not constitute legal advice.**
 
-実際の運用開始前に、必ずソフトウェアライセンス・知的財産に精通した弁護士のレビューを受けてください。特に以下の点は、貴社の状況に応じた調整が必要です。
+Before actual implementation, please have an attorney specializing in software licensing and intellectual property review this document. In particular, the following items require adjustment based on your company's circumstances:
 
-1. **指定貢献者の登録・変更手続き**の電子化・ワークフロー整備
-2. **CLA 管理システム**（CLA Assistant 等）の選定と導入
-3. **英語版 CLA** の作成（海外コントリビュータ対応）
-4. **著作権譲渡（Copyright Assignment）モデル**の採否検討
-   - 本ドラフトは「広範なライセンス付与モデル」を採用
-   - より強力な保護が必要な場合は「著作権譲渡モデル」（Harmony CAA 等）への変更を検討
-5. **連鎖ライセンシングリスク**への対応（本プロジェクトが将来取り込む他のOSSライセンスとの互換性確認）
-6. **プライバシーポリシー**との整合（同意時に取得する個人情報の取扱い）
+1. **Electronic workflow for Designated Contributor registration and changes**
+2. **Selection and implementation of a CLA management system** (e.g., CLA Assistant)
+3. **Creation of an English CLA** (for international contributor support)
+4. **Consideration of adopting a Copyright Assignment model**
+   - This draft adopts a "broad license grant model"
+   - If stronger protection is needed, consider switching to a "copyright assignment model" (e.g., Harmony CAA)
+5. **Addressing licensing chain risks** (verifying compatibility with other OSS licenses that this Project may incorporate in the future)
+6. **Consistency with privacy policy** (handling of personal information collected at the time of agreement)

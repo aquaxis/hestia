@@ -1,34 +1,34 @@
-# hal-conductor メッセージメソッド一覧
+# hal-conductor Message Methods
 
-**対象 Conductor**: hal-conductor
-**ソース**: 設計仕様書 §8.7（2260-2262行目付近）, §14（3492-3630行目付近）
+**Target Conductor**: hal-conductor
+**Source**: Design specification §8.7 (around lines 2260-2262), §14 (around lines 3492-3630)
 
-## トランスポート
+## Transport
 
-全通信は agent-cli ネイティブ IPC に統一。peer 名 `hal`。
+All communication uses agent-cli native IPC. Peer name: `hal`.
 
-## hal.* メソッド一覧
+## hal.* Method List
 
-### レジスタマップ操作
+### Register Map Operations
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `hal.parse.v1` | Request | レジスタ定義ファイルのパース（SystemRDL / IP-XACT / TOML → RegisterMap） |
-| `hal.validate.v1` | Request | レジスタマップのバリデーション（アドレス重複・型整合性・バス境界チェック） |
-| `hal.generate.v1` | Request | 指定言語のコード生成（C / Rust / Python / Markdown / SVD） |
-| `hal.export.v1` | Request | rtl/asic 向けエクスポート（SystemVerilog テンプレート出力） |
-| `hal.diff.v1` | Request | レジスタマップ差分表示（2 バージョン間の比較） |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `hal.parse.v1` | Request | Parse register definition files (SystemRDL / IP-XACT / TOML → RegisterMap) |
+| `hal.validate.v1` | Request | Validate register map (address overlap, type consistency, bus boundary checks) |
+| `hal.generate.v1` | Request | Generate code for specified language (C / Rust / Python / Markdown / SVD) |
+| `hal.export.v1` | Request | Export for rtl/asic (SystemVerilog template output) |
+| `hal.diff.v1` | Request | Show register map diff (comparison between two versions) |
 
-### conductor-core 共通
+### conductor-core Common
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `system.health.v1` | Request | ヘルスチェック |
-| `system.readiness` | Request | 準備状態確認 |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `system.health.v1` | Request | Health check |
+| `system.readiness` | Request | Readiness check |
 
-## ペイロード例
+## Payload Examples
 
-### hal.parse.v1 リクエスト
+### hal.parse.v1 Request
 
 ```json
 {
@@ -42,7 +42,7 @@
 }
 ```
 
-### hal.generate.v1 リクエスト
+### hal.generate.v1 Request
 
 ```json
 {
@@ -55,7 +55,7 @@
 }
 ```
 
-### hal.diff.v1 リクエスト
+### hal.diff.v1 Request
 
 ```json
 {
@@ -68,17 +68,17 @@
 }
 ```
 
-## 上流・下流連携
+## Upstream/Downstream Integration
 
-- **上流（rtl-conductor §4）**: rtl-conductor が定義したバスインターフェース宣言を入力に取り、レジスタマップを SystemRDL 形式でエクスポート可能。`hal.handoff` イベントで rtl-conductor からトリガーされる
-- **下流（apps-conductor §9）**: 生成された C ヘッダ / Rust crate / Python モジュールを apps-conductor の `[hal] import = "..."` で取り込む
-- **横断（debug-conductor §10）**: 同一レジスタマップを debug-conductor が再利用し、ライブデバッグ時のレジスタ表示・編集 UI に活用
-- **横断（asic/fpga conductor）**: レジスタブロックの SystemVerilog テンプレート出力を、対応する conductor の `[sources]` に直接渡せる
+- **Upstream (rtl-conductor §4)**: Takes bus interface declarations defined by rtl-conductor as input and can export the register map in SystemRDL format. Triggered from rtl-conductor via the `hal.handoff` event
+- **Downstream (apps-conductor §9)**: Generated C headers / Rust crates / Python modules are imported via apps-conductor's `[hal] import = "..."`
+- **Cross-cutting (debug-conductor §10)**: debug-conductor reuses the same register map for live debugging register display and editing UI
+- **Cross-cutting (asic/fpga conductor)**: SystemVerilog template output of register blocks can be passed directly to the corresponding conductor's `[sources]`
 
-## 関連ドキュメント
+## Related Documentation
 
-- [hal/binary_spec.md](binary_spec.md) — hestia-hal-cli バイナリ仕様
-- [hal/register_map.md](register_map.md) — レジスタマップ定義
-- [hal/codegen.md](codegen.md) — 多言語コード生成
-- [hal/state_machines.md](state_machines.md) — ビルドステートマシン
-- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli メッセージング仕様
+- [hal/binary_spec.md](binary_spec.md) — hestia-hal-cli binary specification
+- [hal/register_map.md](register_map.md) — Register map definition
+- [hal/codegen.md](codegen.md) — Multi-language code generation
+- [hal/state_machines.md](state_machines.md) — Build state machine
+- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli messaging specification

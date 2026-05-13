@@ -1,41 +1,41 @@
-# hal-conductor CLI バイナリ仕様
+# hal-conductor CLI Binary Specification
 
-**対象 Conductor**: hal-conductor
-**ソース**: 設計仕様書 §15（3631-3730行目付近）, §8（2175-2280行目付近）
+**Target Conductor**: hal-conductor
+**Source**: Design specification §15 (around lines 3631-3730), §8 (around lines 2175-2280)
 
-## バイナリ名
+## Binary Name
 
 `hestia-hal-cli`
 
-## サブコマンド一覧
+## Subcommand List
 
-| サブコマンド | 説明 |
-|-------------|------|
-| `init` | hal.toml テンプレート生成 |
-| `parse` | レジスタ定義ファイルのパース（SystemRDL / IP-XACT / TOML） |
-| `validate` | レジスタマップのバリデーション（アドレス重複・型整合性・バス境界チェック） |
-| `generate c` | C ヘッダファイル生成 |
-| `generate rust` | Rust crate 生成（embedded-hal 互換） |
-| `generate python` | Python モジュール生成 |
-| `generate svd` | CMSIS SVD ファイル生成 |
-| `export-rtl` | SystemVerilog テンプレート出力（rtl/asic/fpga conductor 向け） |
-| `diff` | レジスタマップ差分表示 |
-| `status` | ビルド状態・ジョブ状況表示 |
+| Subcommand | Description |
+|------------|-------------|
+| `init` | Generate hal.toml template |
+| `parse` | Parse register definition files (SystemRDL / IP-XACT / TOML) |
+| `validate` | Validate register map (address overlap, type consistency, bus boundary checks) |
+| `generate c` | Generate C header file |
+| `generate rust` | Generate Rust crate (embedded-hal compatible) |
+| `generate python` | Generate Python module |
+| `generate svd` | Generate CMSIS SVD file |
+| `export-rtl` | Export SystemVerilog template output (for rtl/asic/fpga conductor) |
+| `diff` | Show register map diff |
+| `status` | Show build status and job progress |
 
-## 共通オプション（CommonOpts）
+## Common Options (CommonOpts)
 
-| オプション | 値 | 説明 |
-|-----------|---|------|
-| `--output` | `human` \| `json` | 出力フォーマット（既定: human） |
-| `--timeout` | `<秒>` | RPC タイムアウト |
-| `--registry` | `<path>` | agent-cli レジストリパス |
-| `--config` | `<path>` | 設定ファイルパス |
-| `--verbose` | — | 詳細ログ出力 |
+| Option | Value | Description |
+|--------|-------|-------------|
+| `--output` | `human` \| `json` | Output format (default: human) |
+| `--timeout` | `<seconds>` | RPC timeout |
+| `--registry` | `<path>` | agent-cli registry path |
+| `--config` | `<path>` | Configuration file path |
+| `--verbose` | — | Enable verbose logging |
 
-## Exit Code
+## Exit Codes
 
-| Exit Code | 意味 |
-|-----------|------|
+| Exit Code | Meaning |
+|-----------|---------|
 | 0 | SUCCESS |
 | 1 | GENERAL_ERROR |
 | 2 | RPC_ERROR |
@@ -46,35 +46,35 @@
 | 7 | SOCKET_NOT_FOUND |
 | 8 | PERMISSION_DENIED |
 
-## CLI 使用例
+## CLI Usage Examples
 
 ```bash
-# 初期化
+# Initialize
 hestia hal init
 
-# レジスタ定義パース
+# Parse register definitions
 hestia hal parse
 
-# バリデーション
+# Validate
 hestia hal validate
 
-# C ヘッダ生成
+# Generate C header
 hestia hal generate c
 
-# Rust crate 生成
+# Generate Rust crate
 hestia hal generate rust
 
-# 差分表示
+# Show diff
 hestia hal diff --baseline v1.0 --current v1.1
 ```
 
-## CLI アーキテクチャ
+## CLI Architecture
 
-Rust 製クライアントバイナリ（`tokio` + `serde` + `clap`）。hal-conductor の agent-cli peer（peer 名 `hal`）に対して agent-cli ネイティブ IPC で接続する。
+Rust-based client binary (`tokio` + `serde` + `clap`). Connects to the hal-conductor agent-cli peer (peer name `hal`) via agent-cli native IPC.
 
-## 関連ドキュメント
+## Related Documentation
 
-- [hal/config_schema.md](config_schema.md) — hal.toml 設定スキーマ
-- [hal/message_methods.md](message_methods.md) — hal.* メソッド一覧
-- [hal/register_map.md](register_map.md) — レジスタマップ定義
-- [hal/codegen.md](codegen.md) — 多言語コード生成
+- [hal/config_schema.md](config_schema.md) — hal.toml configuration schema
+- [hal/message_methods.md](message_methods.md) — hal.* method list
+- [hal/register_map.md](register_map.md) — Register map definition
+- [hal/codegen.md](codegen.md) — Multi-language code generation

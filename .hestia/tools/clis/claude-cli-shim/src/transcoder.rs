@@ -1,6 +1,6 @@
-//! Claude Code stream-json イベント → agent-cli 互換 JSONL への変換。
+//! Conversion from Claude Code stream-json events to agent-cli compatible JSONL.
 //!
-//! Claude Code の `--output-format stream-json` は以下のような形式を出力:
+//! Claude Code's `--output-format stream-json` outputs in the following format:
 //! ```jsonl
 //! {"type":"system","subtype":"init",...}
 //! {"type":"assistant","message":{"content":[{"type":"thinking","thinking":"..."}]}}
@@ -10,22 +10,22 @@
 //! {"type":"result",...}
 //! ```
 //!
-//! agent-cli 形式に変換する `transcode_event` は、入力 1 行あたり 0..N 個の
-//! agent-cli 互換イベントを返す（assistant message 内に thinking + tool_use が
-//! 並ぶ場合があるため）。
+//! `transcode_event`, which converts to the agent-cli format, returns 0..N agent-cli
+//! compatible events per input line (because an assistant message may contain
+//! both thinking + tool_use blocks).
 
 use serde_json::{json, Value};
 
-/// 1 つの Claude stream-json 行を agent-cli 互換イベント列に変換する。
+/// Convert a single Claude stream-json line into a sequence of agent-cli compatible events.
 ///
-/// 認識できないイベント種別は無視（空 Vec を返す）。
+/// Unrecognized event types are ignored (returns an empty Vec).
 pub fn transcode_event(claude_event: &Value) -> Vec<Value> {
     let ts = chrono::Utc::now().to_rfc3339();
     let event_type = claude_event.get("type").and_then(|v| v.as_str()).unwrap_or("");
     match event_type {
         "assistant" => transcode_assistant(claude_event, &ts),
         "user" => transcode_user(claude_event, &ts),
-        // system / result / error は agent-cli にマッピングなし（無視）
+        // system / result / error have no agent-cli mapping (ignored)
         _ => Vec::new(),
     }
 }
@@ -83,7 +83,7 @@ fn transcode_user(ev: &Value, ts: &str) -> Vec<Value> {
         .and_then(|m| m.get("content"))
         .and_then(|c| c.as_array())
     else {
-        // user message が文字列だけの場合
+        // When the user message is just a string
         if let Some(text) = ev.get("message").and_then(|v| v.as_str()) {
             return vec![json!({
                 "kind": "user",
@@ -143,14 +143,14 @@ mod tests {
             "type": "assistant",
             "message": {
                 "content": [
-                    {"type": "thinking", "thinking": "考え中..."},
+                    {"type": "thinking", "thinking": "Thinking..."},
                 ]
             }
         });
         let out = transcode_event(&ev);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0]["kind"], "thinking");
-        assert_eq!(out[0]["text"], "考え中...");
+        assert_eq!(out[0]["text"], "Thinking...");
     }
 
     #[test]
@@ -159,14 +159,14 @@ mod tests {
             "type": "assistant",
             "message": {
                 "content": [
-                    {"type": "text", "text": "回答です"},
+                    {"type": "text", "text": "Here is the answer"},
                 ]
             }
         });
         let out = transcode_event(&ev);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0]["kind"], "assistant");
-        assert_eq!(out[0]["text"], "回答です");
+        assert_eq!(out[0]["text"], "Here is the answer");
     }
 
     #[test]
@@ -230,8 +230,8 @@ mod tests {
             "type": "assistant",
             "message": {
                 "content": [
-                    {"type": "thinking", "thinking": "考えて"},
-                    {"type": "text", "text": "答えます"},
+                    {"type": "thinking", "thinking": "Thinking"},
+                    {"type": "text", "text": "Answering"},
                     {"type": "tool_use", "name": "Bash", "input": {"cmd": "ls"}},
                 ]
             }

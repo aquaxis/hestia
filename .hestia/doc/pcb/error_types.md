@@ -1,78 +1,78 @@
-# pcb-conductor エラーコード
+# pcb-conductor Error Codes
 
-**対象 Conductor**: pcb-conductor
-**ソース**: 設計仕様書 §14.3（3565-3581行目付近）
+**Target Conductor**: pcb-conductor
+**Source**: Design specification §14.3 (around lines 3565-3581)
 
-## エラーコード範囲
+## Error Code Range
 
-pcb-conductor のエラーコードは **-32400 〜 -32499** の範囲を使用する。
+pcb-conductor error codes use the range **-32400 to -32499**.
 
-## エラーカテゴリ
+## Error Categories
 
-### Schematic（回路図）
+### Schematic
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32400 | SCHEMATIC_GENERATION_FAILED | 回路図生成失敗 |
-| -32401 | SCHEMATIC_PARSE_ERROR | 回路図パースエラー |
-| -32402 | NETLIST_GENERATION_FAILED | ネットリスト生成失敗 |
-| -32403 | SCHEMATIC_FORMAT_UNSUPPORTED | 未対応の回路図フォーマット |
+| Code | Name | Description |
+|------|------|-------------|
+| -32400 | SCHEMATIC_GENERATION_FAILED | Schematic generation failed |
+| -32401 | SCHEMATIC_PARSE_ERROR | Schematic parse error |
+| -32402 | NETLIST_GENERATION_FAILED | Netlist generation failed |
+| -32403 | SCHEMATIC_FORMAT_UNSUPPORTED | Unsupported schematic format |
 
 ### DRC / ERC
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32410 | DRC_FAILED | DRC 実行失敗 |
-| -32411 | DRC_VIOLATIONS_FOUND | DRC 違反検出 |
-| -32412 | ERC_FAILED | ERC 実行失敗 |
-| -32413 | ERC_VIOLATIONS_FOUND | ERC 違反検出（未接続ピン、電源接続、ドライバ競合、ショート） |
+| Code | Name | Description |
+|------|------|-------------|
+| -32410 | DRC_FAILED | DRC execution failed |
+| -32411 | DRC_VIOLATIONS_FOUND | DRC violations detected |
+| -32412 | ERC_FAILED | ERC execution failed |
+| -32413 | ERC_VIOLATIONS_FOUND | ERC violations detected (unconnected pins, power connections, driver conflicts, shorts) |
 
 ### BOM / Placement
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32420 | BOM_GENERATION_FAILED | BOM 生成失敗 |
-| -32421 | BOM_PART_NOT_FOUND | BOM 内の部品がライブラリに存在しない |
-| -32422 | PLACEMENT_FAILED | コンポーネント配置失敗 |
-| -32423 | PLACEMENT_DRC_ERROR | 配置後 DRC 違反 |
+| Code | Name | Description |
+|------|------|-------------|
+| -32420 | BOM_GENERATION_FAILED | BOM generation failed |
+| -32421 | BOM_PART_NOT_FOUND | Component in BOM not found in library |
+| -32422 | PLACEMENT_FAILED | Component placement failed |
+| -32423 | PLACEMENT_DRC_ERROR | Post-placement DRC violation |
 
-### Gerber / 出力
+### Gerber / Output
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32430 | GERBER_GENERATION_FAILED | ガーバー出力失敗 |
-| -32431 | DRILL_DATA_FAILED | ドリルデータ生成失敗 |
-| -32432 | OUTPUT_FORMAT_UNSUPPORTED | 未対応の出力フォーマット |
+| Code | Name | Description |
+|------|------|-------------|
+| -32430 | GERBER_GENERATION_FAILED | Gerber output failed |
+| -32431 | DRILL_DATA_FAILED | Drill data generation failed |
+| -32432 | OUTPUT_FORMAT_UNSUPPORTED | Unsupported output format |
 
 ### AI Synthesis
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32440 | AI_SYNTHESIS_FAILED | AI 駆動回路図合成失敗 |
-| -32441 | AI_COT_FAILED | Chain-of-Thought 生成失敗 |
-| -32442 | AI_LLM_UNAVAILABLE | LLM バックエンド利用不可 |
+| Code | Name | Description |
+|------|------|-------------|
+| -32440 | AI_SYNTHESIS_FAILED | AI-driven schematic synthesis failed |
+| -32441 | AI_COT_FAILED | Chain-of-Thought generation failed |
+| -32442 | AI_LLM_UNAVAILABLE | LLM backend unavailable |
 
 ### Knowledge Graph
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32450 | KG_BUILD_FAILED | 知識グラフ構築失敗 |
-| -32451 | KG_DATASHEET_FETCH_FAILED | データシート取得失敗 |
-| -32452 | KG_NODE_RESOLUTION_FAILED | KG ノード解決失敗 |
+| Code | Name | Description |
+|------|------|-------------|
+| -32450 | KG_BUILD_FAILED | Knowledge graph build failed |
+| -32451 | KG_DATASHEET_FETCH_FAILED | Datasheet fetch failed |
+| -32452 | KG_NODE_RESOLUTION_FAILED | KG node resolution failed |
 
 ### Constraint Verification
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32460 | CONSTRAINT_VERIFY_SYNTAX | Level 1: 構文検証失敗 |
-| -32461 | CONSTRAINT_VERIFY_ERC | Level 2: ERC 検証失敗 |
-| -32462 | CONSTRAINT_VERIFY_KG_INTRA | Level 3: KG ベース検証（ピン内）失敗 |
-| -32463 | CONSTRAINT_VERIFY_KG_INTER | Level 4: KG ベース検証（ピン間）失敗 |
-| -32464 | CONSTRAINT_VERIFY_TOPOLOGY | Level 5: トポロジー検証失敗 |
+| Code | Name | Description |
+|------|------|-------------|
+| -32460 | CONSTRAINT_VERIFY_SYNTAX | Level 1: Syntax verification failed |
+| -32461 | CONSTRAINT_VERIFY_ERC | Level 2: ERC verification failed |
+| -32462 | CONSTRAINT_VERIFY_KG_INTRA | Level 3: KG-based verification (intra-pin) failed |
+| -32463 | CONSTRAINT_VERIFY_KG_INTER | Level 4: KG-based verification (inter-pin) failed |
+| -32464 | CONSTRAINT_VERIFY_TOPOLOGY | Level 5: Topology verification failed |
 
-## 関連ドキュメント
+## Related Documentation
 
-- [pcb/message_methods.md](message_methods.md) — pcb.* メソッド一覧
-- [pcb/state_machines.md](state_machines.md) — PCB ビルドステップ
-- [pcb/tool_adapter.md](tool_adapter.md) — AI 駆動回路図設計 / KiCad アダプター
-- [../common/error_registry.md](../common/error_registry.md) — HESTIA 共通エラーレジストリ
+- [pcb/message_methods.md](message_methods.md) — pcb.* method list
+- [pcb/state_machines.md](state_machines.md) — PCB build steps
+- [pcb/tool_adapter.md](tool_adapter.md) — AI-driven schematic design / KiCad adapter
+- [../common/error_registry.md](../common/error_registry.md) — HESTIA common error registry

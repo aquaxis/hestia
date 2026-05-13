@@ -1,87 +1,87 @@
-# asic-conductor ビルドステートマシン
+# asic-conductor Build State Machine
 
-**対象 Conductor**: asic-conductor
-**ソース**: 設計仕様書 §6.5（1868-1884行目付近）
+**Target Conductor**: asic-conductor
+**Source**: Design specification §6.5 (around lines 1868-1884)
 
-## 13 状態ビルドステートマシン
+## 13-State Build State Machine
 
-| 状態 | 進捗 | 説明 |
-|------|------|------|
-| `Idle` | 0% | 初期状態 |
-| `PdkResolving` | 3% | PDK バージョン解決・パス検証中 |
-| `Synthesizing` | 10% | 論理合成実行中 (Yosys) |
-| `Floorplanning` | 20% | フロアプラン作成中 |
-| `Placing` | 30% | セル配置実行中 |
-| `CTS` | 45% | クロックツリー合成実行中 |
-| `Routing` | 60% | 配線実行中 |
-| `Extraction` | 70% | 寄生抽出実行中 |
-| `TimingSignoff` | 75% | タイミングサインオフ検証中 |
-| `DRC` | 80% | デザインルールチェック実行中 |
-| `LVS` | 90% | レイアウト対回路図検証実行中 |
-| `GDSII` | 95% | GDSII ストリーム生成中 |
-| `Success` | 100% | ビルド成功 |
+| State | Progress | Description |
+|-------|----------|-------------|
+| `Idle` | 0% | Initial state |
+| `PdkResolving` | 3% | Resolving PDK version and validating paths |
+| `Synthesizing` | 10% | Executing logic synthesis (Yosys) |
+| `Floorplanning` | 20% | Creating floorplan |
+| `Placing` | 30% | Executing cell placement |
+| `CTS` | 45% | Executing clock tree synthesis |
+| `Routing` | 60% | Executing routing |
+| `Extraction` | 70% | Executing parasitic extraction |
+| `TimingSignoff` | 75% | Verifying timing signoff |
+| `DRC` | 80% | Running design rule check |
+| `LVS` | 90% | Running layout versus schematic verification |
+| `GDSII` | 95% | Generating GDSII stream |
+| `Success` | 100% | Build successful |
 
-## 状態遷移図
+## State Transition Diagram
 
 ```
 Idle
   │  build_start
   ▼
-PdkResolving ─────── PDK 未インストール → Failed
+PdkResolving ─────── PDK not installed → Failed
   │
   ▼
-Synthesizing ─────── Yosys 合成失敗 → Failed
+Synthesizing ─────── Yosys synthesis failed → Failed
   │
   ▼
-Floorplanning ────── フロアプラン失敗 → Failed
+Floorplanning ────── Floorplan failed → Failed
   │
   ▼
-Placing ──────────── 配置失敗 → Failed
+Placing ──────────── Placement failed → Failed
   │
   ▼
-CTS ──────────────── クロックツリー合成失敗 → Failed
+CTS ──────────────── Clock tree synthesis failed → Failed
   │
   ▼
-Routing ──────────── 配線失敗 → Failed
+Routing ──────────── Routing failed → Failed
   │
   ▼
-Extraction ────────── 寄生抽出失敗 → Failed
+Extraction ────────── Parasitic extraction failed → Failed
   │
   ▼
-TimingSignoff ─────── タイミング違反 → AI 修復提案 or Failed
+TimingSignoff ─────── Timing violation → AI fix suggestion or Failed
   │
   ▼
-DRC ───────────────── DRC 違反 → AI 修復提案 or Failed
+DRC ───────────────── DRC violation → AI fix suggestion or Failed
   │
   ▼
-LVS ───────────────── LVS ミスマッチ → Failed
+LVS ───────────────── LVS mismatch → Failed
   │
   ▼
-GDSII ─────────────── GDSII 生成失敗 → Failed
+GDSII ─────────────── GDSII generation failed → Failed
   │
   ▼
 Success
 ```
 
-## 失敗時の AI エージェント連携
+## AI Agent Integration on Failure
 
-| ステップ | AI 連携 | 説明 |
-|---------|---------|------|
-| TimingSignoff | タイミング違反自動修復 | 制約緩和またはバッファ挿入を提案 |
-| DRC | DRC 違反自動修復 | 違反パターンに基づきレイアウト修正パッチを生成 |
-| Floorplanning | フロアプラン最適化 | 配置密度・配線混雑度に基づき改善提案 |
+| Step | AI Integration | Description |
+|---------|---------------|-------------|
+| TimingSignoff | Automatic timing violation fix | Suggests constraint relaxation or buffer insertion |
+| DRC | Automatic DRC violation fix | Generates layout fix patches based on violation patterns |
+| Floorplanning | Floorplan optimization | Suggests improvements based on placement density and routing congestion |
 
-## OpenLane 2 Step-based Execution との連携
+## Integration with OpenLane 2 Step-based Execution
 
-asic-conductor は OpenLane 2 の Python ベース Step-based Execution を活用し、各工程の個別再実行が可能。`advance` コマンドで特定ステップから再開できる。
+asic-conductor leverages OpenLane 2's Python-based Step-based Execution, enabling individual re-execution of each step. The `advance` command allows resuming from a specific step.
 
-## asic.lock による再現性保証
+## Reproducibility Guarantee via asic.lock
 
-ビルド成功時、使用した PDK バージョン・ツールバージョン・ビルドパラメータを asic.lock に記録し、同一環境での再現性を保証する。
+On successful build, the PDK version, tool versions, and build parameters used are recorded in asic.lock, guaranteeing reproducibility in the same environment.
 
-## 関連ドキュメント
+## Related Documentation
 
-- [asic/binary_spec.md](binary_spec.md) — hestia-asic-cli バイナリ仕様
-- [asic/error_types.md](error_types.md) — asic-conductor エラーコード
-- [asic/tool_adapter.md](tool_adapter.md) — AsicToolAdapter トレイト
-- [../fpga/state_machines.md](../fpga/state_machines.md) — FPGA ビルドステートマシン
+- [asic/binary_spec.md](binary_spec.md) — hestia-asic-cli binary specification
+- [asic/error_types.md](error_types.md) — asic-conductor error codes
+- [asic/tool_adapter.md](tool_adapter.md) — AsicToolAdapter trait
+- [../fpga/state_machines.md](../fpga/state_machines.md) — FPGA build state machine

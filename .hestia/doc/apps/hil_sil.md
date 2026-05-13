@@ -1,99 +1,99 @@
-# apps-conductor HIL/SIL テスト
+# apps-conductor HIL/SIL Testing
 
-**対象 Conductor**: apps-conductor
-**ソース**: 設計仕様書 §9（2281-2400行目付近）
+**Target Conductor**: apps-conductor
+**Source**: Design specification §9 (around lines 2281-2400)
 
-## テストモード概要
+## Test Mode Overview
 
-| モード | 説明 | 実行環境 | 速度 | 精度 |
-|-------|------|---------|------|------|
-| SIL | Software-in-the-Loop | QEMU エミュレーション | 高速 | 機能検証レベル |
-| HIL | Hardware-in-the-Loop | 実機 + debug-conductor | 実時間 | サイクル精度 |
-| QEMU | QEMU テスト専用 | QEMU 単体 | 高速 | 機能検証レベル |
+| Mode | Description | Execution Environment | Speed | Accuracy |
+|-------|------------|----------------------|-------|----------|
+| SIL | Software-in-the-Loop | QEMU emulation | Fast | Functional verification level |
+| HIL | Hardware-in-the-Loop | Physical device + debug-conductor | Real-time | Cycle-accurate |
+| QEMU | QEMU test only | QEMU standalone | Fast | Functional verification level |
 
-## SIL（Software-in-the-Loop）テスト
+## SIL (Software-in-the-Loop) Testing
 
-QEMU エミュレーションを使用したソフトウェアレベルテスト。
+Software-level testing using QEMU emulation.
 
-### 特徴
+### Features
 
-- ハードウェア不要（QEMU で完結）
-- 高速実行（実時間より速い場合もある）
-- CI/CD パイプラインに組み込み可能
-- 機能的正確性の検証に適する
+- No hardware required (completed within QEMU)
+- Fast execution (can be faster than real-time)
+- Integrable into CI/CD pipelines
+- Suitable for functional correctness verification
 
-### 対応ターゲット
+### Supported Targets
 
-| ターゲット | QEMU コマンド |
+| Target | QEMU Command |
 |-----------|-------------|
 | ARM Cortex-M | `qemu-system-arm -machine <board>` |
 | RISC-V 32bit | `qemu-system-riscv32 -machine <board>` |
 
-### テストフロー
+### Test Flow
 
 ```
-1. QEMU 起動（ファームウェア ELF をロード）
-2. テストシナリオ実行（シリアル出力 / GDB 接続）
-3. 結果判定（終了コード / 出力文字列 / メモリ状態）
-4. テストレポート生成
+1. Launch QEMU (load firmware ELF)
+2. Execute test scenario (serial output / GDB connection)
+3. Determine result (exit code / output string / memory state)
+4. Generate test report
 ```
 
-### apps-conductor 連携
+### apps-conductor Integration
 
-- アダプター: `qemu-system`
-- apps.toml: `[test] mode = "sil"` または `mode = "qemu"`
-- GDB リモートデバッグ対応
+- Adapter: `qemu-system`
+- apps.toml: `[test] mode = "sil"` or `mode = "qemu"`
+- GDB remote debugging support
 
-## HIL（Hardware-in-the-Loop）テスト
+## HIL (Hardware-in-the-Loop) Testing
 
-実機ハードウェアと debug-conductor（§10）を組み合わせたハードウェアレベルテスト。
+Hardware-level testing combining physical hardware with debug-conductor (§10).
 
-### 特徴
+### Features
 
-- 実機ハードウェアでテスト（真の実行環境）
-- サイクル精度の検証が可能
-- ペリフェラル・割り込みの実動作確認
-- タイミング制約の検証
+- Testing on physical hardware (true execution environment)
+- Cycle-accurate verification
+- Real peripheral and interrupt behavior verification
+- Timing constraint validation
 
-### テストフロー
+### Test Flow
 
 ```
-1. debug-conductor 経由でプローブ接続（ST-Link / J-Link 等）
-2. ファームウェア書込（probe-rs / OpenOCD）
-3. ターゲット実行・RTT ログ取得
-4. テストシナリオ実行（GPIO / UART / SPI 等の実ペリフェラル操作）
-5. 結果判定・テストレポート生成
+1. Connect probe via debug-conductor (ST-Link / J-Link, etc.)
+2. Write firmware (probe-rs / OpenOCD)
+3. Execute on target and acquire RTT logs
+4. Execute test scenario (real peripheral operations: GPIO / UART / SPI, etc.)
+5. Determine result and generate test report
 ```
 
-### apps-conductor 連携
+### apps-conductor Integration
 
-- アダプター: `probe-rs` / `openocd-bridge`
+- Adapter: `probe-rs` / `openocd-bridge`
 - apps.toml: `[test] mode = "hil"` / `probe = "stlink-v3"`
-- debug-conductor（§10）と連携してデバッグセッション管理
+- Debug session management in coordination with debug-conductor (§10)
 
-## クロステスト（QEMU + Cycle-Accurate Co-Simulation）
+## Cross-Testing (QEMU + Cycle-Accurate Co-Simulation)
 
-QEMU とサイクル精度シミュレータを組み合わせたハイブリッドテスト。機能検証（QEMU）とタイミング検証（サイクル精度）を同時に実施。
+Hybrid testing combining QEMU with a cycle-accurate simulator. Functional verification (QEMU) and timing verification (cycle-accurate) are performed simultaneously.
 
-## テストレポート
+## Test Report
 
-| 項目 | 説明 |
-|------|------|
-| テスト名 | テストケース識別子 |
-| 結果 | PASS / FAIL / SKIP |
-| 実行時間 | テスト実行所要時間 |
-| カバレッジ | コードカバレッジ（gcov / llvm-cov） |
-| ログ | RTT ログ / シリアル出力 |
-| メモリ使用量 | スタック使用量・ヒープ使用量 |
+| Item | Description |
+|------|-------------|
+| Test name | Test case identifier |
+| Result | PASS / FAIL / SKIP |
+| Execution time | Time required for test execution |
+| Coverage | Code coverage (gcov / llvm-cov) |
+| Logs | RTT logs / serial output |
+| Memory usage | Stack usage / heap usage |
 
-## CI/CD 統合
+## CI/CD Integration
 
-SIL テストは共有サービス層 / CI/CD API（§13）経由で GitHub Actions / GitLab CI 上で自動実行可能。HIL テストは実機接続が必要なため、ローカルまたは専用 CI ランナーで実行する。
+SIL tests can be run automatically on GitHub Actions / GitLab CI via the shared services layer / CI/CD API (§13). HIL tests require physical device connection, so they run on local or dedicated CI runners.
 
-## 関連ドキュメント
+## Related Documentation
 
-- [apps/binary_spec.md](binary_spec.md) — hestia-apps-cli バイナリ仕様
-- [apps/state_machines.md](state_machines.md) — ビルドステートマシン
-- [apps/toolchain.md](toolchain.md) — 主要アダプター
-- [apps/rtos.md](rtos.md) — RTOS サポート
+- [apps/binary_spec.md](binary_spec.md) — hestia-apps-cli binary specification
+- [apps/state_machines.md](state_machines.md) — Build state machine
+- [apps/toolchain.md](toolchain.md) — Main adapters
+- [apps/rtos.md](rtos.md) — RTOS support
 - [../debug/binary_spec.md](../debug/binary_spec.md) — debug-conductor CLI

@@ -1,8 +1,8 @@
-//! Conductor ID・状態・Peer 名の定義
+//! Conductor ID, status, and peer name definitions
 
 use serde::{Deserialize, Serialize};
 
-/// Conductor 識別子（agent-cli peer 名と 1:1 対応）
+/// Conductor identifier (1:1 correspondence with agent-cli peer name)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConductorId {
@@ -18,7 +18,7 @@ pub enum ConductorId {
 }
 
 impl ConductorId {
-    /// agent-cli peer 名を返す
+    /// Return agent-cli peer name
     pub fn peer_name(&self) -> &'static str {
         match self {
             Self::Ai => "ai",
@@ -33,7 +33,7 @@ impl ConductorId {
         }
     }
 
-    /// 全 ConductorId を返す
+    /// Return all ConductorId values
     pub fn all() -> &'static [ConductorId] {
         &[
             Self::Ai,
@@ -74,7 +74,7 @@ impl std::str::FromStr for ConductorId {
     }
 }
 
-/// 共有サービス Peer 名
+/// Shared service peer name
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ServicePeer {
@@ -101,7 +101,7 @@ impl ServicePeer {
     }
 }
 
-/// フロントエンド Peer 名
+/// Frontend peer name
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FrontendPeer {
@@ -120,7 +120,7 @@ impl FrontendPeer {
     }
 }
 
-/// Conductor 状態
+/// Conductor status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConductorStatus {
@@ -142,7 +142,7 @@ impl std::fmt::Display for ConductorStatus {
     }
 }
 
-/// Conductor 情報
+/// Conductor info
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConductorInfo {
     pub id: ConductorId,

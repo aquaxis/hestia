@@ -1,121 +1,121 @@
-# セキュリティ設計
+# Security Design
 
-**対象領域**: セキュリティ
-**ソース**: 設計仕様書 §1.2 原則4, §11（Podman コンテナ戦略）, §12.5（成果物署名・SBOM）, §12.8（運用ルール）, §20.4
-
----
-
-## 1. セキュリティ設計方針
-
-### 原則4: セキュリティ
-
-ツール実行はコンテナ実行とローカル実行のいずれも選択可能とし、用途・運用に応じて使い分ける。コンテナ実行を選択した場合は Podman rootless により非特権実行を実現し、`--network=none` でネットワーク隔離、`--security-opt=no-new-privileges` で権限昇格を防止する。ローカル実行を選択した場合はホスト OS のユーザー権限・SELinux/AppArmor 設定に従う。いずれの実行モードでも知的財産（HDL ソース、ビットストリーム）の保護を徹底する。
+**Scope**: Security
+**Source**: Design specification §1.2 Principle 4, §11 (Podman container strategy), §12.5 (Artifact signing and SBOM), §12.8 (Operational rules), §20.4
 
 ---
 
-## 2. Podman rootless による非特権実行
+## 1. Security Design Policy
 
-Podman はデーモンレスで動作し、root 権限を必要としない（Docker の dockerd に依存しない）。コンテナはユーザー空間で実行され、ホストの root 権限への影響を排除する。
+### Principle 4: Security
 
-- **デーモンレス**: システムサービス不要。Docker のように常駐デーモン（dockerd）を必要としない
-- **rootless 実行**: ユーザー namespace を利用し、コンテナプロセスをホストユーザー権限で実行
-- **Linux ホスト前提**: user namespace / cgroup / SELinux は Linux カーネル機能に依存
+Tool execution can be selected as either container execution or local execution, allowing users to choose based on their use case and operational requirements. When container execution is selected, Podman rootless provides unprivileged execution, `--network=none` provides network isolation, and `--security-opt=no-new-privileges` prevents privilege escalation. When local execution is selected, the host OS's user permissions and SELinux/AppArmor settings apply. In both execution modes, intellectual property (HDL sources, bitstreams) protection is strictly enforced.
 
 ---
 
-## 3. ネットワーク隔離（--network=none）
+## 2. Unprivileged Execution with Podman rootless
 
-ビルドコンテナは `--network=none` で起動し、外部通信を完全に遮断する。これにより以下のリスクを防止する:
+Podman operates daemonless and does not require root privileges (unlike Docker's dependency on dockerd). Containers execute in user space, eliminating the risk of affecting the host's root privileges.
 
-- ビルドプロセス中の意図しない外部通信
-- 知的財産のコンテナ外流出
-- サプライチェーン攻撃による不正なデータ送信
-
-`podman-runtime::run_build()` では、バッチビルド用コンテナ起動時に必ず `--network=none` を指定する。
+- **Daemonless**: No system service required. Does not require a resident daemon like Docker's dockerd
+- **rootless execution**: Uses user namespaces to run container processes with host user privileges
+- **Linux host prerequisite**: user namespace / cgroup / SELinux depend on Linux kernel features
 
 ---
 
-## 4. 権限昇格防止（--security-opt=no-new-privileges）
+## 3. Network Isolation (--network=none)
 
-`--security-opt=no-new-privileges` を指定し、コンテナ内プロセスがホスト側の root 権限に昇格することを防止する。これにより以下を防止する:
+Build containers are launched with `--network=none`, completely blocking external communication. This prevents the following risks:
 
-- setuid / setgid バイナリを利用した権限昇格
-- コンテナブレイクアウトによるホスト権限の奪取
+- Unintended external communication during the build process
+- Intellectual property exfiltration from containers
+- Supply chain attacks sending data to unauthorized destinations
 
----
-
-## 5. SELinux 対応（label=type:container_runtime_t）
-
-`--security-opt=label=type:container_runtime_t` を指定し、SELinux が有効なホストでコンテナプロセスに適切なセキュリティコンテキストを割り当てる。GUI 起動（`run_gui()`）時に使用し、X11/Wayland フォワーディングと SELinux を両立させる。
+`podman-runtime::run_build()` always specifies `--network=none` when launching containers for batch builds.
 
 ---
 
-## 6. UID 一致（--userns=keep-id）
+## 4. Privilege Escalation Prevention (--security-opt=no-new-privileges)
 
-`--userns=keep-id` により、コンテナ内の UID をホストのユーザー UID と一致させる。これにより以下の問題を回避する:
+`--security-opt=no-new-privileges` prevents container processes from escalating to host root privileges. This prevents:
 
-- コンテナ内で生成されたファイルがホスト側で root 所有となる問題
-- ホスト側プロジェクトディレクトリの読み書き権限問題
-- ビルド成果物のホスト側アクセス不可能問題
-
----
-
-## 7. ライセンス保護（読み取り専用マウント）
-
-ベンダーライセンスファイルは読み取り専用（`:ro`）でマウントする。具体的には以下の保護措置を講じる:
-
-- インストーラ・ライセンスファイルはイメージに焼き込まない（`--secret` でマウントのみ）
-- 実行時ライセンス（FlexLM 等）は `podman run -e LM_LICENSE_FILE=...` またはマウントで注入
-- `.hestia/secure/` ディレクトリはモード 0700、`.gitignore` で Git 管理外
+- Privilege escalation via setuid / setgid binaries
+- Host privilege acquisition through container breakout
 
 ---
 
-## 8. 知的財産保護（HDL ソース・ビットストリームの流出防止）
+## 5. SELinux Support (label=type:container_runtime_t)
 
-いずれの実行モード（コンテナ / ローカル）でも知的財産（HDL ソース、ビットストリーム）の保護を徹底する:
-
-- **コンテナ実行時**: `--network=none` でネットワーク遮断、マウント範囲をプロジェクトディレクトリに限定
-- **ローカル実行時**: ホスト OS のユーザー権限・SELinux/AppArmor 設定に従う
-- **自己学習蓄積時**: HDL ソース / ビットストリーム本体は RAG に格納せず、メタデータと要約のみ蓄積
+`--security-opt=label=type:container_runtime_t` assigns an appropriate security context to container processes on hosts with SELinux enabled. Used for GUI launches (`run_gui()`), enabling X11/Wayland forwarding and SELinux to coexist.
 
 ---
 
-## 9. 成果物署名・SBOM
+## 6. UID Matching (--userns=keep-id)
 
-### 9.1 ビルド後の処理パイプライン
+`--userns=keep-id` matches the container's UID with the host user's UID. This avoids the following issues:
 
-コンテナイメージのビルド後、以下のパイプラインで署名と SBOM 生成を実行する:
+- Files generated inside the container being owned by root on the host
+- Read/write permission issues for host project directories
+- Build artifacts being inaccessible from the host
+
+---
+
+## 7. License Protection (Read-Only Mount)
+
+Vendor license files are mounted as read-only (`:ro`). Specific protection measures include:
+
+- Installer and license files are not burned into images (mounted via `--secret` only)
+- Runtime licenses (FlexLM etc.) are injected via `podman run -e LM_LICENSE_FILE=...` or mounts
+- `.hestia/secure/` directory has mode 0700 and is excluded from Git via `.gitignore`
+
+---
+
+## 8. Intellectual Property Protection (Preventing HDL Source and Bitstream Exfiltration)
+
+In both execution modes (container / local), intellectual property (HDL sources, bitstreams) protection is strictly enforced:
+
+- **Container execution**: `--network=none` for network isolation, mount scope limited to project directories
+- **Local execution**: Subject to host OS user permissions and SELinux/AppArmor settings
+- **Self-learning accumulation**: HDL sources / bitstream bodies are not stored in RAG; only metadata and summaries are accumulated
+
+---
+
+## 9. Artifact Signing and SBOM
+
+### 9.1 Post-Build Processing Pipeline
+
+After building container images, signing and SBOM generation are performed through the following pipeline:
 
 ```
-podman build → イメージ生成 → syft で SBOM 生成 → grype で脆弱性スキャン
+podman build → image generation → SBOM generation with syft → vulnerability scanning with grype
                                   │                   │
                                   ▼                   ▼
                                 sbom.spdx.json       vuln.json
                                   │                   │
-                                  └──▶ 評価ゲート ◀───┘
+                                  └──▶ Evaluation gate ◀───┘
                                         │
                                         ▼
-                                   cosign sign（keyless）
+                                   cosign sign (keyless)
                                         │
                                         ▼
-                                   podman push（§12.6）
+                                   podman push (§12.6)
 ```
 
-### 9.2 SBOM 生成（syft）
+### 9.2 SBOM Generation (syft)
 
-`syft` により SPDX 形式および CycloneDX 形式の SBOM を生成する:
+Generate SPDX format and CycloneDX format SBOMs using `syft`:
 
 ```bash
-# SPDX 形式 SBOM
+# SPDX format SBOM
 syft ghcr.io/hestia/fpga/oss:latest -o spdx-json > .hestia/containers/fpga/oss/sbom.spdx.json
 
-# CycloneDX 形式
+# CycloneDX format
 syft ghcr.io/hestia/fpga/oss:latest -o cyclonedx-json > .hestia/containers/fpga/oss/sbom.cdx.json
 ```
 
-### 9.3 脆弱性スキャン（grype）
+### 9.3 Vulnerability Scanning (grype)
 
-`grype` によりコンテナイメージの脆弱性スキャンを実行する:
+Scan container image vulnerabilities using `grype`:
 
 ```bash
 grype ghcr.io/hestia/fpga/oss:latest \
@@ -124,21 +124,21 @@ grype ghcr.io/hestia/fpga/oss:latest \
   -o json > .hestia/containers/fpga/oss/vuln.json
 ```
 
-**評価ゲート（grype 閾値）**:
+**Evaluation Gate (grype thresholds):**
 
-| 重大度 | 閾値 | 挙動 |
+| Severity | Threshold | Behavior |
 |-------|-----|------|
-| Critical | いずれも 0 | **ビルド失敗**（push 不可）|
-| High（修正可能）| 0 | **ビルド失敗** |
-| High（修正不可）| 記録 | 警告 + 例外承認（Review Agent 経由）|
-| Medium 以下 | 記録 | 通常 push 可 |
+| Critical | All 0 | **Build failure** (push blocked) |
+| High (fixable) | 0 | **Build failure** |
+| High (unfixable) | Log | Warning + exception approval (via Review Agent) |
+| Medium or below | Log | Push normally allowed |
 
-### 9.4 イメージ署名（cosign keyless OIDC）
+### 9.4 Image Signing (cosign keyless OIDC)
 
-`cosign` によるキーレス署名を実行する:
+Perform keyless signing using `cosign`:
 
 ```bash
-# GitHub Actions 上でのキーレス署名
+# Keyless signing on GitHub Actions
 COSIGN_EXPERIMENTAL=1 cosign sign ghcr.io/hestia/fpga/oss:latest \
   --attachment sbom.spdx.json
 
@@ -147,55 +147,55 @@ cosign attach sbom --sbom .hestia/containers/fpga/oss/sbom.spdx.json \
   ghcr.io/hestia/fpga/oss:latest
 ```
 
-**署名なしイメージの拒否ポリシー**:
+**Unsigned image rejection policy:**
 
-- `podman-runtime::run_build()` の前に `cosign verify` を実行
-- 署名検証失敗時はコンテナ起動を拒否（`SignatureVerificationError`）
-- 開発環境のみ `HESTIA_ALLOW_UNSIGNED=1` で回避可（本番は常に検証）
-
----
-
-## 10. 運用ルール（§12.8）
-
-1. **週次ビルド**: `cron: '0 2 * * 1'`（毎週月曜 02:00 UTC）でベースイメージ + 依存更新を取り込み再ビルド
-2. **パッチバージョン（例: 2.4.1 → 2.4.2）**: 自動ビルド + 自動 push（`updater` モジュールによる差分検出）
-3. **マイナーバージョン（例: 2.4.x → 2.5.0）**: 自動ビルド後に Review Agent 経由で 1 人承認必須
-4. **メジャーバージョン**: 手動トリガ、UpgradeManager の Canary 戦略で段階的展開
-5. **失敗時**: `action-log` に `container.build.failed` を記録、PatcherAgent に通知
-6. **イメージサイズ上限**: OSS 5GB、商用 20GB。超過時は Review Agent が分割検討
-7. **BuildKit secret 管理**: `.hestia/secure/` は read-only、`0700` 権限、Git 管理外
-8. **アップストリーム脆弱性（CVE）通知**: `grype` 週次スキャン結果の変化を検知、Critical 発生時は即座にセキュリティチームへエスカレーション
+- Run `cosign verify` before `podman-runtime::run_build()`
+- Reject container startup on signature verification failure (`SignatureVerificationError`)
+- Development environments can bypass with `HESTIA_ALLOW_UNSIGNED=1` (production always verifies)
 
 ---
 
-## 11. API キー保護（§20.4）
+## 10. Operational Rules (§12.8)
 
-### 11.1 平文 API キー禁止
-
-`config.toml` に直接 `anthropic_api_key = "sk-..."` のように書かない。`security-validation::secrets::audit_text`（31 tests）が API キー直書きを既に検出する仕組みと整合し、本機能はその「入力ガード版」として機能する。
-
-### 11.2 環境変数経由のみ
-
-必ず `anthropic_api_key_env` で環境変数名を指定し、ホスト側で 1Password CLI / `direnv` / systemd EnvironmentFile / GPG 等の secret backend から解決する。
-
-### 11.3 未設定時の明示エラー
-
-環境変数が未設定 / 空の場合、`AgentCliSection::build_env()` は `AgentCliEnvError::MissingApiKeyEnv` を返し、`hestia-runner` / `ai-conductor` は `-32602 Invalid params` で起動前に失敗する（fail-fast）。
-
-### 11.4 ログ出力時のマスキング
-
-子プロセス起動時のログには API キー値そのものを出力せず、`ANTHROPIC_API_KEY=<set, len=N>` のような形式で長さのみ表示する。
-
-### 11.5 agent-cli IPC レジストリ
-
-`registry_dir`（既定 `$XDG_RUNTIME_DIR/agent-cli`）はパーミッション 0700 で作成し、他ユーザーから peer 探索・なりすましを防止する。
+1. **Weekly build**: `cron: '0 2 * * 1'` (every Monday 02:00 UTC) rebuild with base image + dependency updates
+2. **Patch version (e.g., 2.4.1 → 2.4.2)**: Automatic build + automatic push (differential detection by `updater` module)
+3. **Minor version (e.g., 2.4.x → 2.5.0)**: Automatic build, then 1 approval via Review Agent required
+4. **Major version**: Manual trigger, gradual deployment via UpgradeManager's Canary strategy
+5. **On failure**: Log `container.build.failed` to `action-log`, notify PatcherAgent
+6. **Image size limit**: OSS 5GB, commercial 20GB. Review Agent considers splitting on overflow
+7. **BuildKit secret management**: `.hestia/secure/` is read-only, `0700` permissions, excluded from Git
+8. **Upstream vulnerability (CVE) notification**: Detect changes in `grype` weekly scan results, immediate escalation to security team on Critical findings
 
 ---
 
-## 関連ドキュメント
+## 11. API Key Protection (§20.4)
 
-- [アーキテクチャ概要](architecture_overview.md) — 全体設計原則（原則4の概要）
-- [コンテナ実行](container_execution.md) — Podman コンテナ戦略・container-manager の詳細
-- [共有サービス](shared_services.md) — Observability によるメトリクス監視
-- [Hestia Flow](hestia_flow.md) — AI 活用概念におけるセキュリティ関連事項
-- `.hestia/doc/container/security_hardening.md` — コンテナセキュリティ強化の詳細
+### 11.1 No Plaintext API Keys
+
+Never write API keys directly in `config.toml` as `anthropic_api_key = "sk-..."`. This is consistent with the existing `security-validation::secrets::audit_text` (31 tests) detection mechanism, and this feature serves as its "input guard version."
+
+### 11.2 Environment Variable Only
+
+Always specify the environment variable name via `anthropic_api_key_env`, and resolve it from a secret backend on the host such as 1Password CLI / `direnv` / systemd EnvironmentFile / GPG.
+
+### 11.3 Explicit Error on Unset
+
+If the environment variable is unset or empty, `AgentCliSection::build_env()` returns `AgentCliEnvError::MissingApiKeyEnv`, and `hestia-runner` / `ai-conductor` fails before startup with `-32602 Invalid params` (fail-fast).
+
+### 11.4 Log Output Masking
+
+When launching child processes, logs display only the API key length in the format `ANTHROPIC_API_KEY=<set, len=N>`, not the actual API key value.
+
+### 11.5 agent-cli IPC Registry
+
+The `registry_dir` (default `$XDG_RUNTIME_DIR/agent-cli`) is created with permissions 0700 to prevent peer discovery and impersonation by other users.
+
+---
+
+## Related Documentation
+
+- [Architecture Overview](architecture_overview.md) — Overall design principles (Principle 4 overview)
+- [Container Execution](container_execution.md) — Podman container strategy and container-manager details
+- [Shared Services](shared_services.md) — Observability-based metrics monitoring
+- [Hestia Flow](hestia_flow.md) — Security-related items in AI utilization concepts
+- `.hestia/doc/container/security_hardening.md` — Container security hardening details

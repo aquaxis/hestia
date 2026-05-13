@@ -1,24 +1,24 @@
-//! AdapterManifest — アダプター自己記述
+//! AdapterManifest — Adapter self-description
 
 use serde::{Deserialize, Serialize};
 
-/// アダプター設定情報
+/// Adapter configuration info
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdapterManifest {
-    /// 識別子（例: "com.xilinx.vivado"）
+    /// Identifier (e.g. "com.xilinx.vivado")
     pub id: String,
-    /// 表示名（例: "AMD Vivado"）
+    /// Display name (e.g. "AMD Vivado")
     pub name: String,
-    /// アダプター自身のバージョン
+    /// Adapter version
     pub version: String,
-    /// ベンダー名
+    /// Vendor name
     pub vendor: String,
-    /// ABI 互換チェック用バージョン
+    /// Version for ABI compatibility check
     pub api_version: u32,
-    /// サポートデバイス（glob パターン）
+    /// Supported devices (glob patterns)
     #[serde(default)]
     pub supported_devices: Vec<String>,
-    /// リリースノート URL（WatcherAgent が使用）
+    /// Release notes URL (used by WatcherAgent)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release_notes_url: Option<String>,
 }

@@ -1,37 +1,37 @@
 # Observability
 
-**対象領域**: common — 監視・観測
-**ソース**: 設計仕様書 §13.6, §19.8
+**Domain**: common — Monitoring and Observation
+**Source**: Design Specification §13.6, §19.8
 
-## 概要
+## Overview
 
-全 Hestia コンポーネントの状態を構造化ログ / メトリクス / 分散トレーシングで可視化する。3 本柱（Logs / Metrics / Traces）を統合し、LLM 呼び出し統計 / エージェント状態 / 開発プロセス指標を集約する。agent-cli peer `observability` として提供される。
+Visualizes the state of all Hestia components through structured logs, metrics, and distributed tracing. Integrates the three pillars (Logs / Metrics / Traces) and aggregates LLM call statistics, agent states, and development process metrics. Provided as agent-cli peer `observability`.
 
-## 3 本柱
+## Three Pillars
 
-| 柱 | 技術 | エンドポイント | 保存先 |
+| Pillar | Technology | Endpoint | Storage |
 |----|------|-------------|-------|
-| Logs | 構造化 JSON（`tracing` クレート）| — | `.hestia/observability/logs/<YYYY-MM-DD>.jsonl` |
-| Metrics | OpenMetrics 形式（`prometheus` クレート）| `localhost:9090/metrics` | Prometheus スクレイプ |
-| Traces | OpenTelemetry（OTLP gRPC）| `:4317` | ローカル Tempo / Jaeger（オプション）|
+| Logs | Structured JSON (`tracing` crate)| — | `.hestia/observability/logs/<YYYY-MM-DD>.jsonl` |
+| Metrics | OpenMetrics format (`prometheus` crate)| `localhost:9090/metrics` | Prometheus scrape |
+| Traces | OpenTelemetry (OTLP gRPC)| `:4317` | Local Tempo / Jaeger (optional)|
 
-## ヘルスチェックエンドポイント
+## Health Check Endpoints
 
-| エンドポイント | 用途 |
+| Endpoint | Purpose |
 |-------------|------|
-| `:8080/health` | プロセス生存確認 |
-| `:8080/ready` | サービス準備完了確認 |
-| `:8080/live` | ライブネス確認 |
+| `:8080/health` | Process liveness check |
+| `:8080/ready` | Service readiness check |
+| `:8080/live` | Liveness check |
 
 ### HealthStatus
 
-| 値 | 意味 |
+| Value | Meaning |
 |----|------|
-| `Healthy` | 正常 |
-| `Degraded` | 一部機能制限 |
-| `Unhealthy` | 異常 |
+| `Healthy` | Normal |
+| `Degraded` | Partial feature restrictions |
+| `Unhealthy` | Abnormal |
 
-## 構造化ログの共通フィールド
+## Structured Log Common Fields
 
 ```json
 {
@@ -47,76 +47,76 @@
 }
 ```
 
-## 主要メトリクス
+## Key Metrics
 
-### 共通メトリクス
+### Common Metrics
 
-| メトリクス名 | 型 | 説明 |
+| Metric Name | Type | Description |
 |-------------|-----|------|
-| `hestia_build_total{conductor,status}` | Counter | ビルド回数（成功/失敗別）|
-| `hestia_build_duration_seconds{conductor,step}` | Histogram | ステップ別所要時間 |
-| `hestia_agent_active{skill}` | Gauge | スキル別アクティブ Agent 数 |
-| `hestia_agent_pending_tasks{skill}` | Gauge | キュー長 |
+| `hestia_build_total{conductor,status}` | Counter | Build count (by success/failure)|
+| `hestia_build_duration_seconds{conductor,step}` | Histogram | Duration per step |
+| `hestia_agent_active{skill}` | Gauge | Active agent count by skill |
+| `hestia_agent_pending_tasks{skill}` | Gauge | Queue length |
 
-### LLM メトリクス
+### LLM Metrics
 
-| メトリクス名 | 型 | 説明 |
+| Metric Name | Type | Description |
 |-------------|-----|------|
-| `hestia_llm_requests_total{model,status}` | Counter | LLM 呼び出し回数 |
-| `hestia_llm_tokens_total{model,direction}` | Counter | 入出力トークン数 |
-| `hestia_llm_latency_seconds{model}` | Histogram | レイテンシ分布 |
+| `hestia_llm_requests_total{model,status}` | Counter | LLM call count |
+| `hestia_llm_tokens_total{model,direction}` | Counter | Input/output token count |
+| `hestia_llm_latency_seconds{model}` | Histogram | Latency distribution |
 
-### RAG メトリクス
+### RAG Metrics
 
-| メトリクス名 | 型 | 説明 |
+| Metric Name | Type | Description |
 |-------------|-----|------|
-| `hestia_rag_retrieval_seconds` | Histogram | RAG 取得時間 |
-| `hestia_rag_hit_ratio` | Gauge | 知識ベース有用ヒット率 |
+| `hestia_rag_retrieval_seconds` | Histogram | RAG retrieval time |
+| `hestia_rag_hit_ratio` | Gauge | Knowledge base useful hit ratio |
 
-### コンテナメトリクス
+### Container Metrics
 
-| メトリクス名 | 型 | 説明 |
+| Metric Name | Type | Description |
 |-------------|-----|------|
-| `hestia_container_build_total{image,status}` | Counter | ビルド回数 |
-| `hestia_container_build_duration_seconds{image,stage}` | Histogram | ステージ別所要時間 |
-| `hestia_container_image_size_bytes{image,tag}` | Gauge | イメージサイズ |
-| `hestia_container_vuln_total{image,severity}` | Gauge | 脆弱性件数 |
-| `hestia_container_signature_verified{image}` | Gauge | 署名検証成功 |
+| `hestia_container_build_total{image,status}` | Counter | Build count |
+| `hestia_container_build_duration_seconds{image,stage}` | Histogram | Duration per stage |
+| `hestia_container_image_size_bytes{image,tag}` | Gauge | Image size |
+| `hestia_container_vuln_total{image,severity}` | Gauge | Vulnerability count |
+| `hestia_container_signature_verified{image}` | Gauge | Signature verification success |
 
-### フィードバックループメトリクス
+### Feedback Loop Metrics
 
-| メトリクス名 | 型 | 説明 |
+| Metric Name | Type | Description |
 |-------------|-----|------|
-| `hestia_feedback_loops_total{outcome}` | Counter | フィードバックループ発生回数 |
+| `hestia_feedback_loops_total{outcome}` | Counter | Feedback loop occurrence count |
 
-## ConductorName 別集約
+## Aggregation by ConductorName
 
-`ConductorName`（`Ai` / `Fpga` / `Asic` / `Pcb` / `Debug` / `Rag`）毎にメトリクス / ヘルスを集約。
+Metrics and health are aggregated per `ConductorName` (`Ai` / `Fpga` / `Asic` / `Pcb` / `Debug` / `Rag`).
 
-## 開発プロセス KPI（派生メトリクス）
+## Development Process KPIs (Derived Metrics)
 
-- 仕様 → 実装リードタイム
-- テストベンチ先行度（TDD 遵守率）
-- CoT 有無率 / 平均ステージ数
-- ハルシネーション検出率（RAG `参考資料外` フラグ比）
+- Specification to implementation lead time
+- Testbench-first rate (TDD compliance)
+- CoT presence rate / average stage count
+- Hallucination detection rate (RAG `out-of-reference` flag ratio)
 
-## ダッシュボード
+## Dashboard
 
 ```bash
 ai-cli observability dashboard --open
 ```
 
-主要ビュー: Build Health / Agent Fleet / LLM Spend / Feedback Loop / Knowledge Coverage
+Main views: Build Health / Agent Fleet / LLM Spend / Feedback Loop / Knowledge Coverage
 
-## 運用ルール
+## Operational Rules
 
-- 全コンポーネントは `tracing` で構造化ログ出力
-- `trace_id` は CoT / Action Log / Prompt Archive と共通
-- メトリクスは 30 秒間隔でスクレイプ、90 日保持
-- 異常検知: `hestia_build_duration_seconds` の p99 が通常比 2 倍で警告
+- All components output structured logs via `tracing`
+- `trace_id` is shared across CoT / Action Log / Prompt Archive
+- Metrics are scraped at 30-second intervals, retained for 90 days
+- Anomaly detection: Warning when `hestia_build_duration_seconds` p99 exceeds 2x normal
 
-## 関連ドキュメント
+## Related Documents
 
-- [health_check_orchestration.md](health_check_orchestration.md) — ヘルスチェック
-- [error_registry.md](error_registry.md) — エラーコード
-- [agent_cli_messaging.md](agent_cli_messaging.md) — メッセージング
+- [health_check_orchestration.md](health_check_orchestration.md) — Health checks
+- [error_registry.md](error_registry.md) — Error codes
+- [agent_cli_messaging.md](agent_cli_messaging.md) — Messaging

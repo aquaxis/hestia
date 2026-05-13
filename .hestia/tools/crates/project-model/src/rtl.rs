@@ -1,4 +1,4 @@
-//! rtl.toml 設定モデル（§4.4）
+//! rtl.toml configuration model (section 4.4)
 
 use serde::{Deserialize, Serialize};
 

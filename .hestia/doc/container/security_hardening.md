@@ -1,37 +1,37 @@
-# コンテナセキュリティ強化
+# Container Security Hardening
 
-**対象領域**: container — セキュリティ
-**ソース**: 設計仕様書 §12.5, §11.1
+**Domain**: container — Security
+**Source**: Design Specification §12.5, §11.1
 
-## 概要
+## Overview
 
-コンテナ実行環境のセキュリティを多層的に強化する。Podman rootless の基本セキュリティに加え、成果物署名（cosign）、SBOM 生成（syft）、脆弱性スキャン（grype）、および§11.1 のセキュリティ設計方針に基づく保護措置を講じる。
+Multi-layered security hardening for the container execution environment. In addition to Podman rootless baseline security, artifact signing (cosign), SBOM generation (syft), vulnerability scanning (grype), and protective measures based on the security design principles in §11.1 are applied.
 
-## Podman セキュリティ方針（§11.1）
+## Podman Security Principles (§11.1)
 
-| 方針 | 実装 |
+| Principle | Implementation |
 |------|------|
-| デーモンレス | システムサービス不要（Docker の dockerd に依存しない）|
-| UID 一致 | `--userns=keep-id` でファイル権限問題を回避 |
-| SELinux 対応 | `--security-opt=label=type:container_runtime_t` |
-| 権限昇格防止 | `--security-opt=no-new-privileges` |
-| ライセンス保護 | ベンダーライセンスファイルの読み取り専用マウント |
-| ネットワーク隔離 | ビルドコンテナは `--network=none` |
-| 知的財産保護 | HDL ソース・ビットストリームのコンテナ外流出防止 |
+| Daemonless | No system service required (does not depend on Docker's dockerd) |
+| UID matching | Avoid file permission issues with `--userns=keep-id` |
+| SELinux support | `--security-opt=label=type:container_runtime_t` |
+| Privilege escalation prevention | `--security-opt=no-new-privileges` |
+| License protection | Read-only mount of vendor license files |
+| Network isolation | Build containers use `--network=none` |
+| Intellectual property protection | Prevent HDL source and bitstream leakage outside containers |
 
-## コンテナ運用パターン別セキュリティ
+## Security by Container Operation Pattern
 
-| パターン | セキュリティ設定 |
+| Pattern | Security Settings |
 |---------|----------------|
-| バッチビルド | `--rm`, `--network=none`, `--security-opt=no-new-privileges` |
-| GUI 起動 | X11/Wayland フォワード、`--security-opt=label=type:container_runtime_t` |
-| systemd サービス | Podman Quad 定義（.container ファイル）|
-| デバイスアクセス | `--device /dev/bus/usb`（JTAG プログラミングのみ）|
+| Batch build | `--rm`, `--network=none`, `--security-opt=no-new-privileges` |
+| GUI launch | X11/Wayland forwarding, `--security-opt=label=type:container_runtime_t` |
+| systemd service | Podman Quad definition (.container file) |
+| Device access | `--device /dev/bus/usb` (JTAG programming only) |
 
-## 成果物署名（cosign、keyless OIDC）
+## Artifact Signing (cosign, keyless OIDC)
 
 ```bash
-# キーレス署名（GitHub Actions 上）
+# Keyless signing (on GitHub Actions)
 COSIGN_EXPERIMENTAL=1 cosign sign ghcr.io/hestia/fpga/oss:latest \
   --attachment sbom.spdx.json
 
@@ -40,23 +40,23 @@ cosign attach sbom --sbom .hestia/containers/fpga/oss/sbom.spdx.json \
   ghcr.io/hestia/fpga/oss:latest
 ```
 
-### 署名なしイメージの拒否ポリシー
+### Unsigned Image Rejection Policy
 
-- `podman-runtime::run_build()` の前に `cosign verify` を実行
-- 署名検証失敗時はコンテナ起動を拒否（`SignatureVerificationError`）
-- 開発環境のみ `HESTIA_ALLOW_UNSIGNED=1` で回避可（本番は常に検証）
+- `cosign verify` is executed before `podman-runtime::run_build()`
+- Container launch is refused on signature verification failure (`SignatureVerificationError`)
+- Development environments can bypass with `HESTIA_ALLOW_UNSIGNED=1` (production always verifies)
 
-## SBOM 生成（syft）
+## SBOM Generation (syft)
 
 ```bash
-# SPDX 形式
+# SPDX format
 syft ghcr.io/hestia/fpga/oss:latest -o spdx-json > sbom.spdx.json
 
-# CycloneDX 形式
+# CycloneDX format
 syft ghcr.io/hestia/fpga/oss:latest -o cyclonedx-json > sbom.cdx.json
 ```
 
-## 脆弱性スキャン（grype）
+## Vulnerability Scanning (grype)
 
 ```bash
 grype ghcr.io/hestia/fpga/oss:latest \
@@ -65,23 +65,23 @@ grype ghcr.io/hestia/fpga/oss:latest \
   -o json > vuln.json
 ```
 
-### 評価ゲート閾値
+### Evaluation Gate Thresholds
 
-| 重大度 | 閾値 | 挙動 |
+| Severity | Threshold | Behavior |
 |-------|-----|------|
-| Critical | 0 | ビルド失敗（push 不可）|
-| High（修正可能）| 0 | ビルド失敗 |
-| High（修正不可）| 記録 | 警告 + 例外承認 |
-| Medium 以下 | 記録 | 通常 push 可 |
+| Critical | 0 | Build fails (push blocked) |
+| High (fixable) | 0 | Build fails |
+| High (unfixable) | Log | Warning + exception approval |
+| Medium or below | Log | Normal push allowed |
 
-## ベンダーライセンス保護
+## Vendor License Protection
 
-- インストーラ・ライセンスファイルはイメージに焼き込まない（`--secret` マウントのみ）
-- 実行時ライセンス（FlexLM 等）は `podman run -e LM_LICENSE_FILE=...` で注入
-- `.hestia/secure/` はモード 0700、`.gitignore` で Git 管理外
+- Installer and license files are not baked into the image (mounted only via `--secret`)
+- Runtime licenses (FlexLM, etc.) are injected via `podman run -e LM_LICENSE_FILE=...`
+- `.hestia/secure/` has mode 0700, excluded from Git via `.gitignore`
 
-## 関連ドキュメント
+## Related Documentation
 
-- [container_manager.md](container_manager.md) — container-manager 全体
-- [registry_config.md](registry_config.md) — レジストリ管理
-- [vivado_container.md](vivado_container.md) — Vivado コンテナ
+- [container_manager.md](container_manager.md) — container-manager overview
+- [registry_config.md](registry_config.md) — Registry management
+- [vivado_container.md](vivado_container.md) — Vivado container

@@ -21,21 +21,21 @@ mod monitor;
 pub(crate) struct HestiaConfig {
     #[serde(default)]
     agent_cli: AgentCliConfig,
-    /// Phase 113 — `[engine]` セクション。peer 駆動エンジンを agent-cli /
-    /// claude-cli-shim から選択する。未設定時は `agent_cli` 既定で後方互換。
+    /// Phase 113 — `[engine]` section. Selects the peer-driving engine from agent-cli /
+    /// claude-cli-shim. Defaults to `agent_cli` for backward compatibility.
     #[serde(default)]
     pub(crate) engine: EngineConfig,
-    /// Phase 128 — `[concurrency]` セクション。`hestia start` が子 conductor
-    /// process の env として export することで Phase 126 の
-    /// `ConductorLimiter::from_env` / `AgentManager::with_default_cap` が
-    /// 反映する。親プロセス env が既に設定されている場合は env を優先（後方互換）。
+    /// Phase 128 — `[concurrency]` section. `hestia start` exports these as env vars
+    /// for child conductor processes, so Phase 126's `ConductorLimiter::from_env` /
+    /// `AgentManager::with_default_cap` pick them up. If the parent process env already
+    /// has these keys, the env takes precedence (backward compatibility).
     #[serde(default)]
     pub(crate) concurrency: ConcurrencyConfig,
 }
 
-/// Phase 128 — `[concurrency]` セクションの schema。
-/// 全フィールド optional。未指定時は library 既定（global=8 / dispatch=2 /
-/// per_conductor=4 / timeout=600s）が使われる。
+/// Phase 128 — Schema for the `[concurrency]` section.
+/// All fields are optional. When unspecified, library defaults are used
+/// (global=8 / dispatch=2 / per_conductor=4 / timeout=600s).
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct ConcurrencyConfig {
     #[serde(default)]
@@ -67,15 +67,15 @@ impl AgentCliConfig {
     }
 }
 
-/// Phase 113 — Engine 切替設定。
+/// Phase 113 — Engine switching configuration.
 ///
-/// `.hestia/config.toml` の `[engine]` セクションから読込:
+/// Read from the `[engine]` section of `.hestia/config.toml`:
 /// ```toml
 /// [engine]
-/// type = "agent_cli"     # "agent_cli" (既定) | "claude_cli_shim"
-/// binary = ""            # 省略時は type に応じた既定 path
-/// registry_path = ""     # 省略時は engine 既定（library 経由は env で別途）
-/// log_path = ""          # 省略時は engine 既定
+/// type = "agent_cli"     # "agent_cli" (default) | "claude_cli_shim"
+/// binary = ""            # When omitted, uses the default path for the type
+/// registry_path = ""     # When omitted, uses the engine default (overridable via env)
+/// log_path = ""          # When omitted, uses the engine default
 /// ```
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct EngineConfig {
@@ -94,7 +94,7 @@ fn default_engine_type() -> String {
 }
 
 impl EngineConfig {
-    /// engine_binary: explicit override > type 既定 (`agent-cli` / `claude-cli-shim`)
+    /// engine_binary: explicit override > type default (`agent-cli` / `claude-cli-shim`)
     pub(crate) fn binary_name(&self) -> &str {
         if let Some(b) = self.binary.as_deref() {
             if !b.is_empty() {
@@ -107,8 +107,8 @@ impl EngineConfig {
         }
     }
 
-    /// pgrep / monitor 用に process 名 (PATH を含まない) を返す。
-    /// `binary_name` が絶対 path の場合は basename を返す。
+    /// Returns the process name (without PATH) for pgrep / monitor use.
+    /// If `binary_name` is an absolute path, returns the basename.
     pub(crate) fn binary_basename(&self) -> &str {
         let name = self.binary_name();
         std::path::Path::new(name)
@@ -117,15 +117,14 @@ impl EngineConfig {
             .unwrap_or(name)
     }
 
-    /// Phase 115 — engine type に応じて `--provider` 引数を調整する。
+    /// Phase 115 — Adjust `--provider` argument based on engine type.
     ///
-    /// - `claude_cli_shim` engine: claude 単一 backend なので、`agent_cli.backend`
-    ///   が設定されていれば値に関係なく `"claude"` を強制、未設定なら None
-    ///   (`--provider` を渡さない / shim の default を使う)。これにより
-    ///   `[agent_cli] backend = "ollama"` のような設定が claude-cli-shim の
-    ///   registry に `provider: "ollama"` として誤記録される問題を防ぐ。
-    /// - `agent_cli` engine (default): 受け取った `provider_arg` をそのまま返す
-    ///   (後方互換)。
+    /// - `claude_cli_shim` engine: Since claude is the only backend, if `agent_cli.backend`
+    ///   is set, force `"claude"` regardless of the value; if unset, return None
+    ///   (don't pass `--provider` / use the shim default). This prevents settings like
+    ///   `[agent_cli] backend = "ollama"` from being incorrectly recorded in the
+    ///   claude-cli-shim registry as `provider: "ollama"`.
+    /// - `agent_cli` engine (default): return `provider_arg` as-is (backward compatible).
     pub(crate) fn filter_provider(&self, provider_arg: Option<String>) -> Option<String> {
         match self.type_.as_str() {
             "claude_cli_shim" => provider_arg.map(|_| "claude".to_string()),
@@ -133,17 +132,15 @@ impl EngineConfig {
         }
     }
 
-    /// Phase 115 — engine type に応じて `--model` 引数を調整する。
+    /// Phase 115 — Adjust `--model` argument based on engine type.
     ///
-    /// - `claude_cli_shim` engine: agent_cli.model (`glm-5.1:cloud` など) は
-    ///   claude が認識しないため None を返し、claude の login default model
-    ///   を使わせる。明示的に claude モデルを使いたい場合は `[agent_cli] model`
-    ///   で `claude-opus-4-7` 等を指定すれば claude が認識する値はそのまま
-    ///   通る — ここで値検証はせず、claude モデル名以外は無視するためにのみ
-    ///   None 返却を選ぶ簡素な実装とする (将来 model 値を見て分岐する余地は
-    ///   残す)。
-    /// - `agent_cli` engine (default): 受け取った `model_arg` をそのまま返す
-    ///   (後方互換)。
+    /// - `claude_cli_shim` engine: agent_cli.model (e.g. `glm-5.1:cloud`) is
+    ///   not recognized by claude, so return None to let claude use its login
+    ///   default model. To explicitly use a claude model, set `[agent_cli] model`
+    ///   to e.g. `claude-opus-4-7` — values starting with `claude-` pass through
+    ///   as-is. This simple implementation returns None for non-claude models
+    ///   only, leaving room for future model-based branching.
+    /// - `agent_cli` engine (default): return `model_arg` as-is (backward compatible).
     pub(crate) fn filter_model<'a>(&self, model_arg: Option<&'a str>) -> Option<&'a str> {
         match self.type_.as_str() {
             "claude_cli_shim" => match model_arg {
@@ -154,8 +151,8 @@ impl EngineConfig {
         }
     }
 
-    /// engine subprocess に渡すべき env 変数のリストを構築する。
-    /// hestia → claude-cli-shim 等への path override 伝達に使用。
+    /// Build the list of env vars to pass to the engine subprocess.
+    /// Used to convey path overrides from hestia to claude-cli-shim etc.
     pub(crate) fn subprocess_env(&self) -> Vec<(&'static str, String)> {
         let mut out = Vec::new();
         out.push(("HESTIA_ENGINE_BINARY", self.binary_name().to_string()));
@@ -177,23 +174,23 @@ impl EngineConfig {
 
 /// Phase 121 — engine-aware peer-row predicate.
 ///
-/// `<engine> list` の stdout 1 行が「実 peer 行」かどうかを ID 列の prefix で
-/// 判定する純関数。
-/// - agent-cli engine: `agent-<ULID>` 形式
-/// - claude_cli_shim engine: `shim-<UUID>` 形式
+/// Pure function that determines whether a row from `<engine> list` stdout
+/// is a real peer row based on the ID column prefix.
+/// - agent-cli engine: `agent-<ULID>` format
+/// - claude_cli_shim engine: `shim-<UUID>` format
 ///
-/// header 行（`ID NAME ...`）/ 区切り行 / 空行は false を返す。
+/// Header rows (`ID NAME ...`), separator rows, and empty rows return false.
 pub(crate) fn is_engine_peer_id(id: &str) -> bool {
     id.starts_with("agent-") || id.starts_with("shim-")
 }
 
 /// Phase 121 — engine-aware log directory resolver.
 ///
-/// `agent_id` の prefix から engine namespace を推定し、JSONL ログ dir を返す:
-/// - `shim-...` → `~/.local/share/claude-cli-shim/logs/<id>/`
-/// - その他 (`agent-...`) → `~/.local/share/agent-cli/logs/<id>/`（既定）
+/// Infers the engine namespace from `agent_id` prefix and returns the JSONL log dir:
+/// - `shim-...` -> `~/.local/share/claude-cli-shim/logs/<id>/`
+/// - Others (`agent-...`) -> `~/.local/share/agent-cli/logs/<id>/` (default)
 ///
-/// `dirs::home_dir()` 失敗時は `None`。dir の存在は確認しない（呼び元で対処）。
+/// Returns `None` if `dirs::home_dir()` fails. Does not check dir existence (caller handles).
 pub(crate) fn agent_log_dir(agent_id: &str) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     let dir = if agent_id.starts_with("shim-") {
@@ -206,13 +203,13 @@ pub(crate) fn agent_log_dir(agent_id: &str) -> Option<PathBuf> {
 
 /// Phase 123 — engine-aware registry directory resolver.
 ///
-/// 各 engine が peer メタデータを書き出す registry dir を返す。
+/// Returns the registry directory where each engine writes peer metadata.
 /// - `claude_cli_shim`: `~/.local/share/claude-cli-shim/registry/`
-/// - `agent_cli` (default): `$XDG_RUNTIME_DIR/agent-cli/`、未設定時は
-///   `/tmp/agent-cli/`（`agent-cli/src/config.rs::registry_dir()` と同一規則）
+/// - `agent_cli` (default): `$XDG_RUNTIME_DIR/agent-cli/`, or `/tmp/agent-cli/`
+///   when unset (same convention as `agent-cli/src/config.rs::registry_dir()`)
 ///
-/// `EngineConfig::registry_path` で明示 override されていればそれを優先。
-/// `dirs::home_dir()` 失敗時 (`claude_cli_shim` 既定経路) は `None`。
+/// If `EngineConfig::registry_path` is explicitly set, that takes priority.
+/// Returns `None` if `dirs::home_dir()` fails (for `claude_cli_shim` default path).
 pub(crate) fn engine_registry_dir(cfg: &HestiaConfig) -> Option<PathBuf> {
     if let Some(p) = cfg.engine.registry_path.as_ref() {
         if !p.as_os_str().is_empty() {
@@ -237,10 +234,11 @@ pub(crate) fn engine_registry_dir(cfg: &HestiaConfig) -> Option<PathBuf> {
 
 /// Phase 123 — engine-aware kill pattern enumerator.
 ///
-/// `pgrep -f <pattern>` で引っかけるべき自エンジン peer プロセスのパターン列を返す。
-/// `cfg.engine.binary_basename()` から動的生成するため、agent_cli / claude_cli_shim
-/// 双方の peer プロセスが `hestia kill` で確実に SIGKILL されるようになる
-/// (Phase 121 で `KILL_PATTERNS` の hardcode が claude_cli_shim 未対応だった漏れを fix)。
+/// Returns the list of patterns that `pgrep -f <pattern>` should match for
+/// this engine's peer processes. Dynamically generated from `cfg.engine.binary_basename()`,
+/// ensuring that both agent_cli and claude_cli_shim peer processes are reliably
+/// SIGKILLed by `hestia kill` (fixes the Phase 121 gap where hardcoded `KILL_PATTERNS`
+/// did not cover claude_cli_shim).
 pub(crate) fn engine_kill_patterns(cfg: &HestiaConfig) -> Vec<String> {
     let bin = cfg.engine.binary_basename();
     vec![
@@ -250,17 +248,18 @@ pub(crate) fn engine_kill_patterns(cfg: &HestiaConfig) -> Vec<String> {
     ]
 }
 
-/// Phase 123 — pid 生死判定。
+/// Phase 123 — PID liveness check.
 ///
-/// `kill(pid, 0)` を libc で発行し、戻り値が 0 なら alive とみなす純粋判定。
-/// `EPERM` (権限なし、戻り値 -1) は本実装では dead 扱いにせず alive とみなしたい
-/// ところだが、registry の pid は通常自 uid のプロセスなので発生しない想定。
+/// Pure predicate that issues `kill(pid, 0)` via libc and considers the process
+/// alive if the return value is 0. `EPERM` (no permission, return -1) could
+/// theoretically mean the process exists but we lack permission; however,
+/// registry pids are typically same-uid processes so this should not occur.
 ///
-/// 防衛的に弾く値:
-/// - `pid == 0` — libc 上 "全プロセスへ送信" の意味になるため。
-/// - `pid > i32::MAX as u32` — `pid_t` は符号付き整数なので、cast すると
-///   負値となり `kill(-N, 0)` が「プロセスグループ送信」として扱われ、
-///   alive と誤判定されうる (`u32::MAX as i32 == -1` で全プロセス対象に)。
+/// Defensively rejected values:
+/// - `pid == 0` — has special meaning "send to all processes" in libc.
+/// - `pid > i32::MAX as u32` — `pid_t` is signed, so casting produces a
+///   negative value and `kill(-N, 0)` is treated as "send to process group",
+///   which could be misjudged as alive (`u32::MAX as i32 == -1` targets all).
 pub(crate) fn is_pid_alive(pid: u32) -> bool {
     if pid == 0 || pid > i32::MAX as u32 {
         return false;
@@ -268,11 +267,11 @@ pub(crate) fn is_pid_alive(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
-/// Phase 123 — registry エントリの I/O フリー dead 判定 (純関数)。
+/// Phase 123 — I/O-free dead entry detection from registry entries (pure function).
 ///
-/// `(path, pid)` のスライスから、`is_alive(pid) == false` の path を抽出する。
-/// `is_alive` をクロージャ化することで filesystem / libc に依存せず unit-test
-/// 可能にする (`prune_dead_peers` の中核ロジック)。
+/// From a slice of `(path, pid)`, extracts paths where `is_alive(pid) == false`.
+/// By parameterizing `is_alive` as a closure, this can be unit-tested without
+/// depending on the filesystem or libc (core logic of `prune_dead_peers`).
 pub(crate) fn classify_registry_entries(
     entries: &[(PathBuf, u32)],
     is_alive: impl Fn(u32) -> bool,
@@ -284,11 +283,12 @@ pub(crate) fn classify_registry_entries(
         .collect()
 }
 
-/// Phase 123 — registry dir 配下の `*.json` を走査し、各エントリの `pid` field を
-/// 抽出して `(path, pid)` のリストを返す純関数寄りヘルパ。
+/// Phase 123 — Helper that scans `*.json` under the registry dir, extracts each
+/// entry's `pid` field, and returns a list of `(path, pid)`.
 ///
-/// JSON parse / pid 取得失敗のエントリは silent skip (warning も出さない —
-/// 呼び元で件数からズレを推定する)。`read_dir` 失敗時は空配列。
+/// Entries with JSON parse or pid extraction failures are silently skipped (no
+/// warning emitted — the caller can infer mismatches from entry counts).
+/// Returns an empty array if `read_dir` fails.
 fn read_registry_pids(dir: &Path) -> Vec<(PathBuf, u32)> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
@@ -316,11 +316,11 @@ fn read_registry_pids(dir: &Path) -> Vec<(PathBuf, u32)> {
     out
 }
 
-/// Phase 123 — `cfg.engine` に応じて registry から dead peer を除去する。
+/// Phase 123 — Remove dead peers from the registry according to `cfg.engine`.
 ///
-/// 戻り値は削除した entry 件数。失敗 (registry dir 不在 / 全 entry alive) は 0 を返す。
-/// agent_cli engine では `*.json` に加え対応する `*.sock` も削除する
-/// (`agent-cli/src/ipc/registry.rs::cleanup` と同じ後始末)。
+/// Returns the number of entries removed. Returns 0 on failure (registry dir absent /
+/// all entries alive). For agent_cli engine, also removes the corresponding `*.sock`
+/// alongside `*.json` (same cleanup as `agent-cli/src/ipc/registry.rs::cleanup`).
 pub(crate) fn prune_dead_peers(cfg: &HestiaConfig) -> usize {
     let Some(dir) = engine_registry_dir(cfg) else {
         return 0;
@@ -329,10 +329,10 @@ pub(crate) fn prune_dead_peers(cfg: &HestiaConfig) -> usize {
     let dead = classify_registry_entries(&pids, is_pid_alive);
     let mut removed = 0;
     for path in dead {
-        // <agent-id>.json を削除
+        // Delete <agent-id>.json
         if std::fs::remove_file(&path).is_ok() {
             removed += 1;
-            // agent_cli engine では同 stem の .sock も後始末する。
+            // For agent_cli engine, also clean up the .sock with the same stem.
             if cfg.engine.type_ != "claude_cli_shim" {
                 let sock = path.with_extension("sock");
                 let _ = std::fs::remove_file(&sock);
@@ -361,8 +361,8 @@ pub(crate) fn load_hestia_config() -> HestiaConfig {
     toml::from_str::<HestiaConfig>(&text).unwrap_or_default()
 }
 
-/// Phase 128 — `std::process::Command` と `tokio::process::Command` の双方を
-/// 統一的に env 設定するためのアダプタ trait。
+/// Phase 128 — Adapter trait for setting env vars uniformly on both
+/// `std::process::Command` and `tokio::process::Command`.
 pub(crate) trait CmdEnvSetter {
     fn set_env(&mut self, key: &str, val: &str);
 }
@@ -379,10 +379,10 @@ impl CmdEnvSetter for tokio::process::Command {
     }
 }
 
-/// Phase 128 — `.hestia/config.toml` の `[concurrency]` を子プロセスの env に
-/// export する。親プロセス env が既に同 key を持っていればそれを優先（後方互換）。
+/// Phase 128 — Export `.hestia/config.toml` `[concurrency]` settings to child process env.
+/// If the parent process env already has the same key, the env takes precedence (backward compatible).
 ///
-/// 優先順位: 親プロセス env > config.toml `[concurrency]` > library 既定。
+/// Priority: parent process env > config.toml `[concurrency]` > library defaults.
 pub(crate) fn apply_concurrency_env<C: CmdEnvSetter>(
     cmd: &mut C,
     cfg: &ConcurrencyConfig,
@@ -406,12 +406,12 @@ pub(crate) fn apply_concurrency_env<C: CmdEnvSetter>(
     }
 }
 
-/// Phase 127 — `--version` で表示する version 文字列。
+/// Phase 127 — Version string displayed by `--version`.
 ///
-/// `build.rs` が `git describe --tags --dirty` の結果を `HESTIA_BUILD_VERSION` に
-/// 注入していればそれを使い (例: `0.1.5-3-gabc1234[-dirty]`)、無ければ
-/// `CARGO_PKG_VERSION` (= `[workspace.package] version`) にフォールバックする。
-/// これによりバイナリ表示が GitHub TAG と自動同期される。
+/// If `build.rs` injected the result of `git describe --tags --dirty` into
+/// `HESTIA_BUILD_VERSION`, that is used (e.g. `0.1.5-3-gabc1234[-dirty]`);
+/// otherwise, falls back to `CARGO_PKG_VERSION` (= `[workspace.package] version`).
+/// This keeps the binary version automatically synced with GitHub tags.
 pub const HESTIA_VERSION: &str = match option_env!("HESTIA_BUILD_VERSION") {
     Some(v) => v,
     None => env!("CARGO_PKG_VERSION"),
@@ -614,14 +614,14 @@ const GROUP1_DOMAINS: &[&str] = &[
 /// Specialized sub-agents (synthesizer, implementer, signoff, tester,
 /// programmer, schematic, layout, validator, builder, session, analyzer,
 /// quality, archivist, search) are reachable via `spawn-subagent` on demand.
-// Phase 93: 起動モデル根本再設計 — `hestia start` で ai-conductor のみ起動
-// （旧 18 件 / Phase 91 9 件 → 3 件常駐: ai + ai-designer + ai-reviewer）。
-// domain conductor (rtl/fpga/asic/pcb/hal/apps/debug/rag) およびその sub-agent は
-// ai-conductor が dispatch 時に on-demand 起動する経路に変更。
+// Phase 93: Startup model redesign — `hestia start` launches only ai-conductor
+// (formerly 18 agents / Phase 91 9 agents -> 3 residents: ai + ai-designer + ai-reviewer).
+// Domain conductors (rtl/fpga/asic/pcb/hal/apps/debug/rag) and their sub-agents are
+// now launched on-demand by ai-conductor at dispatch time.
 //
-// ai-conductor の常駐サブエージェントは ai-designer + ai-reviewer の 2 件のみ:
-// - ai-designer: 人間指示の仕様分解担当
-// - ai-reviewer: 仕様の妥当性確認担当
+// ai-conductor's resident sub-agents are only ai-designer + ai-reviewer:
+// - ai-designer: specification decomposition from human instructions
+// - ai-reviewer: specification validity verification
 const RESIDENT_SUB_AGENTS: &[(&str, &[(&str, &str)])] = &[
     ("ai", &[
         ("ai-designer", "ai-designer"),
@@ -641,17 +641,17 @@ version = "0.1.0"
 stagger_ms = 500
 
 [agent_cli]
-# LLM バックエンド: claude / codex / ollama / llama_cpp
+# LLM backend: claude / codex / ollama / llama_cpp
 backend = "ollama"
 model = "glm-5.1:cloud"
 
-# Phase 126 — サブエージェント並列度の上限。値を増やすほど LLM / PC 負荷が上がる。
-# 各値は対応する環境変数で個別 override 可能。
+# Phase 126 — Sub-agent parallelism limits. Higher values increase LLM / PC load.
+# Each value can be individually overridden via the corresponding env var.
 [concurrency]
-global_max = 8                       # ai-conductor が把握する全エージェント合計 (HESTIA_GLOBAL_MAX_AGENTS)
-ai_conductor_dispatch_max = 2        # ai-conductor が同時 dispatch する domain conductor 数 (HESTIA_AI_DISPATCH_MAX)
-per_conductor_max = 4                # 各 conductor が同時 spawn できるサブエージェント数 (HESTIA_PER_CONDUCTOR_MAX)
-acquire_timeout_secs = 600           # slot 待機タイムアウト秒（デッドロック検知）(HESTIA_ACQUIRE_TIMEOUT_SECS)
+global_max = 8                       # Total agents tracked by ai-conductor (HESTIA_GLOBAL_MAX_AGENTS)
+ai_conductor_dispatch_max = 2        # Simultaneous domain conductor dispatches (HESTIA_AI_DISPATCH_MAX)
+per_conductor_max = 4                # Max sub-agents each conductor can spawn simultaneously (HESTIA_PER_CONDUCTOR_MAX)
+acquire_timeout_secs = 600           # Slot acquisition timeout in seconds (deadlock detection) (HESTIA_ACQUIRE_TIMEOUT_SECS)
 "#;
 
 fn dispatch_cli(domain: &str, args: &[String]) -> Result<()> {
@@ -682,18 +682,17 @@ fn workspace_path(domain: &str) -> PathBuf {
 
 /// Phase 81 → Phase 92 — Initialize per-peer hestia workspace.
 ///
-/// Phase 22 P-1 (rules 隔離) → Phase 57 P-2 (`.aiprj/rules` symlink 共有)
-/// → Phase 81 **P-3** (`.hestia/rules/` への hestia agent 向け解釈変更版を配置、
-/// `.aiprj/` 直接参照を排除) → Phase 89 (`.hestia/rules/` から
-/// `<workspace>/instruction.md` 取得記述削除) → Phase 91 (起動規約を
-/// combined execution に変更) → **Phase 92** (`<workspace>/instruction.md`
-/// placeholder 生成を完全廃止) の進化に伴うロジック変更。
+/// Phase 22 P-1 (rules isolation) -> Phase 57 P-2 (`.aiprj/rules` symlink sharing)
+/// -> Phase 81 **P-3** (place hestia-agent interpretation variant in `.hestia/rules/`,
+/// eliminate direct `.aiprj/` references) -> Phase 89 (remove `<workspace>/instruction.md`
+/// fetch description from `.hestia/rules/`) -> Phase 91 (change startup convention to
+/// combined execution) -> **Phase 92** (completely abolish `<workspace>/instruction.md`
+/// placeholder generation) — logic changes following this evolution.
 ///
-/// Phase 92 で workspace ディレクトリ作成のみを担う関数に simplify。agent は
-/// 上位指示を peer prompt 経由のみで受信し、3 文書 (`requirements.md` /
-/// `design.md` / `tasks.md`) は agent 自身が setup_ai サイクル時に必要に応じて
-/// fs_write で作成する（per-agent / 共用ではない / Phase 91 遵守必須化 +
-/// Phase 92 明確化）。
+/// Phase 92 simplifies this function to workspace directory creation only. Agents receive
+/// top-level instructions exclusively via peer prompts, and the 3 documents (`requirements.md` /
+/// `design.md` / `tasks.md`) are created by the agent itself via fs_write during the
+/// setup_ai cycle as needed (per-agent, not shared; Phase 91 mandatory + Phase 92 clarification).
 ///
 /// Failures are non-fatal — they're logged but don't block conductor startup.
 fn init_hestia_workspace(peer_name: &str) {
@@ -701,17 +700,17 @@ fn init_hestia_workspace(peer_name: &str) {
     if let Err(e) = std::fs::create_dir_all(&workspace) {
         eprintln!("[warn] failed to create {}: {e}", workspace.display());
     }
-    // Phase 92: instruction.md placeholder 生成を廃止。
-    // 旧 Phase 81 placeholder は agent が読み込まない dead file 状態だった
-    // （Phase 89 で .hestia/rules/ から取得記述削除、Phase 91 で combined execution
-    // に変更された結果）。Phase 92 で生成自体を廃止し、filesystem を simplify。
-    let _ = peer_name; // peer_name は logging で使われていたが Phase 92 で不要化
+    // Phase 92: Abolish instruction.md placeholder generation.
+    // The old Phase 81 placeholder was a dead file that agents never read
+    // (Phase 89 removed the fetch description from .hestia/rules/, Phase 91 changed
+    // to combined execution). Phase 92 abolishes generation entirely, simplifying the filesystem.
+    let _ = peer_name; // peer_name was used for logging but is no longer needed in Phase 92
 }
 
-/// Phase 109 — `<engine> list` の stdout から既登録 peer 名集合を抽出する純関数。
-/// NAME 列（2 列目）を完全一致で集める。
-/// Phase 121: ID prefix 判定を `is_engine_peer_id` で engine 抽象化
-/// (agent-cli の `agent-`、claude_cli_shim の `shim-` 双方を許容)。
+/// Phase 109 — Pure function that extracts the set of already-registered peer names
+/// from `<engine> list` stdout. Collects the NAME column (2nd column) by exact match.
+/// Phase 121: ID prefix detection uses `is_engine_peer_id` for engine abstraction
+/// (accepts both `agent-` from agent-cli and `shim-` from claude_cli_shim).
 pub(crate) fn registered_peer_names(stdout: &str) -> std::collections::HashSet<String> {
     let mut out = std::collections::HashSet::new();
     for line in stdout.lines().skip(1) {
@@ -725,9 +724,9 @@ pub(crate) fn registered_peer_names(stdout: &str) -> std::collections::HashSet<S
     out
 }
 
-/// Phase 109 — `peer_name` が既に `agent-cli list` 上に登録されているかを判定。
-/// agent-cli 子プロセスの実行に失敗した場合は `false`（= 重複なし）を返し、
-/// fallback で従来の spawn 経路に進ませる（誤抑制を避ける）。
+/// Phase 109 — Determine whether `peer_name` is already registered in `agent-cli list`.
+/// Returns `false` (= no duplicate) if the agent-cli subprocess fails to execute,
+/// allowing the caller to fall through to the traditional spawn path (avoids false suppression).
 async fn peer_already_registered(peer_name: &str) -> bool {
     let cfg = load_hestia_config();
     let Ok(out) = Command::new(cfg.engine.binary_name())
@@ -743,26 +742,26 @@ async fn peer_already_registered(peer_name: &str) -> bool {
     registered_peer_names(&stdout).contains(peer_name)
 }
 
-/// Phase 131 — peer 名から alive cap 対象 prefix を推定する純粋関数。
+/// Phase 131 — Pure function that infers the alive cap prefix from a peer name.
 ///
-/// `<conductor>-<role>-<module>` 形式（3 segment 以上）の場合、
-/// `<conductor>-<role>-` を cap prefix として返す。
-/// 2 segment 以下（例: `pcb-layout`、`ai-reviewer`）は単一インスタンス想定で
-/// `None`（cap 対象外）。
+/// For `<conductor>-<role>-<module>` format (3+ segments),
+/// returns `<conductor>-<role>-` as the cap prefix.
+/// For 2 or fewer segments (e.g. `pcb-layout`, `ai-reviewer`), returns `None`
+/// (single-instance assumption, not subject to cap).
 pub(crate) fn cap_prefix_for(peer_name: &str) -> Option<String> {
     let mut parts = peer_name.splitn(3, '-');
     let p0 = parts.next()?;
     let p1 = parts.next()?;
-    let _p2 = parts.next()?; // 3 segment 目が存在することの確認
+    let _p2 = parts.next()?; // Confirm the 3rd segment exists
     if p0.is_empty() || p1.is_empty() {
         return None;
     }
     Some(format!("{p0}-{p1}-"))
 }
 
-/// Phase 131 — `~/.local/share/hestia/spawn.lock` を `flock(2)` で獲得する RAII guard。
-/// drop 時に fd close → 自動アンロック。lock 獲得失敗時は warn を出して `None` を
-/// 返し、cap check を継続させる（fail-safe）。
+/// Phase 131 — RAII guard that acquires `~/.local/share/hestia/spawn.lock` via `flock(2)`.
+/// On drop, the fd is closed -> automatic unlock. If lock acquisition fails, warns and
+/// returns `None`, allowing cap checks to continue (fail-safe).
 struct SpawnLock {
     _file: std::fs::File,
 }
@@ -797,8 +796,8 @@ fn acquire_spawn_lock() -> Option<SpawnLock> {
     Some(SpawnLock { _file: file })
 }
 
-/// Phase 109 — `hestia monitor-daemon` 子プロセスが既に走っているかを `pgrep -f`
-/// で判定する。失敗時は `false`（重複なし扱い）。
+/// Phase 109 — Determine whether a `hestia monitor-daemon` child process is already
+/// running via `pgrep -f`. Returns `false` (no duplicate) on failure.
 async fn monitor_daemon_already_running() -> bool {
     Command::new("pgrep")
         .arg("-f")
@@ -817,21 +816,21 @@ async fn monitor_daemon_already_running() -> bool {
 /// redirects stdout/stderr to `agent.log`, and (best-effort) spawns a mirror
 /// helper for log visibility.
 ///
-/// Phase 109: 関数冒頭で `agent-cli list` を確認し、対象 peer 名が既登録なら
-/// warn ログのみで no-op return する（重複 spawn を物理的に防ぐ）。
-/// Phase 110: monitor.rs の rescue 経路から呼び出すため `pub(crate)` 化。
+/// Phase 109: At function entry, checks `agent-cli list` and returns no-op with a
+/// warning log if the target peer name is already registered (physically prevents duplicate spawn).
+/// Phase 110: Made `pub(crate)` so monitor.rs's rescue path can call it.
 pub(crate) async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str) -> Result<()> {
     let persona = persona_path(persona_filename_root);
     if !persona.exists() {
         bail!("persona file not found: {}", persona.display());
     }
 
-    // Phase 131 — file lock で cap check + spawn を原子化（TOCTOU race 防止）。
-    // 並列 `hestia spawn-subagent` 呼出を直列化することで、registry update
-    // propagation 中の race を排除する。lock 獲得失敗時は fail-safe で継続。
+    // Phase 131 — Atomize cap check + spawn via file lock (prevent TOCTOU race).
+    // Serializing parallel `hestia spawn-subagent` calls eliminates races during
+    // registry update propagation. Fail-safe: continue if lock acquisition fails.
     let _spawn_lock = acquire_spawn_lock();
 
-    // Phase 109 — 重複 spawn 防止
+    // Phase 109 — Prevent duplicate spawn
     if peer_already_registered(peer_name).await {
         eprintln!(
             "[Phase 109] peer '{peer_name}' is already registered — skipping duplicate spawn"
@@ -839,11 +838,11 @@ pub(crate) async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str
         return Ok(());
     }
 
-    // Phase 131 — alive cap 強制（spawn の単一エントリポイントで全経路を網羅）。
-    // peer 名が `<conductor>-<role>-<module>` 形式なら、`<conductor>-<role>-` を
-    // cap prefix として alive 数を engine registry から取得し、`per_conductor_max`
-    // を超えていれば `bail!` で refuse する。これにより persona LLM が直接
-    // `hestia spawn-subagent` を呼ぶ経路（rtl.md / apps.md 等の指示）でも cap が効く。
+    // Phase 131 — Enforce alive cap at the single entry point for spawn (covers all paths).
+    // If the peer name follows `<conductor>-<role>-<module>` format, use `<conductor>-<role>-`
+    // as the cap prefix to get the alive count from the engine registry. If it exceeds
+    // `per_conductor_max`, refuse with `bail!`. This ensures the cap is enforced even
+    // when the persona LLM calls `hestia spawn-subagent` directly (e.g. rtl.md / apps.md instructions).
     if let Some(prefix) = cap_prefix_for(peer_name) {
         let limiter = conductor_sdk::concurrency::ConductorLimiter::from_env();
         let cap = limiter.capacity();
@@ -858,7 +857,7 @@ pub(crate) async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str
             );
             bail!(
                 "alive cap exhausted: {alive} >= {cap} for prefix '{prefix}'. \
-                 既存 sub-agent ({prefix}*) の完了を待つか hestia kill で集約してください。"
+                 Wait for existing sub-agents ({prefix}*) to complete or use hestia kill to consolidate."
             );
         }
         tracing::info!(
@@ -899,8 +898,8 @@ pub(crate) async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str
         .map_err(|e| anyhow::anyhow!("failed to dup log file: {e}"))?;
 
     let config = load_hestia_config();
-    // Phase 115 — claude_cli_shim engine 時は --provider を claude に強制し、
-    // 非 claude モデル名 (例: glm-5.1:cloud) は claude が認識しないため抑制する。
+    // Phase 115 — For claude_cli_shim engine, force --provider to claude and suppress
+    // non-claude model names (e.g. glm-5.1:cloud) that claude does not recognize.
     let provider = config
         .engine
         .filter_provider(config.agent_cli.provider_arg());
@@ -930,7 +929,7 @@ pub(crate) async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str
     for (k, v) in config.engine.subprocess_env() {
         cmd.env(k, v);
     }
-    // Phase 128 — config.toml の [concurrency] を子プロセス env に export
+    // Phase 128 — Export config.toml [concurrency] to child process env
     apply_concurrency_env(&mut cmd, &config.concurrency);
     let _child = cmd
         .current_dir(&workdir)
@@ -952,10 +951,10 @@ pub(crate) async fn spawn_agent_cli(persona_filename_root: &str, peer_name: &str
         .stderr(Stdio::null())
         .spawn();
 
-    // Phase 84 — registry 登録確定まで待機。
-    // agent-cli が起動して IPC ready になるまで最大 10 秒 polling。timeout した
-    // 場合は warn のみで継続（fire-and-forget セマンティクスは維持しつつ、後続
-    // 経路で peer_alive チェックが false になれば fallback / halt が発動する）。
+    // Phase 84 — Wait until registry registration is confirmed.
+    // Poll for up to 10 seconds until agent-cli starts and IPC is ready. On timeout,
+    // only warn and continue (fire-and-forget semantics preserved; subsequent paths
+    // will trigger fallback/halt if peer_alive check returns false).
     if !conductor_sdk::workspace::wait_for_registry(peer_name, 10_000) {
         eprintln!(
             "[warn] sub-agent {peer_name} did not register within 10s — \
@@ -981,9 +980,9 @@ async fn start_conductor(domain: &str) -> Result<()> {
     // Phase 81 — set up per-peer hestia workspace for the main conductor.
     init_hestia_workspace(domain);
 
-    // Phase 109 — conductor 自身の重複 spawn 防止。
-    // 既登録の場合は agent-cli spawn を skip するが、resident sub-agents の起動と
-    // monitor-daemon spawn は継続する（個別に各 spawn 内で重複 check が走る）。
+    // Phase 109 — Prevent duplicate spawn of the conductor itself.
+    // If already registered, skip agent-cli spawn but continue starting resident
+    // sub-agents and spawning the monitor-daemon (each spawn has its own duplicate check).
     let conductor_already_up = peer_already_registered(domain).await;
     if conductor_already_up {
         eprintln!(
@@ -992,9 +991,9 @@ async fn start_conductor(domain: &str) -> Result<()> {
         );
     }
 
-    // Phase 109 — conductor が既登録ならこのブロックをまるごと skip。
-    // 既存挙動の hestia_self だけは下流（mirror / monitor-daemon spawn）でも
-    // 必要なので block 外で resolve する。
+    // Phase 109 — If the conductor is already registered, skip this entire block.
+    // Only hestia_self from existing behavior is still needed downstream
+    // (mirror / monitor-daemon spawn), so resolve it outside the block.
     let hestia_self = std::env::current_exe()
         .unwrap_or_else(|_| PathBuf::from("hestia"));
     let log_path = workdir.join("agent.log");
@@ -1029,8 +1028,8 @@ async fn start_conductor(domain: &str) -> Result<()> {
             .map_err(|e| anyhow::anyhow!("failed to dup log file: {e}"))?;
 
         let config = load_hestia_config();
-        // Phase 115 — claude_cli_shim engine 時は --provider を claude に強制し、
-        // 非 claude モデル名は抑制する。
+        // Phase 115 — For claude_cli_shim engine, force --provider to claude and suppress
+        // non-claude model names.
         let provider = config
             .engine
             .filter_provider(config.agent_cli.provider_arg());
@@ -1062,7 +1061,7 @@ async fn start_conductor(domain: &str) -> Result<()> {
         for (k, v) in config.engine.subprocess_env() {
             cmd.env(k, v);
         }
-        // Phase 128 — config.toml の [concurrency] を子プロセス env に export
+        // Phase 128 — Export config.toml [concurrency] to child process env
         apply_concurrency_env(&mut cmd, &config.concurrency);
         let _child = cmd
             .current_dir(&workdir)
@@ -1086,9 +1085,9 @@ async fn start_conductor(domain: &str) -> Result<()> {
             .spawn()
             .map_err(|e| anyhow::anyhow!("failed to spawn mirror helper for {domain}: {e}"))?;
 
-        // Phase 84 — registry 登録確定まで待機（main conductor）。
-        // sub-agent spawn の前に conductor 自身が agent-cli registry に登録済である
-        // ことを保証する。タイムアウト時は warn のみで sub-agent spawn に進む。
+        // Phase 84 — Wait until registry registration is confirmed (main conductor).
+        // Ensure the conductor itself is registered in the agent-cli registry before
+        // spawning sub-agents. On timeout, only warn and proceed to sub-agent spawn.
         if !conductor_sdk::workspace::wait_for_registry(domain, 15_000) {
             eprintln!(
                 "[warn] conductor {domain} did not register within 15s — \
@@ -1101,8 +1100,8 @@ async fn start_conductor(domain: &str) -> Result<()> {
     // Phase 55 — launch resident sub-agents (planner / designer) for this
     // conductor. Failures are logged but not fatal: the conductor itself is
     // already up and Phase 54 design.v1 stubs gracefully fall back when a
-    // sub-agent isn't reachable. Phase 84 では `spawn_agent_cli` 内で
-    // `wait_for_registry` を呼び出し、起動完了を確認した上で次の peer に進む。
+    // sub-agent isn't reachable. In Phase 84, `wait_for_registry` is called inside
+    // `spawn_agent_cli` to confirm startup before proceeding to the next peer.
     if let Some((_, agents)) = RESIDENT_SUB_AGENTS.iter().find(|(d, _)| *d == domain) {
         for (persona_root, peer_name) in *agents {
             if let Err(e) = spawn_agent_cli(persona_root, peer_name).await {
@@ -1111,13 +1110,14 @@ async fn start_conductor(domain: &str) -> Result<()> {
         }
     }
 
-    // Phase 108 — ai conductor 起動時に稼働監視デーモンを子プロセスとして spawn。
-    // mirror helper と同じパターンで `hestia monitor-daemon` を background detach。
-    // ai conductor は LLM peer として独立稼働し、監視デーモンは別プロセスとして
-    // 30 秒周期で配下サブエージェント + 起動中 domain conductor の状態を polling し、
-    // 全停止 + タスク残存時のみ `agent-cli send` で再開指示を発行する。
+    // Phase 108 — Spawn the health monitor daemon as a child process when ai conductor starts.
+    // Same pattern as the mirror helper: `hestia monitor-daemon` in background detach.
+    // The ai conductor runs as an independent LLM peer, while the monitor daemon polls
+    // sub-agents and running domain conductors every 30 seconds in a separate process,
+    // issuing resume instructions via `agent-cli send` only when all have stopped with
+    // pending tasks remaining.
     //
-    // Phase 109 — `pgrep` で既存デーモンを確認し、走っていれば spawn を skip する。
+    // Phase 109 — Check for an existing daemon via `pgrep`; skip spawn if one is already running.
     if domain == "ai" {
         if monitor_daemon_already_running().await {
             eprintln!(
@@ -1180,26 +1180,26 @@ async fn wait_for_ai_readiness() -> Result<()> {
 }
 
 async fn start_all_conductors() -> Result<()> {
-    // Phase 93 起動モデル再設計:
-    // `hestia start` (引数なし) は ai-conductor のみ起動する。
-    // ai-conductor が人間指示を受信した時点で domain conductor (rtl/fpga/asic/...)
-    // を on-demand 起動する経路に統一（spawn_conductor_on_demand 経由）。
-    // 旧仕様の「全 9 conductor を並列起動」は廃止。手動起動が必要な場合は
-    // `hestia start <domain>` で個別 spawn 可能（fallback 経路）。
+    // Phase 93 startup model redesign:
+    // `hestia start` (no arguments) launches only ai-conductor.
+    // ai-conductor launches domain conductors (rtl/fpga/asic/...) on-demand when
+    // it receives human instructions (via spawn_conductor_on_demand).
+    // The old "start all 9 conductors in parallel" behavior is removed.
+    // Manual startup is available via `hestia start <domain>` (fallback path).
     start_conductor("ai").await?;
     wait_for_ai_readiness().await?;
 
     println!("ai-conductor started (Phase 93: ai-conductor only at startup)");
     println!(
-        "  → ai-conductor + ai-designer + ai-reviewer の 3 process が常駐起動"
+        "  -> 3 resident processes: ai-conductor + ai-designer + ai-reviewer"
     );
     println!(
-        "  → domain conductor (rtl/fpga/asic/pcb/hal/apps/debug/rag) は ai-conductor が"
+        "  -> domain conductors (rtl/fpga/asic/pcb/hal/apps/debug/rag) are launched"
     );
     println!(
-        "    dispatch 時に on-demand 起動 (Phase 93 起動モデル)"
+        "    on-demand by ai-conductor at dispatch time (Phase 93 startup model)"
     );
-    let _ = GROUP1_DOMAINS; // Phase 93: 起動時 spawn から除外、参照のみ保持
+    let _ = GROUP1_DOMAINS; // Phase 93: Excluded from startup spawn, kept for reference only
     println!(
         "[Phase 48] Activity logs: workspace agent.log captures only the agent-cli banner."
     );
@@ -1253,8 +1253,8 @@ async fn stop_all_conductors() -> Result<()> {
     Ok(())
 }
 
-/// (Phase 123 廃止) 旧 hardcode 配列 — `engine_kill_patterns(&cfg)` で
-/// engine 抽象化されたため未使用。テスト保護のため定数自体は残す。
+/// (Phase 123 abolished) Old hardcoded array — replaced by `engine_kill_patterns(&cfg)`
+/// with engine abstraction. The constant itself is kept for test protection.
 #[allow(dead_code)]
 const KILL_PATTERNS: &[&str] = &["agent-cli run", "hestia mirror", "hestia monitor-daemon"];
 
@@ -1293,18 +1293,17 @@ fn select_kill_targets(
 ///
 /// Implementation:
 /// 1. Run `pgrep -f <pattern>` for each entry returned by
-///    [`engine_kill_patterns`] (Phase 123: engine 抽象化、agent-cli /
-///    claude-cli-shim 双方を必ずカバー) and collect stdout. A pgrep failure
+///    [`engine_kill_patterns`] (Phase 123: engine abstraction, always covers both
+///    agent-cli and claude-cli-shim) and collect stdout. A pgrep failure
 ///    is logged as a warning but doesn't abort the overall command.
 /// 2. Compute the kill list with [`select_kill_targets`]: own PID excluded,
 ///    duplicates removed across patterns.
 /// 3. Send SIGKILL to each target via `libc::kill` and tally success / failure.
 ///    Per-PID failures (already exited, permission denied) are logged and
 ///    skipped — they don't fail the whole command.
-/// 4. (Phase 123) 300ms grace 後に [`prune_dead_peers`] で registry から
-///    dead エントリを掃除する。`hestia kill` で peer を SIGKILL したあとも
-///    `<engine> list` (= `hestia monitor` の表示根拠) に行が残り続ける
-///    不具合を解消するため。
+/// 4. (Phase 123) After 300ms grace, clean up dead entries from the registry via
+///    [`prune_dead_peers`]. This fixes the issue where `hestia kill` leaves entries
+///    in `<engine> list` (the data source for `hestia monitor`).
 async fn kill_all_processes(cfg: &HestiaConfig) -> Result<()> {
     let patterns = engine_kill_patterns(cfg);
     let mut outputs: Vec<(String, String)> = Vec::with_capacity(patterns.len());
@@ -1348,14 +1347,13 @@ async fn kill_all_processes(cfg: &HestiaConfig) -> Result<()> {
         println!("No matching hestia processes found.");
     } else {
         println!("Killed {ok} process(es) (failed: {ng}).");
-        // SIGKILL は非同期に届くため、registry 掃除前に短い grace を入れる
-        // (NFR-5: race condition 緩和)。
+        // SIGKILL arrives asynchronously, so insert a short grace before registry cleanup
+        // (NFR-5: race condition mitigation).
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
 
-    // Phase 123: 死 peer の registry エントリを削除し、`hestia monitor` 表示
-    // から消えるようにする。targets が 0 件でも前回 run の残骸を掃除できる
-    // ように常に呼ぶ。
+    // Phase 123: Remove dead peer registry entries so they disappear from `hestia monitor`.
+    // Always called, even when targets is 0, to clean up remnants from previous runs.
     let pruned = prune_dead_peers(cfg);
     if pruned > 0 {
         println!("Pruned {pruned} dead peer(s) from registry.");
@@ -1495,16 +1493,16 @@ async fn show_status(all: bool) -> Result<()> {
 /// Operational status of an agent, derived from its agent-cli structured log
 /// and registry membership. Displayed as a `STATUS` column by `hestia status`.
 ///
-/// Phase 110: `Think` ヴァリアントを追加し、`Waiting` の表示を `WAIT` に変更。
-/// `thinking` event を `Busy`（tool 実行中）と区別する。
+/// Phase 110: Added `Think` variant; changed `Waiting` display to `WAIT`.
+/// Distinguishes `thinking` events from `Busy` (tool execution).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AgentStatus {
     /// Agent is registered, last activity is a completed assistant reply.
     Idle,
     /// Agent log was modified within the busy window and the last event is
-    /// `tool_call` / `tool_result` (tool 実行中、Phase 110 で thinking と分離).
+    /// `tool_call` / `tool_result` (tool execution, separated from thinking in Phase 110).
     Busy,
-    /// (Phase 110) Last event is `thinking` and mtime is recent (思考中).
+    /// (Phase 110) Last event is `thinking` and mtime is recent (thinking).
     Think,
     /// Agent has accepted a user prompt but no assistant reply has appeared.
     Waiting,
@@ -1546,8 +1544,8 @@ struct StatusEvent {
 
 /// Pure status classifier — easy to unit-test without touching the filesystem.
 ///
-/// Phase 110: `thinking` event を `Think` に分岐、`tool_call` / `tool_result` のみ
-/// `Busy` を返すよう細分化。
+/// Phase 110: `thinking` events branch to `Think`, and only `tool_call` /
+/// `tool_result` events return `Busy` (finer-grained classification).
 fn derive_status_from_log(events: &[StatusEvent], mtime_age: Duration) -> AgentStatus {
     let Some(last) = events.last() else {
         return AgentStatus::Starting;
@@ -1574,9 +1572,9 @@ fn derive_status_from_log(events: &[StatusEvent], mtime_age: Duration) -> AgentS
 /// [`AgentStatus::Starting`] when the directory or jsonl is missing,
 /// [`AgentStatus::Unknown`] only for unexpected I/O errors.
 fn derive_agent_status(agent_id: &str, now: SystemTime) -> AgentStatus {
-    // Phase 121: agent_id prefix から engine 別 log dir を解決
-    // (agent-cli は `~/.local/share/agent-cli/logs/<id>/`、
-    //  claude_cli_shim は `~/.local/share/claude-cli-shim/logs/<id>/session.jsonl`)。
+    // Phase 121: Resolve engine-specific log dir from agent_id prefix
+    // (agent-cli uses `~/.local/share/agent-cli/logs/<id>/`,
+    //  claude_cli_shim uses `~/.local/share/claude-cli-shim/logs/<id>/session.jsonl`).
     let Some(log_dir) = agent_log_dir(agent_id) else {
         return AgentStatus::Unknown;
     };
@@ -1654,7 +1652,7 @@ fn collect_agent_statuses(stdout: &str, now: SystemTime) -> HashMap<String, Agen
     let mut out = HashMap::new();
     for line in stdout.lines().skip(1) {
         let id = line.split_whitespace().next().unwrap_or("");
-        // Phase 121: prefix 判定を engine 抽象化 (agent-cli + claude_cli_shim 両対応)
+        // Phase 121: Prefix detection abstracted for engines (agent-cli + claude_cli_shim)
         if is_engine_peer_id(id) && !out.contains_key(id) {
             let status = derive_agent_status(id, now);
             out.insert(id.to_string(), status);
@@ -1864,7 +1862,7 @@ async fn resolve_agent_log_path(domain: &str) -> Result<PathBuf> {
         )
     })?;
 
-    // Phase 121: agent_id prefix から engine 別 log dir を解決。
+    // Phase 121: Resolve engine-specific log dir from agent_id prefix.
     let log_dir = agent_log_dir(&agent_id)
         .ok_or_else(|| anyhow::anyhow!("could not resolve $HOME"))?;
     if !log_dir.exists() {
@@ -2020,7 +2018,7 @@ async fn mirror_agent_log(domain: &str) -> Result<()> {
                         }
                     }
                     "tool_call" => {
-                        // Phase 121: agent-cli は `name`、claude-cli-shim は `tool` field を使う
+                        // Phase 121: agent-cli uses `name`, claude-cli-shim uses `tool` field
                         let name = ev
                             .get("name")
                             .or_else(|| ev.get("tool"))
@@ -2043,7 +2041,7 @@ async fn mirror_agent_log(domain: &str) -> Result<()> {
                         let from = ev.get("from").and_then(|v| v.as_str()).unwrap_or("?");
                         let _ = writeln!(out, "[mirror][peer_prompt] from={}", from);
                     }
-                    // Phase 121: claude-cli-shim は peer_prompt の代わりに `user` kind を出す
+                    // Phase 121: claude-cli-shim emits `user` kind instead of peer_prompt
                     "user" => {
                         let snippet: String = ev
                             .get("text")
@@ -2075,18 +2073,18 @@ async fn mirror_agent_log(domain: &str) -> Result<()> {
 
 // ─── Phase 124: hestia upgrade ────────────────────────────────────────────
 
-/// Phase 124 — Source repo 解決優先順 (純関数)。
+/// Phase 124 — Source repo resolution priority (pure function).
 ///
-/// I/O フリーにするため `path_has_workspace` クロージャで existence check を
-/// 注入する。実環境では `|p| p.join(".hestia/tools/Cargo.toml").is_file()`。
+/// I/O-free by injecting existence checks via the `path_has_workspace` closure.
+/// In production: `|p| p.join(".hestia/tools/Cargo.toml").is_file()`.
 ///
-/// 解決順:
-///   1. `--source <PATH>` (validation: workspace check も走る)
+/// Resolution order:
+///   1. `--source <PATH>` (validation: workspace check also runs)
 ///   2. `$HESTIA_SOURCE_DIR`
 ///   3. `cwd`
 ///   4. `~/hestia`
 ///
-/// すべて該当なしなら hint 付きエラー文字列を返す。
+/// Returns a hint-annotated error string if none matches.
 pub(crate) fn resolve_source_path(
     arg_source: Option<&Path>,
     env_source: Option<&str>,
@@ -2124,10 +2122,10 @@ pub(crate) fn resolve_source_path(
     Err("hestia source repo not found.\n  Tried: --source / $HESTIA_SOURCE_DIR / cwd / ~/hestia\n  Hint: clone the repo to ~/hestia or pass --source <path>.".to_string())
 }
 
-/// Phase 130 — 全 binary install サマリの整形 (純関数)。
-/// Phase 124 の `format_install_summary` (単一 binary 用) を Phase 130 で本関数に置換。
-/// `installed` は実際に install された binary 名のリスト。`skipped` はビルド成果物が
-/// 存在せず skip された binary 名のリスト（部分ビルド失敗の可視化用）。
+/// Phase 130 — Format the install summary for all binaries (pure function).
+/// Replaces Phase 124's `format_install_summary` (single binary) with this function in Phase 130.
+/// `installed` is the list of actually installed binary names. `skipped` is the list of binary
+/// names whose build artifacts were missing (for visualizing partial build failures).
 pub(crate) fn format_install_summary_multi(
     source: &Path,
     release_dir: &Path,
@@ -2154,8 +2152,8 @@ pub(crate) fn format_install_summary_multi(
     out
 }
 
-/// Phase 124 — `git -C <source> pull --ff-only` を実行する。
-/// 失敗時は warning ログを出して継続 (NFR: ローカル変更があってもユーザを困らせない)。
+/// Phase 124 — Execute `git -C <source> pull --ff-only`.
+/// On failure, logs a warning and continues (NFR: don't block the user for local changes).
 async fn run_git_pull(source: &Path, verbose: bool) -> Result<()> {
     let stdout_cfg = if verbose { Stdio::inherit() } else { Stdio::piped() };
     let stderr_cfg = if verbose { Stdio::inherit() } else { Stdio::piped() };
@@ -2182,8 +2180,8 @@ async fn run_git_pull(source: &Path, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-/// Phase 130 — `hestia upgrade` で build + install 対象とする全 20 バイナリ。
-/// Makefile の BINARIES と同期維持。新 conductor / cli を追加した際は両方を更新する。
+/// Phase 130 — All 20 binaries to build + install with `hestia upgrade`.
+/// Must stay in sync with the BINARIES variable in Makefile. Update both when adding a new conductor / cli.
 pub(crate) const HESTIA_BINARIES: &[&str] = &[
     "hestia",
     "hestia-ai-conductor",
@@ -2207,11 +2205,11 @@ pub(crate) const HESTIA_BINARIES: &[&str] = &[
     "claude-cli-shim",
 ];
 
-/// Phase 130 — `cargo build --release` を `<source>/.hestia/tools` で実行（全 binary）。
+/// Phase 130 — Run `cargo build --release` in `<source>/.hestia/tools` (all binaries).
 ///
-/// Phase 124 の旧仕様 (`--bin hestia` 単体ビルド) を Phase 130 で全 binary 化。
-/// 理由: conductor / cli の挙動変更（例: Phase 129 alive cap）が反映されるためには
-/// 対応する binary を再ビルドする必要があり、`hestia` 単体ビルドでは不足。
+/// Replaces Phase 124's old spec (`--bin hestia` single binary build) with all-binaries in Phase 130.
+/// Reason: behavior changes in conductors / CLIs (e.g. Phase 129 alive cap) require
+/// rebuilding the corresponding binaries; building only `hestia` is insufficient.
 async fn run_cargo_build(source: &Path, verbose: bool) -> Result<()> {
     let workspace = source.join(".hestia/tools");
     let stdout_cfg = if verbose { Stdio::inherit() } else { Stdio::piped() };
@@ -2243,10 +2241,10 @@ async fn run_cargo_build(source: &Path, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-/// Phase 124 — built バイナリを install path に置換する。
+/// Phase 124 — Replace the binary at the install path with the built one.
 ///
-/// Phase 123 検証で「Text file busy」(現実行中バイナリの上書きエラー) が発生
-/// したため、まず `remove_file` → `copy` → `set_permissions` の順で確実に置換する。
+/// Phase 123 testing hit "Text file busy" (overwrite error on a running binary), so
+/// we use the sequence `remove_file` -> `copy` -> `set_permissions` for reliable replacement.
 fn install_binary(built: &Path, install: &Path) -> Result<()> {
     if !built.is_file() {
         bail!("built binary not found at {}", built.display());
@@ -2254,7 +2252,7 @@ fn install_binary(built: &Path, install: &Path) -> Result<()> {
     if let Some(parent) = install.parent() {
         std::fs::create_dir_all(parent).ok();
     }
-    let _ = std::fs::remove_file(install); // 不在 / 失敗は ok 扱い
+    let _ = std::fs::remove_file(install); // Missing / failure is ok
     std::fs::copy(built, install).map_err(|e| {
         anyhow::anyhow!(
             "failed to copy {} -> {}: {e}",
@@ -2271,7 +2269,7 @@ fn install_binary(built: &Path, install: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Phase 124 — install 後の binary から `--version` を取得する。
+/// Phase 124 — Get `--version` from the installed binary.
 async fn fetch_installed_version(install: &Path) -> Result<String> {
     let out = Command::new(install)
         .arg("--version")
@@ -2281,7 +2279,7 @@ async fn fetch_installed_version(install: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// Phase 124 / 130 — `--dry-run` で各ステップを表示するのみ (実コマンドは投入しない)。
+/// Phase 124 / 130 — `--dry-run` displays each step without executing commands.
 fn print_dry_run(source: &Path, install_dir: &Path, no_pull: bool) {
     if !no_pull {
         println!("$ git -C {} pull --ff-only", source.display());
@@ -2290,7 +2288,7 @@ fn print_dry_run(source: &Path, install_dir: &Path, no_pull: bool) {
     }
     let workspace = source.join(".hestia/tools");
     println!(
-        "$ (cd {} && cargo build --release)   # Phase 130: 全 binary",
+        "$ (cd {} && cargo build --release)   # Phase 130: all binaries",
         workspace.display()
     );
     let release_dir = workspace.join("target/release");
@@ -2302,7 +2300,7 @@ fn print_dry_run(source: &Path, install_dir: &Path, no_pull: bool) {
     println!("(dry-run: no commands were executed)");
 }
 
-/// Phase 124 — `hestia upgrade` の main handler。
+/// Phase 124 — Main handler for `hestia upgrade`.
 async fn run_upgrade(
     source: Option<PathBuf>,
     no_pull: bool,
@@ -2336,8 +2334,8 @@ async fn run_upgrade(
     }
     run_cargo_build(&resolved, verbose).await?;
 
-    // Phase 130 — 全 binary を install。リリースに無い binary（例: 部分ビルド失敗）は
-    // skip してログ出力のみ。`hestia` 自体は必須なので、不在ならエラー。
+    // Phase 130 — Install all binaries. Binaries not in the release (e.g. partial build failure)
+    // are skipped with log output only. `hestia` itself is required; error if missing.
     let mut installed: Vec<String> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
     for bin in HESTIA_BINARIES {
@@ -2397,19 +2395,19 @@ async fn tail_agent_log(domain: &str, path_only: bool) -> Result<()> {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Phase 115 — 親プロセス自身の env にも HESTIA_ENGINE_BINARY を export し、
-    // conductor-sdk の wait_for_registry / agent_cli_peer_alive / agent_cli_send 等が
-    // 正しい engine を呼ぶようにする (subprocess_env() は子プロセスにのみ env を渡すため、
-    // 親プロセス内から conductor-sdk を呼んだ場合の fallback "agent-cli" を防ぐ目的)。
-    // hestia ai run 経由で spawn される hestia-ai-cli にも env が伝搬する。
+    // Phase 115 — Export HESTIA_ENGINE_BINARY to the parent process env as well,
+    // so that conductor-sdk's wait_for_registry / agent_cli_peer_alive / agent_cli_send etc.
+    // call the correct engine (subprocess_env() only passes env to child processes,
+    // so without this, calling conductor-sdk from the parent process would fall back to "agent-cli").
+    // The env also propagates to hestia-ai-cli spawned via hestia ai run.
     let cfg = load_hestia_config();
     std::env::set_var("HESTIA_ENGINE_BINARY", cfg.engine.binary_name());
 
     match cli.command {
         Commands::Init => init_hestia_dir()?,
         Commands::Start { domain } => {
-            // Phase 123: 起動前に死 peer registry を掃除し、`hestia monitor` の
-            // 表示が前回 run の残骸を引きずらないようにする。
+            // Phase 123: Clean up dead peer registry entries before startup so `hestia monitor`
+            // doesn't display remnants from the previous run.
             let pruned = prune_dead_peers(&cfg);
             if pruned > 0 {
                 println!("Pruned {pruned} dead peer(s) before start.");
@@ -2471,7 +2469,7 @@ mod tests {
     const HEADER: &str =
         "ID                                NAME       PROVIDER  MODEL          ROLE             SKILLS\n";
     const ROW_LONG: &str =
-        "agent-01KQX72WJY3Z59RN77YXB9Z02P  ai         ollama    glm-5.1:cloud  Hestia メタ      指示テキスト解析, DAG 構築\n";
+        "agent-01KQX72WJY3Z59RN77YXB9Z02P  ai         ollama    glm-5.1:cloud  Hestia meta      instruction parsing, DAG construction\n";
     const ROW_NO_SKILLS: &str =
         "agent-01KQX72WT3DY2GKWSDDXA9QK0K  ai-review  ollama    glm-5.1:cloud  AI reviewer      \n";
 
@@ -2490,11 +2488,11 @@ mod tests {
         ]);
         let out = transform_status_listing(&input, false, &map);
         assert!(!out.contains("SKILLS"), "SKILLS header dropped");
-        assert!(!out.contains("DAG 構築"), "SKILLS payload dropped");
+        assert!(!out.contains("DAG construction"), "SKILLS payload dropped");
         assert!(out.contains("STATUS"), "STATUS header inserted");
         assert!(out.contains("BUSY"), "BUSY status row visible");
         assert!(out.contains("IDLE"), "IDLE status row visible");
-        assert!(out.contains("Hestia メタ"), "ROLE value retained");
+        assert!(out.contains("Hestia meta"), "ROLE value retained");
         assert!(out.ends_with('\n'), "trailing newline preserved");
     }
 
@@ -2507,7 +2505,7 @@ mod tests {
         )]);
         let out = transform_status_listing(&input, true, &map);
         assert!(out.contains("SKILLS"), "SKILLS header kept");
-        assert!(out.contains("DAG 構築"), "SKILLS payload kept");
+        assert!(out.contains("DAG construction"), "SKILLS payload kept");
         assert!(out.contains("STATUS"), "STATUS still inserted");
         assert!(out.contains("IDLE"));
     }
@@ -2585,7 +2583,7 @@ mod tests {
 
     #[test]
     fn derive_busy_when_recent_tool_call() {
-        // Phase 110: tool_call は引き続き Busy。
+        // Phase 110: tool_call still maps to Busy.
         let events = vec![ev("user", None), ev("thinking", None), ev("tool_call", None)];
         assert_eq!(
             derive_status_from_log(&events, Duration::from_secs(5)),
@@ -2595,7 +2593,7 @@ mod tests {
 
     #[test]
     fn derive_think_when_recent_thinking() {
-        // Phase 110: 末尾が thinking かつ mtime recent なら Think.
+        // Phase 110: If the last event is thinking and mtime is recent, return Think.
         let events = vec![ev("user", None), ev("thinking", None)];
         assert_eq!(
             derive_status_from_log(&events, Duration::from_secs(5)),
@@ -2614,7 +2612,7 @@ mod tests {
 
     #[test]
     fn derive_think_overrides_old_assistant_with_recent_thinking() {
-        // Phase 110: mtime recent + 末尾 thinking → Think (旧テストでは Busy だった).
+        // Phase 110: mtime recent + thinking at end -> Think (was Busy in old tests).
         let events = vec![
             ev("assistant", None),
             ev("user", None),
@@ -2628,7 +2626,7 @@ mod tests {
 
     #[test]
     fn agent_status_as_str_uses_wait_and_think_phase110() {
-        // Phase 110: Waiting の表記は WAIT / Think は THINK / 他は据え置き。
+        // Phase 110: Waiting displays as WAIT, Think as THINK, others unchanged.
         assert_eq!(AgentStatus::Idle.as_str(), "IDLE");
         assert_eq!(AgentStatus::Busy.as_str(), "BUSY");
         assert_eq!(AgentStatus::Think.as_str(), "THINK");
@@ -2728,8 +2726,8 @@ agent-CCC                       ai-reviewer  ollama    glm-5.1:cloud  reviewer
 
     #[test]
     fn registered_peer_names_dedups_repeated_names() {
-        // Phase 109 で防止すべき状態の入力（同名 peer が複数登録）。
-        // 集合化することで重複は 1 件に収束する。
+        // Phase 109: Input state that should be prevented (same peer name registered multiple times).
+        // Collecting into a set collapses duplicates to a single entry.
         let input = "\
 ID                              NAME         PROVIDER  MODEL          ROLE
 agent-AAA                       ai-reviewer  ollama    glm-5.1:cloud  reviewer
@@ -2756,7 +2754,7 @@ agent-BBB                       ai-designer  ollama    glm-5.1:cloud  designer
 
     #[test]
     fn registered_peer_names_handles_skills_column() {
-        // SKILLS 列があっても NAME (2 列目) のみ拾うので影響なし。
+        // Even with a SKILLS column, only NAME (2nd column) is picked, so no impact.
         let input = "\
 ID                              NAME         PROVIDER  MODEL          ROLE             SKILLS
 agent-AAA                       ai-reviewer  ollama    glm-5.1:cloud  reviewer         a, b, c
@@ -2766,7 +2764,7 @@ agent-AAA                       ai-reviewer  ollama    glm-5.1:cloud  reviewer  
         assert!(got.contains("ai-reviewer"));
     }
 
-    // ─── Phase 121: engine 抽象化ヘルパ ────────────────────────────────
+    // ─── Phase 121: engine abstraction helpers ────────────────────────────────
 
     #[test]
     fn is_engine_peer_id_accepts_agent_cli_prefix() {
@@ -2819,7 +2817,7 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
         assert!(got.contains("ai-designer"));
     }
 
-    // ─── Phase 123: hestia kill 残留 / hestia start cleanup ─────────────
+    // ─── Phase 123: hestia kill residuals / hestia start cleanup ─────────────
 
     fn cfg_with_engine(t: &str) -> HestiaConfig {
         let mut cfg = HestiaConfig::default();
@@ -2840,15 +2838,15 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
 
     #[test]
     fn is_pid_alive_returns_false_for_zero() {
-        // pid=0 は libc 上「全プロセスへ送信」になるため defensive に false。
+        // pid=0 has "send to all processes" semantics in libc, so defensively return false.
         assert!(!is_pid_alive(0));
     }
 
     #[test]
     fn is_pid_alive_returns_false_for_unlikely_max_pid() {
-        // u32::MAX は実存しない pid 想定。万が一 alive でもテスト環境依存の
-        // 偶然なので skip 扱いで問題ない (CI で再現性を確保できる程度には
-        // u32::MAX が割り当てられないことを前提とする一般的な assumption)。
+        // u32::MAX is a hypothetical non-existent PID. Even if it happens to be alive,
+        // it's a test-environment coincidence, so treating it as skipped is fine
+        // (general assumption that u32::MAX won't be allocated in CI).
         assert!(!is_pid_alive(u32::MAX));
     }
 
@@ -2880,7 +2878,7 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
             (PathBuf::from("/tmp/c.json"), 301u32), // odd  → dead
             (PathBuf::from("/tmp/d.json"), 400u32), // even → alive
         ];
-        // 偶数 pid を alive とみなすクロージャ → 301 のみ dead 扱い。
+        // Closure that treats even PIDs as alive -> only 301 is treated as dead.
         let dead = classify_registry_entries(&entries, |pid| pid % 2 == 0);
         assert_eq!(dead.len(), 1);
         assert_eq!(dead[0], PathBuf::from("/tmp/c.json"));
@@ -2917,7 +2915,7 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
 
     // ─── Phase 124: hestia upgrade ──────────────────────────────────────
 
-    /// 「該当 path を hestia repo とみなす」mock 用クロージャを生成する。
+    /// Generate a mock closure that "treats the given path as a hestia repo".
     fn workspace_at(allowed: &[&str]) -> impl Fn(&Path) -> bool {
         let owned: Vec<PathBuf> = allowed.iter().map(PathBuf::from).collect();
         move |p: &Path| owned.iter().any(|a| a.as_path() == p)
@@ -3007,18 +3005,18 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
         assert!(err.contains("/tmp/nonexistent"));
     }
 
-    // ─── Phase 130: hestia upgrade の全 binary install ──────────────────
+    // ─── Phase 130: hestia upgrade full binary install ──────────────────
 
     #[test]
     fn hestia_binaries_list_includes_required_components() {
-        // 主要 binary が漏れていないことを確認。
+        // Verify that major binaries are not missing.
         assert!(HESTIA_BINARIES.contains(&"hestia"));
         assert!(HESTIA_BINARIES.contains(&"hestia-ai-conductor"));
         assert!(HESTIA_BINARIES.contains(&"hestia-rtl-conductor"));
         assert!(HESTIA_BINARIES.contains(&"hestia-apps-conductor"));
         assert!(HESTIA_BINARIES.contains(&"hestia-ai-cli"));
         assert!(HESTIA_BINARIES.contains(&"claude-cli-shim"));
-        // Makefile の BINARIES と件数一致 (20 binary)。
+        // Must match BINARIES count in Makefile (20 binaries).
         assert_eq!(HESTIA_BINARIES.len(), 20);
     }
 
@@ -3039,7 +3037,7 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
         assert!(summary.contains("Release:   /home/u/hestia/.hestia/tools/target/release"));
         assert!(summary.contains("Installed: 2 binaries → /home/u/.local/bin"));
         assert!(summary.contains("Version:   hestia 0.1.5-21-g1fe669f"));
-        // skipped が空なら Skipped 行は出ない。
+        // If skipped is empty, the Skipped line is not output.
         assert!(!summary.contains("Skipped:"));
     }
 
@@ -3054,7 +3052,7 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
 
     #[test]
     fn cap_prefix_for_returns_none_for_two_segments() {
-        // 2 segment は単一インスタンス想定（cap 対象外）
+        // 2 segments are assumed to be single-instance (not subject to cap)
         assert_eq!(cap_prefix_for("ai-designer"), None);
         assert_eq!(cap_prefix_for("ai-reviewer"), None);
         assert_eq!(cap_prefix_for("pcb-layout"), None);
@@ -3064,7 +3062,7 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
 
     #[test]
     fn cap_prefix_for_returns_prefix_for_three_segments() {
-        // 3 segment 以上は <conductor>-<role>- を cap prefix として返す
+        // 3 or more segments: return <conductor>-<role>- as the cap prefix
         assert_eq!(
             cap_prefix_for("rtl-coder-axi_interconnect"),
             Some("rtl-coder-".to_string())
@@ -3081,7 +3079,7 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
 
     #[test]
     fn cap_prefix_for_handles_module_with_hyphens() {
-        // splitn(3) で 3 segment 目以降は連結される（module 名にハイフン含可）
+        // splitn(3) concatenates the 3rd segment onward (module names may contain hyphens)
         assert_eq!(
             cap_prefix_for("rtl-coder-multi-word-module"),
             Some("rtl-coder-".to_string())
@@ -3095,7 +3093,7 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
     #[test]
     fn cap_prefix_for_empty_returns_none() {
         assert_eq!(cap_prefix_for(""), None);
-        // 空 segment（先頭 / 末尾 / 連続ハイフン）は無効
+        // Empty segments (leading / trailing / consecutive hyphens) are invalid
         assert_eq!(cap_prefix_for("-coder-foo"), None);
         assert_eq!(cap_prefix_for("rtl--foo"), None);
     }
@@ -3118,7 +3116,7 @@ shim-bbbb-2222                             ai-designer  claude    claude-opus-4-
         assert!(summary.contains("claude-cli-shim"));
     }
 
-    // ─── Phase 128: [concurrency] config.toml 連携 ────────────────────────
+    // ─── Phase 128: [concurrency] config.toml integration ────────────────────────
 
     #[test]
     fn concurrency_config_parses_from_toml() {
@@ -3152,7 +3150,7 @@ backend = "ollama"
 
     #[test]
     fn apply_concurrency_env_sets_envs_on_command() {
-        // 親 env を一旦すべて削除（テスト分離。serial 実行が前提）。
+        // Remove all parent env vars first (test isolation; serial execution assumed).
         std::env::remove_var("HESTIA_GLOBAL_MAX_AGENTS");
         std::env::remove_var("HESTIA_AI_DISPATCH_MAX");
         std::env::remove_var("HESTIA_PER_CONDUCTOR_MAX");
@@ -3187,7 +3185,7 @@ backend = "ollama"
         let cfg = ConcurrencyConfig {
             global_max: Some(3),
             ai_conductor_dispatch_max: None,
-            per_conductor_max: Some(1),  // 親 env=8 が優先される (set されない)
+            per_conductor_max: Some(1),  // Parent env=8 takes precedence (not set)
             acquire_timeout_secs: None,
         };
         let mut cmd = std::process::Command::new("true");
@@ -3199,9 +3197,9 @@ backend = "ollama"
                 v.map(|val| (k.to_string_lossy().into_owned(), val.to_string_lossy().into_owned()))
             })
             .collect();
-        // 親 env がある HESTIA_PER_CONDUCTOR_MAX は Command に追加されない (継承される)
+        // HESTIA_PER_CONDUCTOR_MAX with parent env is not added to Command (inherited)
         assert!(envs.get("HESTIA_PER_CONDUCTOR_MAX").is_none());
-        // 親 env が無い HESTIA_GLOBAL_MAX_AGENTS は config.toml 値が適用される
+        // HESTIA_GLOBAL_MAX_AGENTS without parent env gets the config.toml value applied
         assert_eq!(envs.get("HESTIA_GLOBAL_MAX_AGENTS").map(String::as_str), Some("3"));
 
         std::env::remove_var("HESTIA_PER_CONDUCTOR_MAX");
@@ -3214,7 +3212,7 @@ backend = "ollama"
         std::env::remove_var("HESTIA_PER_CONDUCTOR_MAX");
         std::env::remove_var("HESTIA_ACQUIRE_TIMEOUT_SECS");
 
-        let cfg = ConcurrencyConfig::default(); // 全 None
+        let cfg = ConcurrencyConfig::default(); // All None
         let mut cmd = std::process::Command::new("true");
         apply_concurrency_env(&mut cmd, &cfg);
 

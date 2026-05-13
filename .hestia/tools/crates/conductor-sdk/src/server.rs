@@ -1,6 +1,6 @@
-//! Conductor サーバー側トランスポート
+//! Conductor server-side transport
 //!
-//! agent-cli レジストリへの登録・Unix ソケットリスナー・メッセージ受信ループ
+//! Registration to agent-cli registry, Unix socket listener, and message receive loop
 
 use crate::agent::ConductorId;
 use crate::error::HestiaError;
@@ -10,16 +10,16 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
 use tokio::signal;
 
-/// メッセージハンドラトレイト
+/// Message handler trait
 ///
-/// 各 Conductor はこのトレイトを実装して、CLI からの要求を処理する。
+/// Each Conductor implements this trait to handle requests from the CLI.
 #[async_trait::async_trait]
 pub trait MessageHandler: Send + Sync {
-    /// 構造化リクエストを処理し、応答を返す
+    /// Process a structured request and return a response
     async fn handle_request(&self, request: Request) -> Response;
 }
 
-/// agent-cli レジストリエントリ
+/// agent-cli registry entry
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RegistryEntry {
     pub id: String,
@@ -32,7 +32,7 @@ pub struct RegistryEntry {
     pub persona: PersonaInfo,
 }
 
-/// ペルソナ情報
+/// Persona information
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PersonaInfo {
     pub role: String,
@@ -41,7 +41,7 @@ pub struct PersonaInfo {
     pub source_path: Option<String>,
 }
 
-/// ペルソナファイルの YAML frontmatter
+/// Persona file YAML frontmatter
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct PersonaFrontmatter {
     name: Option<String>,
@@ -52,7 +52,7 @@ struct PersonaFrontmatter {
     description: Option<String>,
 }
 
-/// ペルソナファイルを読み込む
+/// Load persona file
 fn load_persona(domain: &str) -> Option<(PersonaFrontmatter, PathBuf)> {
     let persona_path = PathBuf::from(format!(".hestia/personas/{domain}.md"));
     if !persona_path.exists() {
@@ -69,9 +69,9 @@ fn load_persona(domain: &str) -> Option<(PersonaFrontmatter, PathBuf)> {
     Some((frontmatter, persona_path))
 }
 
-/// Conductor サーバー
+/// Conductor server
 ///
-/// agent-cli レジストリに自身を登録し、Unix ソケットでメッセージを待ち受ける。
+/// Registers itself with the agent-cli registry and listens for messages on a Unix socket.
 pub struct ConductorServer {
     conductor_id: ConductorId,
     registry_dir: PathBuf,
@@ -82,7 +82,7 @@ pub struct ConductorServer {
 }
 
 impl ConductorServer {
-    /// 新しい ConductorServer を作成する
+    /// Create a new ConductorServer
     pub fn new(conductor_id: ConductorId, handler: Box<dyn MessageHandler>) -> Result<Self, HestiaError> {
         let registry_dir = std::env::var("XDG_RUNTIME_DIR")
             .map(|d| PathBuf::from(d).join("agent-cli"))
@@ -100,22 +100,22 @@ impl ConductorServer {
         })
     }
 
-    /// レジストリディレクトリをカスタマイズ
+    /// Customize registry directory
     pub fn with_registry_dir(mut self, dir: PathBuf) -> Self {
         self.registry_dir = dir;
         self
     }
 
-    /// プロバイダーとモデルを設定
+    /// Set provider and model
     pub fn with_provider(mut self, provider: &str, model: &str) -> Self {
         self.provider = provider.to_string();
         self.model = model.to_string();
         self
     }
 
-    /// サーバーを起動し、メッセージ待受ループに入る
+    /// Start the server and enter the message receive loop
     pub async fn run(self) -> Result<(), HestiaError> {
-        // レジストリディレクトリを作成
+        // Create registry directory
         std::fs::create_dir_all(&self.registry_dir).map_err(|e| {
             HestiaError::Transport(format!("failed to create registry dir: {e}"))
         })?;
@@ -123,24 +123,24 @@ impl ConductorServer {
         let socket_path = self.registry_dir.join(format!("{}.sock", self.agent_id));
         let json_path = self.registry_dir.join(format!("{}.json", self.agent_id));
 
-        // 既存のソケットがあれば削除
+        // Remove existing socket if present
         if socket_path.exists() {
             std::fs::remove_file(&socket_path)?;
         }
 
-        // Unix ソケットリスナーを作成
+        // Create Unix socket listener
         let listener = UnixListener::bind(&socket_path).map_err(|e| {
             HestiaError::Transport(format!("failed to bind socket {}: {e}", socket_path.display()))
         })?;
 
-        // ソケットのパーミッションを 0600 に設定
+        // Set socket permissions to 0600
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))?;
         }
 
-        // ペルソナファイルから情報を読み込み
+        // Read information from persona file
         let domain = self.conductor_id.peer_name();
         let (persona_info, _persona_source_path) = match load_persona(domain) {
             Some((fm, path)) => {
@@ -166,7 +166,7 @@ impl ConductorServer {
             ),
         };
 
-        // レジストリエントリを書き込み
+        // Write registry entry
         let entry = RegistryEntry {
             id: self.agent_id.clone(),
             name: domain.to_string(),
@@ -189,7 +189,7 @@ impl ConductorServer {
             socket_path.display()
         );
 
-        // グレースフルシャットダウンのためのクリーンアップを設定
+        // Set up cleanup for graceful shutdown
         let reg_dir = self.registry_dir.clone();
         let aid = self.agent_id.clone();
         let cleanup = move || {
@@ -199,7 +199,7 @@ impl ConductorServer {
             let _ = std::fs::remove_file(&jp);
         };
 
-        // メッセージ受信ループ
+        // Message receive loop
         tracing::info!("{} conductor ready, listening for messages", domain);
 
         let conductor_name = domain.to_string();
@@ -227,12 +227,12 @@ impl ConductorServer {
         }
     }
 
-    /// 個別の接続を処理する
+    /// Handle an individual connection
     ///
-    /// 受信メッセージは agent-cli の `IpcMessage::Prompt` 互換ラッパー
-    /// `{"kind":"prompt","from":"...","text":"..."}` を期待する。`text` の中身が
-    /// JSON オブジェクトであれば hestia の `Request` としてデコードしハンドラへ、
-    /// それ以外なら自然言語として LLM 経路に流す。
+    /// Expects incoming messages in agent-cli's `IpcMessage::Prompt` compatible wrapper
+    /// `{"kind":"prompt","from":"...","text":"..."}`. If the `text` content is a JSON object,
+    /// decode it as hestia's `Request` and pass it to the handler; otherwise, route it
+    /// as natural language to the LLM path.
     async fn handle_connection(
         mut stream: tokio::net::UnixStream,
         handler: &Box<dyn MessageHandler>,
@@ -244,7 +244,7 @@ impl ConductorServer {
                 let raw = String::from_utf8_lossy(&buf[..n]);
                 let raw_str = raw.trim();
 
-                // agent-cli wire format から `text` を抽出。失敗時は raw を text とみなす。
+                // Extract `text` from agent-cli wire format. On failure, treat raw as text.
                 let inner = Self::extract_text(raw_str);
                 let inner_trim = inner.trim();
 
@@ -276,7 +276,7 @@ impl ConductorServer {
                         }
                     }
                 } else {
-                    // 自然言語メッセージ — agent-cli send で LLM にルーティング
+                    // Natural language message — routed to LLM via agent-cli send
                     let llm_response = Self::forward_to_llm(conductor_name, inner_trim).await;
                     let response = match llm_response {
                         Some(resp) => serde_json::json!({
@@ -299,10 +299,10 @@ impl ConductorServer {
         }
     }
 
-    /// agent-cli wire format から `text` フィールドを取り出す。
+    /// Extract the `text` field from agent-cli wire format.
     ///
-    /// 入力が `{"kind":"prompt","from":"...","text":"..."}` 形式なら `text` を返し、
-    /// それ以外（旧フォーマット、純粋な自然言語、JSON 直接送信）なら入力をそのまま返す。
+    /// If the input is in `{"kind":"prompt","from":"...","text":"..."}` format, return `text`;
+    /// otherwise (legacy format, pure natural language, direct JSON send), return the input as-is.
     fn extract_text(raw: &str) -> String {
         if !raw.trim_start().starts_with('{') {
             return raw.to_string();
@@ -321,7 +321,7 @@ impl ConductorServer {
         }
     }
 
-    /// 自然言語メッセージを engine binary 経由で LLM に転送する（Phase 113）。
+    /// Forward natural language messages to LLM via engine binary (Phase 113).
     async fn forward_to_llm(conductor_name: &str, text: &str) -> Option<String> {
         let bin = crate::workspace::engine_binary();
         let output = tokio::process::Command::new(&bin)
@@ -354,11 +354,11 @@ impl Drop for ConductorServer {
     }
 }
 
-/// デフォルトのメッセージハンドラ
+/// Default message handler
 ///
-/// メソッド名に基づいてディスパッチする汎用ハンドラ。
-/// 各 conductor は `add_method` でメソッドを登録するか、
-/// 独自の `MessageHandler` を実装して渡すことができる。
+/// Generic handler that dispatches based on method name.
+/// Each conductor can register methods with `add_method` or provide its own
+/// `MessageHandler` implementation.
 pub struct DefaultHandler {
     conductor_id: ConductorId,
     methods: std::collections::HashMap<String, Box<dyn Fn(serde_json::Value) -> serde_json::Value + Send + Sync>>,
@@ -372,7 +372,7 @@ impl DefaultHandler {
         }
     }
 
-    /// メソッドハンドラを登録する
+    /// Register a method handler
     pub fn add_method<F>(&mut self, method: &str, handler: F)
     where
         F: Fn(serde_json::Value) -> serde_json::Value + Send + Sync + 'static,
@@ -394,7 +394,7 @@ impl MessageHandler for DefaultHandler {
                 trace_id: request.trace_id,
             })
         } else {
-            // メソッドが見つからない場合、ドメイン内の共通応答を返す
+            // When method is not found, return a common response within the domain
             let method = &request.method;
             if method.starts_with(domain) || method.starts_with(&format!("{domain}.")) {
                 Response::Success(SuccessResponse {

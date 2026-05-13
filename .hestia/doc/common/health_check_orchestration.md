@@ -1,57 +1,57 @@
-# ヘルスチェックオーケストレーション
+# Health Check Orchestration
 
-**対象領域**: common — 運用監視
-**ソース**: 設計仕様書 §3.3.2
+**Domain**: common — Operational Monitoring
+**Source**: Design Specification §3.3.2
 
-## 概要
+## Overview
 
-ai-conductor の `health-checker` が全 conductor の生存・正常性を定期ポーリングし、ConductorStatus を集約管理する。異常検出時は自動再起動を試み、回復不能な場合は人間（フロントエンド通知）にエスカレーションする。
+ai-conductor's `health-checker` periodically polls all conductors for liveness and health, centrally managing ConductorStatus. On anomaly detection, it attempts automatic restart and escalates to a human (frontend notification) if recovery is impossible.
 
-## ポーリング仕様
+## Polling Specification
 
-| パラメータ | 既定値 | 設定場所 |
+| Parameter | Default | Configuration Location |
 |----------|-------|---------|
-| ポーリング間隔 | 30 秒 | `[health] interval_secs` |
-| 応答タイムアウト | 3 秒 | `[health] timeout_secs` |
-| 自動再起動上限 | 3 回 | `[health] max_retries` |
+| Polling interval | 30 seconds | `[health] interval_secs` |
+| Response timeout | 3 seconds | `[health] timeout_secs` |
+| Auto-restart limit | 3 times | `[health] max_retries` |
 
 ## ConductorStatus
 
-| 状態 | 意味 | 遷移条件 |
+| State | Meaning | Transition Condition |
 |------|------|---------|
-| `Online` | 正常稼働中 | 3 秒以内に `"online"` 応答 |
-| `Offline` | 停止中 | タイムアウト（3 秒）|
-| `Degraded` | 劣化状態（一部機能制限） | `"degraded"` 応答 |
-| `Upgrading` | アップグレード中 | `"upgrading"` 応答 |
+| `Online` | Healthy and running | `"online"` response within 3 seconds |
+| `Offline` | Stopped | Timeout (3 seconds)|
+| `Degraded` | Degraded (partial feature restrictions) | `"degraded"` response |
+| `Upgrading` | Upgrading | `"upgrading"` response |
 
-## ヘルスチェックフロー
+## Health Check Flow
 
 ```
 ai-conductor::health-checker (tokio interval task)
-    │
-    │ 30 秒間隔
-    │
-    ▼
+    |
+    | 30-second interval
+    |
+    v
 For each peer in [rtl, fpga, asic, pcb, hal, apps, debug, rag]:
-    │
-    │ agent-cli send <peer> '{"method":"system.health.v1","id":"hc_<ts>"}'
-    │
-    ▼
-応答パターン → ConductorStatus 更新:
-    - 3 秒以内に "online" 応答   → Online
-    - タイムアウト (3 秒)         → Offline
-    - "degraded" 応答             → Degraded
-    - "upgrading" 応答            → Upgrading
-    │
-    ▼
-状態変化時アクション:
-    - Online → Offline / Degraded → Observability log + 自動再起動 (max 3)
-    - 連続 3 回失敗              → フロントエンド通知
-    - Upgrading → Online         → upgrade-manager に成功通知
-    - 任意                       → 状態履歴を sled に永続化
+    |
+    | agent-cli send <peer> '{"method":"system.health.v1","id":"hc_<ts>"}'
+    |
+    v
+Response pattern -> ConductorStatus update:
+    - "online" response within 3 sec -> Online
+    - Timeout (3 sec)                -> Offline
+    - "degraded" response            -> Degraded
+    - "upgrading" response            -> Upgrading
+    |
+    v
+Action on state change:
+    - Online -> Offline / Degraded -> Observability log + auto restart (max 3)
+    - 3 consecutive failures        -> Frontend notification
+    - Upgrading -> Online           -> Success notification to upgrade-manager
+    - Any                          -> Persist state history to sled
 ```
 
-## 応答仕様（system.health.v1）
+## Response Specification (system.health.v1)
 
 ```json
 // Request
@@ -76,20 +76,20 @@ For each peer in [rtl, fpga, asic, pcb, hal, apps, debug, rag]:
 }
 ```
 
-## 設定例
+## Configuration Example
 
 ```toml
 [health]
-cmd = "vivado -version || true"   # ローカル実行モードでの簡易確認
-interval_secs = 30                # ポーリング間隔
-timeout_secs = 3                  # 応答タイムアウト
-max_retries = 3                   # 連続リトライ回数
-escalate_on_fail = true           # 連続失敗時にフロントエンドへ通知
-restart_on_fail = true            # 自動再起動試行
+cmd = "vivado -version || true"   # Quick verification command in local execution mode
+interval_secs = 30                # Polling interval
+timeout_secs = 3                  # Response timeout
+max_retries = 3                   # Consecutive retry count
+escalate_on_fail = true           # Notify frontend on consecutive failures
+restart_on_fail = true            # Automatic restart attempt
 ```
 
-## 関連ドキュメント
+## Related Documents
 
-- [conductor_startup.md](conductor_startup.md) — デーモン起動順序
+- [conductor_startup.md](conductor_startup.md) — Daemon startup order
 - [update_mechanism.md](update_mechanism.md) — UpgradeManager
-- [observability.md](observability.md) — 監視・メトリクス
+- [observability.md](observability.md) — Monitoring and metrics

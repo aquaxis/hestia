@@ -1,12 +1,12 @@
-//! FPGA Conductor メッセージハンドラ
+//! FPGA Conductor message handler
 //!
-//! FPGA ドメイン固有のメソッドをディスパッチする。
+//! Dispatches domain-specific methods for the FPGA domain.
 
 use conductor_sdk::message::{ErrorResultResponse, Request, Response, SuccessResponse};
 use conductor_sdk::server::MessageHandler;
 use conductor_sdk::error::ErrorResponse;
 
-/// FPGA Conductor メッセージハンドラ
+/// FPGA Conductor message handler
 pub struct FpgaHandler;
 
 #[async_trait::async_trait]
@@ -79,8 +79,8 @@ impl FpgaHandler {
         }))
     }
 
-    /// Phase 55c — `fpga.design.v1`: handler が直接 fpga-designer へ送信し、
-    /// `expected_artifacts` を ai-conductor に提示する fire-and-forget dispatch モデル。
+    /// Phase 55c — `fpga.design.v1`: Handler sends directly to fpga-designer and
+    /// presents `expected_artifacts` to ai-conductor (fire-and-forget dispatch model).
     async fn handle_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let instruction = params.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
         let target = params.get("target").and_then(|v| v.as_str()).unwrap_or("artix7");
@@ -91,7 +91,7 @@ impl FpgaHandler {
             format!("fpga/{target}.part"),
             "fpga/scripts/build.tcl".to_string(),
         ];
-        // Phase 84f — strict mode: designer 不在時は fallback ではなく halt
+        // Phase 84f — strict mode: halt instead of fallback when designer is absent
         if !designer_alive && conductor_sdk::workspace::strict_subagent_enabled() {
             return Ok(serde_json::json!({
                 "status": "subagent_unavailable",
@@ -103,7 +103,7 @@ impl FpgaHandler {
                 "expected_artifacts": expected_artifacts,
                 "instruction": instruction,
                 "target": target,
-                "note": "HESTIA_STRICT_SUBAGENT=1: fpga-designer が registry 不在のため halt。`hestia start` ログ確認 + `agent-cli list` で resident sub-agent 登録状態を調査してください。",
+                "note": "HESTIA_STRICT_SUBAGENT=1: fpga-designer is not in the registry, halting. Check `hestia start` logs and `agent-cli list` for resident sub-agent registration status.",
             }));
         }
         if designer_alive {
@@ -125,7 +125,7 @@ impl FpgaHandler {
                 "designer_alive": true,
                 "dispatched": dispatched,
                 "expected_artifacts": expected_artifacts,
-                "next_action": "ai-conductor は designer の fs_write 完了後に fpga.build を実行。",
+                "next_action": "ai-conductor should run fpga.build after the designer's fs_write completes.",
                 "instruction": instruction,
                 "target": target,
                 "tcl_path_rule": "Phase 47 absolute path required",
@@ -142,13 +142,13 @@ impl FpgaHandler {
                 "instruction": instruction,
                 "target": target,
                 "tcl_path_rule": "Phase 47 absolute path required",
-                "note": "fpga-designer が agent-cli registry に不在のため移行期間動作にフォールバック。ai-conductor が暫定で fs_write してください。",
+                "note": "fpga-designer is not in the agent-cli registry; falling back to transition behavior. ai-conductor should provisionally fs_write instead.",
             }))
         }
     }
 
-    /// Phase 65 — `fpga.dispatch_targets.v1`: target ごとに fpga-synthesizer-{target} +
-    /// fpga-implementer-{target} を動的並列起動。設計 §5.x の target 並列ビルドフローを実装。
+    /// Phase 65 — `fpga.dispatch_targets.v1`: Dynamically spawn fpga-synthesizer-{target} +
+    /// fpga-implementer-{target} per target in parallel. Implements design §5.x target parallel build flow.
     async fn handle_dispatch_targets(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let targets: Vec<String> = params.get("targets")
             .and_then(|v| v.as_array())
@@ -181,7 +181,7 @@ impl FpgaHandler {
                 }
             }
         }
-        // Phase 80: dispatch 完了後に ai-reviewer auto-spawn
+        // Phase 80: Auto-spawn ai-reviewer after dispatch completes
         let auto_review_dispatched = conductor_sdk::workspace::auto_review_after_dispatch(
             "fpga", "fpga.dispatch_targets.v1", spawned.len(),
         );

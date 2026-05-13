@@ -1,11 +1,11 @@
 //! Agent lifecycle management (spawn / stop / list)
 //!
-//! サブエージェントを agent-cli プロセスとして生成・管理する。
+//! Spawns and manages sub-agents as agent-cli processes.
 //!
-//! Phase 126 — グローバル並列度 cap を hardcode 16 から
-//! `ConductorLimiter` ベースの timeout 付き Semaphore へ移行。reviewer
-//! 系 agent には予約 slot を 1 つ常に確保し、auto-spawn reviewer が
-//! cap 超過下でも起動できるようにする。
+//! Phase 126 — Migrated global parallelism cap from hardcoded 16 to
+//! `ConductorLimiter`-based Semaphore with timeout. One slot is always
+//! reserved for reviewer agents so that auto-spawned reviewers can
+//! start even when the cap is exceeded.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -49,11 +49,11 @@ pub struct AgentInfo {
     pub status: AgentStatus,
     pub conductor_id: String,
     pub started_at: chrono::DateTime<chrono::Utc>,
-    /// agent-cli プロセスの PID（起動後設定）
+    /// PID of the agent-cli process (set after startup)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
-    /// Phase 126 — グローバル cap を保持する Semaphore permit。
-    /// stop / drop で release され、別 spawn が進めるようになる。
+    /// Phase 126 — Semaphore permit holding the global cap.
+    /// Released on stop/drop, allowing another spawn to proceed.
     #[serde(skip)]
     pub permit: Option<OwnedSemaphorePermit>,
 }
@@ -62,32 +62,32 @@ pub struct AgentInfo {
 #[derive(Debug)]
 pub struct AgentManager {
     agents: HashMap<String, AgentInfo>,
-    /// 一般 spawn 用 limiter（global_max - 1）
+    /// General spawn limiter (global_max - 1)
     limiter: ConductorLimiter,
-    /// reviewer 用に予約された slot（capacity 1）
+    /// Slot reserved for reviewers (capacity 1)
     reviewer_slot: Arc<Semaphore>,
 }
 
-/// デフォルトのアイドルタイムアウト（秒）
+/// Default idle timeout in seconds
 const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 300;
 
-/// 既定のグローバル cap（env 未設定時）
+/// Default global cap (when env var is not set)
 const DEFAULT_GLOBAL_MAX: usize = 8;
 
-/// 既定の acquire timeout（秒）
+/// Default acquire timeout in seconds
 const DEFAULT_ACQUIRE_TIMEOUT_SECS: u64 = 600;
 
 impl AgentManager {
-    /// 互換用: env 駆動の既定値で構築。
-    /// - `HESTIA_GLOBAL_MAX_AGENTS` (既定 8)
-    /// - `HESTIA_ACQUIRE_TIMEOUT_SECS` (既定 600)
+    /// Compatibility constructor: builds with env-driven defaults.
+    /// - `HESTIA_GLOBAL_MAX_AGENTS` (default 8)
+    /// - `HESTIA_ACQUIRE_TIMEOUT_SECS` (default 600)
     pub fn new() -> Self {
         Self::with_default_cap()
     }
 
-    /// 明示 cap で構築。global_max のうち 1 を reviewer 専用に予約する。
+    /// Build with explicit caps. Reserves 1 of global_max for reviewer use.
     pub fn with_caps(global_max: usize, timeout_secs: u64) -> Self {
-        // global_max のうち最低 1 は一般用に確保
+        // At least 1 of global_max is reserved for general use
         let general = global_max.saturating_sub(1).max(1);
         Self {
             agents: HashMap::new(),
@@ -96,7 +96,7 @@ impl AgentManager {
         }
     }
 
-    /// env 駆動で構築。
+    /// Build with env-driven configuration.
     pub fn with_default_cap() -> Self {
         let global = std::env::var("HESTIA_GLOBAL_MAX_AGENTS")
             .ok()
@@ -109,14 +109,14 @@ impl AgentManager {
         Self::with_caps(global, to)
     }
 
-    /// agent-cli run でサブエージェントをプロセスとして起動する
+    /// Spawn a sub-agent as a process via agent-cli run
     pub async fn spawn(&mut self, agent_id: String, conductor_id: String) -> Result<(), String> {
         if self.agents.contains_key(&agent_id) {
             return Err(format!("agent {agent_id} already exists"));
         }
 
-        // Phase 126 — reviewer は予約 slot を最初に試行し、塞がっていれば
-        // 一般 limiter にフォールバック。
+        // Phase 126 — Reviewers try the reserved slot first; if it is occupied,
+        // they fall back to the general limiter.
         let permit = if Self::is_reviewer(&agent_id) {
             match self.reviewer_slot.clone().try_acquire_owned() {
                 Ok(p) => {
@@ -145,7 +145,7 @@ impl AgentManager {
         let workdir = PathBuf::from(format!(".hestia/workspaces/{agent_id}"));
 
         if !persona_path.exists() {
-            // permit は drop で自動 release される
+            // permit is automatically released on drop
             return Err(format!("persona file not found: {}", persona_path.display()));
         }
 
@@ -185,7 +185,7 @@ impl AgentManager {
         Ok(())
     }
 
-    /// 同期版 spawn（テスト互換用）。permit を取得しない簡易スタブ。
+    /// Synchronous spawn (test compatibility). Stub that does not acquire a permit.
     pub fn spawn_sync(&mut self, agent_id: String, conductor_id: String) -> Result<(), String> {
         if self.agents.contains_key(&agent_id) {
             return Err(format!("agent {agent_id} already exists"));
@@ -222,12 +222,12 @@ impl AgentManager {
         }
 
         info.status = AgentStatus::Stopped;
-        // permit を明示 drop して slot を解放
+        // Explicitly drop the permit to release the slot
         info.permit.take();
         Ok(())
     }
 
-    /// 同期版 stop
+    /// Synchronous stop
     pub fn stop_sync(&mut self, agent_id: &str) -> Result<(), String> {
         let info = self
             .agents
@@ -252,17 +252,17 @@ impl AgentManager {
         DEFAULT_IDLE_TIMEOUT_SECS
     }
 
-    /// 一般 limiter の現在空き slot 数。
+    /// Current number of available slots in the general limiter.
     pub fn available(&self) -> usize {
         self.limiter.available()
     }
 
-    /// 一般 limiter の cap。
+    /// Capacity of the general limiter.
     pub fn capacity(&self) -> usize {
         self.limiter.capacity()
     }
 
-    /// reviewer 判定（peer 名 / persona 名どちらかに "reviewer" を含む）
+    /// Check if agent is a reviewer (peer name or persona name contains "reviewer")
     fn is_reviewer(agent_id: &str) -> bool {
         agent_id.contains("reviewer")
     }
@@ -302,10 +302,10 @@ mod tests {
 
     #[test]
     fn with_caps_reserves_one_for_reviewer() {
-        // global_max=2 なので一般 limiter は 1
+        // global_max=2 so general limiter is 1
         let mgr = AgentManager::with_caps(2, 60);
         assert_eq!(mgr.capacity(), 1);
-        // reviewer 予約 slot は別途 1 確保される
+        // Reviewer reserved slot is separately allocated as 1
         assert_eq!(mgr.reviewer_slot.available_permits(), 1);
     }
 

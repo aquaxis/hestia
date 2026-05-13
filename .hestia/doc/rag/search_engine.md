@@ -1,27 +1,27 @@
-# rag-conductor 検索エンジン仕様
+# rag-conductor Search Engine Specification
 
-**対象 Conductor**: rag-conductor
-**ソース**: 設計仕様書 §13.7.5（3296-3305行目付近）
+**Target Conductor**: rag-conductor
+**Source**: Design Specification §13.7.5 (around lines 3296-3305)
 
-## RPC / CLI / メトリクス
+## RPC / CLI / Metrics
 
-### 主要 RPC
+### Primary RPCs
 
-| RPC | パラメータ | 説明 |
-|-----|----------|------|
-| `rag.ingest` | source_type / file_path / url / source_id / all / force / incremental | ドキュメント取り込み |
-| `rag.search` | query / top_k / filter / trace_id | ベクトル類似検索 |
-| `rag.cleanup` | — | 古いインデックスのクリーンアップ |
-| `rag.status` | — | インデックス状況・メトリクス |
+| RPC | Parameters | Description |
+|-----|-----------|-------------|
+| `rag.ingest` | source_type / file_path / url / source_id / all / force / incremental | Document ingestion |
+| `rag.search` | query / top_k / filter / trace_id | Vector similarity search |
+| `rag.cleanup` | — | Old index cleanup |
+| `rag.status` | — | Index status and metrics |
 
-### 自己学習 RPC（§13.7.8）
+### Self-learning RPCs (§13.7.8)
 
-| RPC | パラメータ | 説明 |
-|-----|----------|------|
-| `rag.ingest_work.v1` | category / conductor / content / metadata | conductor 作業内容蓄積 |
-| `rag.search_similar.v1` | query / top_k | 類似タスク検索 |
-| `rag.search_bugfix.v1` | query / top_k | エラー修正事例検索 |
-| `rag.search_design.v1` | query / top_k | 過去設計パラメータ検索 |
+| RPC | Parameters | Description |
+|-----|-----------|-------------|
+| `rag.ingest_work.v1` | category / conductor / content / metadata | Conductor work content accumulation |
+| `rag.search_similar.v1` | query / top_k | Similar task search |
+| `rag.search_bugfix.v1` | query / top_k | Error fix case search |
+| `rag.search_design.v1` | query / top_k | Past design parameter search |
 
 ### CLI
 
@@ -32,28 +32,28 @@ hestia rag cleanup
 hestia rag status
 ```
 
-### MCP ツール
+### MCP Tool
 
-`hestia_rag_search` — Model Context Protocol 経由で外部ツールが RAG 検索を利用可能。
+`hestia_rag_search` — External tools can use RAG search via Model Context Protocol.
 
-## ベクトル検索仕様
+## Vector Search Specification
 
-### 埋め込みモデル
+### Embedding Model
 
-| 項目 | 値 |
-|------|---|
-| モデル | `nomic-embed-text` |
-| 次元数 | 768 |
-| 実行環境 | Ollama（ローカル、プライバシー保護） |
+| Item | Value |
+|------|-------|
+| Model | `nomic-embed-text` |
+| Dimensions | 768 |
+| Runtime | Ollama (local, privacy-protected) |
 
-### 検索フロー
+### Search Flow
 
 ```
-1. クエリテキスト → 埋め込み生成（Ollama nomic-embed-text）
-2. ベクトル DB（Chroma / Qdrant）で類似度検索（cosine similarity）
-3. top-k 件の関連チャンクを取得
-4. citation 生成（ソース・ページ番号・信頼度）
-5. 結果返却（chunks + citations + メトリクス）
+1. Query text → Embedding generation (Ollama nomic-embed-text)
+2. Similarity search in vector DB (Chroma / Qdrant) (cosine similarity)
+3. Retrieve top-k related chunks
+4. Citation generation (source, page number, confidence)
+5. Return results (chunks + citations + metrics)
 ```
 
 ### TypeScript I/F
@@ -74,9 +74,9 @@ interface RagResult {
 }
 ```
 
-### フィルタリング
+### Filtering
 
-検索時のフィルタ条件により、特定ソース種別・conductor 種別等で絞り込みが可能。
+Search filter conditions allow narrowing results by specific source types, conductor categories, etc.
 
 ```json
 {
@@ -87,34 +87,34 @@ interface RagResult {
 }
 ```
 
-## Prometheus メトリクス
+## Prometheus Metrics
 
-| メトリクス名 | 型 | 説明 |
-|-------------|---|------|
-| `ingest_duration` | Histogram | 取り込み所要時間 |
-| `docs_total` | Counter | 総ドキュメント数 |
-| `chunks_total` | Counter | 総チャンク数 |
-| `quarantine_total` | Counter | quarantine 保留数 |
-| `incremental_skipped` | Counter | 増分更新でのスキップ数 |
-| `license_violations` | Counter | ライセンス違反数 |
-| `cache_size` | Gauge | キャッシュサイズ |
-| `retrieval_seconds` | Histogram | 検索所要時間 |
-| `hit_ratio` | Gauge | 検索ヒット率 |
+| Metric Name | Type | Description |
+|-------------|------|-------------|
+| `ingest_duration` | Histogram | Ingestion duration |
+| `docs_total` | Counter | Total document count |
+| `chunks_total` | Counter | Total chunk count |
+| `quarantine_total` | Counter | Quarantine hold count |
+| `incremental_skipped` | Counter | Skipped count during incremental updates |
+| `license_violations` | Counter | License violation count |
+| `cache_size` | Gauge | Cache size |
+| `retrieval_seconds` | Histogram | Search duration |
+| `hit_ratio` | Gauge | Search hit rate |
 
-## サブエージェント
+## Sub-agents
 
-| サブエージェント | peer 名 | 役割 | 多重度 |
-|----------------|---------|------|-------|
-| planner | `rag-planner` | 取り込みプランニング | 1 |
-| designer | `rag-designer` | 知識ベース仕様 | 1 |
-| ingest | `rag-ingest-{source}` | ドキュメント取り込み | N（ソース並列） |
-| search | `rag-search` | ベクトル検索 + reranking | 1（高負荷時 N） |
-| quality_gate | `rag-quality` | 品質チェック | 1 |
-| archivist | `rag-archivist` | 自己学習用蓄積パイプライン管理 | 1（高負荷時 N） |
+| Sub-agent | Peer Name | Role | Multiplicity |
+|-----------|-----------|------|--------------|
+| planner | `rag-planner` | Ingestion planning | 1 |
+| designer | `rag-designer` | Knowledge base specification | 1 |
+| ingest | `rag-ingest-{source}` | Document ingestion | N (source-parallel) |
+| search | `rag-search` | Vector search + reranking | 1 (N under high load) |
+| quality_gate | `rag-quality` | Quality checks | 1 |
+| archivist | `rag-archivist` | Self-learning accumulation pipeline management | 1 (N under high load) |
 
-## 関連ドキュメント
+## Related Documentation
 
-- [rag/binary_spec.md](binary_spec.md) — hestia-rag-cli バイナリ仕様
-- [rag/ingest_pipeline.md](ingest_pipeline.md) — 取り込みパイプライン
-- [rag/state_machines.md](state_machines.md) — インデックス状態遷移
-- [rag/config_schema.md](config_schema.md) — config.toml [rag] スキーマ
+- [rag/binary_spec.md](binary_spec.md) — hestia-rag-cli binary specification
+- [rag/ingest_pipeline.md](ingest_pipeline.md) — Ingestion pipeline
+- [rag/state_machines.md](state_machines.md) — Index state transitions
+- [rag/config_schema.md](config_schema.md) — config.toml [rag] schema

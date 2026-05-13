@@ -1,79 +1,79 @@
-# debug-conductor メッセージメソッド一覧
+# debug-conductor Message Method List
 
-**対象 Conductor**: debug-conductor
-**ソース**: 設計仕様書 §10.4（2477-2493行目付近）, §14（3492-3630行目付近）
+**Target Conductor**: debug-conductor
+**Source**: Design Specification §10.4 (around lines 2477-2493), §14 (around lines 3492-3630)
 
-## トランスポート
+## Transport
 
-全通信は agent-cli ネイティブ IPC に統一。peer 名 `debug`。
+All communication is unified via agent-cli native IPC. Peer name: `debug`.
 
-## debug.* メソッド一覧
+## debug.* Method List
 
-### セッション管理
+### Session Management
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `debug.connect` | Request | ターゲットデバイスへ接続（JTAG / SWD） |
-| `debug.disconnect` | Request | ターゲットデバイスから切断 |
-| `debug.reset` | Request | ターゲットリセット（Hardware / Software / System） |
-| `debug.status` | Request | セッション状態取得 |
+| `debug.connect` | Request | Connect to target device (JTAG / SWD) |
+| `debug.disconnect` | Request | Disconnect from target device |
+| `debug.reset` | Request | Target reset (Hardware / Software / System) |
+| `debug.status` | Request | Get session status |
 
-### ブレークポイント
+### Breakpoints
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `debug.setBreakpoint` | Request | ブレークポイント設定（Source / Address / Symbol 3方式） |
-| `debug.removeBreakpoint` | Request | ブレークポイント削除 |
+| `debug.setBreakpoint` | Request | Set breakpoint (Source / Address / Symbol 3 modes) |
+| `debug.removeBreakpoint` | Request | Remove breakpoint |
 
-### 実行制御
+### Execution Control
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `debug.run` | Request | ターゲットプログラム実行 |
-| `debug.pause` | Request | 一時停止 |
-| `debug.stepOver` | Request | ステップオーバー実行 |
-| `debug.stepInto` | Request | ステップイン実行 |
+| `debug.run` | Request | Execute target program |
+| `debug.pause` | Request | Pause |
+| `debug.stepOver` | Request | Step over execution |
+| `debug.stepInto` | Request | Step into execution |
 
-### メモリアクセス
+### Memory Access
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `debug.readMemory` | Request | メモリ読み出し |
-| `debug.writeMemory` | Request | メモリ書き込み |
+| `debug.readMemory` | Request | Memory read |
+| `debug.writeMemory` | Request | Memory write |
 
-### キャプチャ
+### Capture
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `debug.startCapture` | Request | 波形キャプチャ開始 |
-| `debug.stopCapture` | Request | 波形キャプチャ停止 |
-| `debug.read_signals` | Request | 信号読み取り |
-| `debug.set_trigger` | Request | トリガ条件設定 |
+| `debug.startCapture` | Request | Start waveform capture |
+| `debug.stopCapture` | Request | Stop waveform capture |
+| `debug.read_signals` | Request | Read signals |
+| `debug.set_trigger` | Request | Set trigger condition |
 
-### プログラミング
+### Programming
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `debug.program` | Request | ファームウェア書込（SVF / JAM / probe-rs / OpenOCD） |
+| `debug.program` | Request | Firmware programming (SVF / JAM / probe-rs / OpenOCD) |
 
-### 通知
+### Notifications
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `debug.sessionStateChanged` | Notification | セッション状態変化通知 |
-| `debug.breakpointHit` | Notification | ブレークポイント到達通知 |
-| `debug.captureComplete` | Notification | キャプチャ完了通知 |
+| `debug.sessionStateChanged` | Notification | Session state change notification |
+| `debug.breakpointHit` | Notification | Breakpoint hit notification |
+| `debug.captureComplete` | Notification | Capture complete notification |
 
-## conductor-core 共通
+## conductor-core Common
 
-| メソッド | 方向 | 説明 |
+| Method | Direction | Description |
 |---------|------|------|
-| `system.health.v1` | Request | ヘルスチェック |
-| `system.readiness` | Request | 準備状態確認 |
+| `system.health.v1` | Request | Health check |
+| `system.readiness` | Request | Readiness check |
 
-## 関連ドキュメント
+## Related Documentation
 
-- [debug/binary_spec.md](binary_spec.md) — hestia-debug-cli バイナリ仕様
-- [debug/error_types.md](error_types.md) — debug-conductor エラーコード
-- [debug/debug_protocols.md](debug_protocols.md) — JTAG/SWD プロトコル
-- [debug/state_machines.md](state_machines.md) — セッション管理ステートマシン
+- [debug/binary_spec.md](binary_spec.md) — hestia-debug-cli binary specification
+- [debug/error_types.md](error_types.md) — debug-conductor error codes
+- [debug/debug_protocols.md](debug_protocols.md) — JTAG/SWD protocols
+- [debug/state_machines.md](state_machines.md) — Session management state machine

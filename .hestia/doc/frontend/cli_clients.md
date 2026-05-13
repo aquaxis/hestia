@@ -1,24 +1,24 @@
-# CLI 実行機能
+# CLI Execution
 
-**対象領域**: frontend — CLI クライアント
-**ソース**: 設計仕様書 §15
+**Target Domain**: frontend — CLI clients
+**Source**: Design Specification §15
 
-## 概要
+## Overview
 
-HESTIA は統合ランナー `hestia` と 9 個別 CLI で構成される 10 種類の Rust 製 CLI バイナリを提供する。フロントエンド（VSCode / Tauri IDE）なしでもフルフローを実行可能。
+HESTIA provides 10 Rust CLI binaries: the unified runner `hestia` and 9 individual CLIs. Full workflows can be executed without the frontend (VSCode / Tauri IDE).
 
-## CLI 構成
+## CLI Structure
 
-### 統合ランナー
+### Unified Runner
 
-| バイナリ | 主要サブコマンド |
-|---------|----------------|
+| Binary | Main Subcommands |
+|--------|-----------------|
 | `hestia` | `init` / `start [domain]` / `status` / `ai` / `rtl` / `fpga` / `asic` / `pcb` / `hal` / `apps` / `debug` / `rag` / `spec` |
 
-### 個別 CLI（9 種）
+### Individual CLIs (9 types)
 
-| バイナリ | 主要サブコマンド |
-|---------|----------------|
+| Binary | Main Subcommands |
+|--------|-----------------|
 | `hestia-ai-cli` | `exec` / `run --file` / `agent ls` / `container ls|start|stop|create` / `workflow run` / `review start` |
 | `hestia-rtl-cli` | `init` / `lint` / `simulate` / `formal` / `transpile` / `handoff` / `status` |
 | `hestia-fpga-cli` | `init` / `build` / `synthesize` / `implement` / `bitstream` / `simulate` / `program` / `report timing|resource` / `status` |
@@ -29,20 +29,20 @@ HESTIA は統合ランナー `hestia` と 9 個別 CLI で構成される 10 種
 | `hestia-debug-cli` | `create` / `connect` / `disconnect` / `program` / `capture start|stop` / `signals read` / `trigger set` / `reset` / `status` |
 | `hestia-rag-cli` | `ingest` / `search` / `cleanup` / `status` |
 
-## 共通オプション（CommonOpts）
+## Common Options (CommonOpts)
 
-| オプション | 説明 |
-|----------|------|
-| `--output (human|json)` | 出力形式 |
-| `--timeout` | タイムアウト |
-| `--registry` | agent-cli レジストリ（`$XDG_RUNTIME_DIR/agent-cli/`）|
-| `--config` | 設定ファイルパス |
-| `--verbose` | 詳細出力 |
+| Option | Description |
+|--------|-------------|
+| `--output (human|json)` | Output format |
+| `--timeout` | Timeout |
+| `--registry` | agent-cli registry (`$XDG_RUNTIME_DIR/agent-cli/`) |
+| `--config` | Configuration file path |
+| `--verbose` | Verbose output |
 
-## Exit Code
+## Exit Codes
 
-| Code | 意味 |
-|------|------|
+| Code | Meaning |
+|------|---------|
 | 0 | SUCCESS |
 | 1 | GENERAL_ERROR |
 | 2 | RPC_ERROR |
@@ -53,14 +53,14 @@ HESTIA は統合ランナー `hestia` と 9 個別 CLI で構成される 10 種
 | 7 | SOCKET_NOT_FOUND |
 | 8 | PERMISSION_DENIED |
 
-## CLI アーキテクチャ
+## CLI Architecture
 
-各 CLI は Rust 製クライアントバイナリ（`tokio` + `serde` + `clap`）で、対応する conductor の agent-cli peer に agent-cli ネイティブ IPC で接続する。共通実装は `conductor-sdk::transport` と `AgentCliClient` 仕様に整合する。
+Each CLI is a Rust client binary (`tokio` + `serde` + `clap`) that connects to the corresponding conductor's agent-cli peer via agent-cli native IPC. The shared implementation conforms to `conductor-sdk::transport` and the `AgentCliClient` specification.
 
-## 使用例
+## Usage Examples
 
 ```bash
-# 統合ランナー
+# Unified runner
 hestia init
 hestia start fpga
 hestia status
@@ -79,7 +79,7 @@ hestia asic pdk install sky130A
 hestia asic build --pdk sky130A
 
 # PCB
-hestia pcb build --board-name "センサーボード"
+hestia pcb build --board-name "Sensor Board"
 hestia pcb output gerber --output-dir ./gb
 
 # HAL
@@ -96,15 +96,15 @@ hestia debug capture start --session-id 1 --duration-ms 1000
 
 # RAG
 hestia rag ingest --source-id stm32_datasheet
-hestia rag search "STM32F103 SPI ピン配置" --top-k 5
+hestia rag search "STM32F103 SPI pinout" --top-k 5
 
 # AI
-hestia ai exec "Artix-7 で UART LED 制御回路を作って"
+hestia ai exec "Create a UART LED control circuit on Artix-7"
 hestia ai workflow run --workflow fpga-to-pcb-test-board
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [agent_cli_client.md](agent_cli_client.md) — agent-cli クライアント仕様
-- [cargo_workspace.md](../common/cargo_workspace.md) — ワークスペース構成
-- [installation.md](../common/installation.md) — ビルド手順
+- [agent_cli_client.md](agent_cli_client.md) — agent-cli client specification
+- [cargo_workspace.md](../common/cargo_workspace.md) — Workspace structure
+- [installation.md](../common/installation.md) — Build instructions

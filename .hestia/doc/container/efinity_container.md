@@ -1,29 +1,29 @@
-# Efinity コンテナ詳細
+# Efinity Container Details
 
-**対象領域**: container — FPGA ツールコンテナ
-**ソース**: 設計仕様書 §12.2
+**Domain**: container — FPGA Tool Container
+**Source**: Design Specification §12.2
 
-## 概要
+## Overview
 
-Efinix Efinity 2025.2 を実行するためのコンテナイメージ `fpga/efinity:2025.2`。Ubuntu 24.04 ベースで、Efinity 同梱の Python API を使用した合成・配置配線を実行する。
+Container image `fpga/efinity:2025.2` for running Efinix Efinity 2025.2. Ubuntu 24.04 based, using the bundled Efinity Python API for synthesis and place-and-route.
 
-## イメージ構成
+## Image Configuration
 
-| 項目 | 値 |
+| Item | Value |
 |------|-----|
-| イメージ名 | `fpga/efinity:2025.2` |
-| ベースイメージ | `docker.io/library/ubuntu:24.04` |
-| 主要ツール | Efinix Efinity 2025.2 |
-| ライセンス | Efinity 同梱 Python（独自ライセンス）|
-| ユーザー | `hestia` (UID 1000) |
+| Image name | `fpga/efinity:2025.2` |
+| Base image | `docker.io/library/ubuntu:24.04` |
+| Primary tool | Efinix Efinity 2025.2 |
+| License | Efinity bundled Python (proprietary license) |
+| User | `hestia` (UID 1000) |
 
-## 特記事項
+## Notable Points
 
-- 他の商用ツールと異なり Python API ベースで操作
-- Vivado / Quartus と異なり FlexLM は使用しない
-- Ubuntu ベース（UBI 9 ではない）
+- Operates via Python API, unlike other commercial tools
+- Does not use FlexLM, unlike Vivado / Quartus
+- Ubuntu based (not UBI 9)
 
-## 実行例
+## Execution Example
 
 ```bash
 podman run --rm \
@@ -35,8 +35,8 @@ podman run --rm \
   python3 -m efinity.flow run --project project.xml
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [container_manager.md](container_manager.md) — container-manager 全体
-- [vivado_container.md](vivado_container.md) — Vivado コンテナ
-- [oss_container.md](oss_container.md) — OSS FPGA コンテナ
+- [container_manager.md](container_manager.md) — container-manager overview
+- [vivado_container.md](vivado_container.md) — Vivado container
+- [oss_container.md](oss_container.md) — OSS FPGA container

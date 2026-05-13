@@ -1,96 +1,96 @@
-# ai-conductor 詳細設計 — メタオーケストレーター
+# ai-conductor Detailed Design — Meta-Orchestrator
 
-**対象領域**: ai-conductor（メタオーケストレーター）
-**ソース**: 設計仕様書 §3（745-1240行目）
-
----
-
-## 概要
-
-ai-conductor は HESTIA の最上位 conductor であり、フロントエンド（VSCode / Tauri / CLI）からの唯一の入口として機能する。配下の全 conductor（rtl / fpga / asic / pcb / hal / apps / debug / rag）を統括し、タスクの分解・振り分け、ヘルスチェック、スキル管理、コンテナ管理の4つの中核機能を提供する。
+**Scope**: ai-conductor (meta-orchestrator)
+**Source**: Design specification §3 (lines 745-1240)
 
 ---
 
-## 1. 4中核機能
+## Overview
 
-| 機能 | 役割 | 関連節 |
+ai-conductor is the top-level conductor in HESTIA, serving as the sole entry point from the frontend (VSCode / Tauri / CLI). It orchestrates all subordinate conductors (rtl / fpga / asic / pcb / hal / apps / debug / rag) and provides four core functions: task decomposition and routing, health checks, skill management, and container management.
+
+---
+
+## 1. Four Core Functions
+
+| Function | Role | Related Section |
 |------|------|--------|
-| **タスク分解・振り分け** | フロントエンドからの自然言語または構造化指示を理解し、タスクを分解して配下の適切な conductor に振り分ける | §3.3 task-router / §3.3.1 / §3.5 WorkflowEngine / §3.6 SpecDriven |
-| **ヘルスチェック** | 全 conductor を定期ポーリングし、Online / Offline / Degraded / Upgrading 状態を集約管理。異常時は自動再起動またはフロントエンドへエスカレーション | §3.1 ai-core/health_check.rs / §3.2 ConductorStatus / §3.3.2 |
-| **スキル管理** | SkillRegistry に専門スキル（HDL 生成、制約生成、テストベンチ生成等）をプラグイン登録し、配下 conductor の agent-cli persona に提供 | §3.1 skill-system/ / §3.7 |
-| **コンテナ管理** | `container.toml` 宣言に基づく Containerfile 自動生成・ビルド・差分更新・プロビジョニング・レジストリ管理（コンテナ実行を選択した場合のみ） | §3.1 container-manager/ / §3.8 / §12 |
+| **Task decomposition and routing** | Understands natural language or structured instructions from the frontend, decomposes tasks, and routes them to the appropriate subordinate conductor | §3.3 task-router / §3.3.1 / §3.5 WorkflowEngine / §3.6 SpecDriven |
+| **Health check** | Periodically polls all conductors, aggregating Online / Offline / Degraded / Upgrading states. Automatically restarts or escalates to the frontend on failure | §3.1 ai-core/health_check.rs / §3.2 ConductorStatus / §3.3.2 |
+| **Skill management** | Registers specialized skills (HDL generation, constraint generation, testbench generation, etc.) as plugins in SkillRegistry and provides them to subordinate conductor agent-cli personas | §3.1 skill-system/ / §3.7 |
+| **Container management** | Automatic Containerfile generation, build, differential update, provisioning, and registry management based on `container.toml` declarations (only when container execution is selected) | §3.1 container-manager/ / §3.8 / §12 |
 
-加えて補助機能として、持続可能アップグレード（§3.4 UpgradeManager）/ DAG ベースワークフロー（§3.5 WorkflowEngine）/ 仕様書駆動開発（§3.6 SpecDriven）/ LLM バックエンド切替（§20 agent-cli エンドポイント設定）を提供する。
+Additionally, auxiliary functions include sustainable upgrade (§3.4 UpgradeManager), DAG-based workflow (§3.5 WorkflowEngine), spec-driven development (§3.6 SpecDriven), and LLM backend switching (§20 agent-cli endpoint configuration).
 
 ---
 
-## 2. クレート構成
+## 2. Crate Structure
 
 ```
 ai-conductor/
 ├── Cargo.toml
 ├── crates/
-│   ├── ai-core/                    # ConductorManager、ヘルスチェック
+│   ├── ai-core/                    # ConductorManager, health check
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── conductor_manager.rs # 全 conductor ライフサイクル管理
-│   │       └── health_check.rs      # 定期的ヘルスチェック
-│   ├── conductor-client/           # agent-cli IPC クライアント
+│   │       ├── conductor_manager.rs # All conductor lifecycle management
+│   │       └── health_check.rs      # Periodic health check
+│   ├── conductor-client/           # agent-cli IPC client
 │   │   └── src/
 │   │       ├── lib.rs              # ConductorClient
-│   │       └── transport.rs        # Unix Socket トランスポート
-│   ├── upgrade-manager/            # 持続可能アップグレード管理
+│   │       └── transport.rs        # Unix Socket transport
+│   ├── upgrade-manager/            # Sustainable upgrade management
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── version_policy.rs   # セマンティックバージョニング
-│   │       ├── rollout.rs          # 段階的ロールアウト
-│   │       └── rollback.rs         # 自動ロールバック
-│   ├── workflow-engine/            # DAG ベースワークフローエンジン
+│   │       ├── version_policy.rs   # Semantic versioning
+│   │       ├── rollout.rs          # Gradual rollout
+│   │       └── rollback.rs        # Automatic rollback
+│   ├── workflow-engine/            # DAG-based workflow engine
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── dag.rs              # DAG 定義・実行
-│   │       └── pipeline.rs         # クロス conductor パイプライン
-│   ├── spec-driven/                # 仕様書駆動開発エンジン
+│   │       ├── dag.rs              # DAG definition and execution
+│   │       └── pipeline.rs        # Cross-conductor pipeline
+│   ├── spec-driven/                # Spec-driven development engine
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       └── parser.rs           # SpecParser → DesignSpec
-│   ├── skill-system/               # スキルプラグインシステム
+│   ├── skill-system/               # Skill plugin system
 │   │   └── src/
 │   │       ├── lib.rs              # SkillRegistry
-│   │       └── skill.rs            # Skill トレイト
-│   ├── multi-agent/                # 階層的エージェント管理
+│   │       └── skill.rs            # Skill trait
+│   ├── multi-agent/                # Hierarchical agent management
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── agent_manager.rs    # エージェント起動・停止・監視
-│   │       ├── message_broker.rs   # メッセージルーティング
-│   │       └── session.rs          # セッション管理
-│   ├── agent-communication/        # メッセージブローカー
+│   │       ├── agent_manager.rs    # Agent launch, stop, and monitoring
+│   │       ├── message_broker.rs   # Message routing
+│   │       └── session.rs          # Session management
+│   ├── agent-communication/        # Message broker
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── protocol.rs         # メッセージプロトコル定義
-│   │       └── message.rs          # AgentMessage フォーマット
-│   ├── agent-monitoring/           # リアルタイム監視
+│   │       ├── protocol.rs         # Message protocol definition
+│   │       └── message.rs          # AgentMessage format
+│   ├── agent-monitoring/           # Real-time monitoring
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── live_view.rs        # リアルタイム表示
-│   │       └── health_check.rs     # エージェントヘルスチェック
-│   └── container-manager/          # コンテナ管理
+│   │       ├── live_view.rs        # Real-time display
+│   │       └── health_check.rs     # Agent health check
+│   └── container-manager/          # Container management
 │       └── src/
 │           ├── lib.rs
-│           ├── builder.rs          # Containerfile 自動生成・ビルド
-│           ├── registry.rs         # コンテナイメージレジストリ
-│           ├── updater.rs          # イメージ差分更新
-│           ├── provisioner.rs      # ツールプロビジョニング
-│           └── tool_updater.rs     # ツールアップデート管理
-├── ai-cli/                         # Rust 製 CLI（hestia-ai-cli）
-└── conductor-sdk/                  # 共通 SDK（transport/message/agent/config/error）
+│           ├── builder.rs          # Containerfile auto-generation and build
+│           ├── registry.rs         # Container image registry
+│           ├── updater.rs          # Image differential update
+│           ├── provisioner.rs      # Tool provisioning
+│           └── tool_updater.rs      # Tool update management
+├── ai-cli/                         # Rust CLI (hestia-ai-cli)
+└── conductor-sdk/                  # Common SDK (transport/message/agent/config/error)
 ```
 
-**注**: 旧 `rag-engine` クレート（TypeScript + LangChain）と `rag-ingest` モジュール（Rust）は **rag-conductor**（独立 Conductor）に分離された。ai-conductor からは agent-cli IPC の `rag` peer に対して `rag.*` 構造化メッセージを送信して呼び出す。
+**Note**: The former `rag-engine` crate (TypeScript + LangChain) and `rag-ingest` module (Rust) have been **separated into rag-conductor** (independent Conductor). ai-conductor calls it by sending `rag.*` structured messages to the `rag` peer via agent-cli IPC.
 
 ---
 
-## 3. ConductorManager（MetaOrchestrator）
+## 3. ConductorManager (MetaOrchestrator)
 
 ```rust
 pub struct ConductorManager {
@@ -99,37 +99,37 @@ pub struct ConductorManager {
 }
 
 pub enum ConductorId {
-    Ai,          // agent-cli peer "ai"          (self / loopback ヘルスチェック用)
-    Rtl,         // agent-cli peer "rtl"         (RTL 上流)
+    Ai,          // agent-cli peer "ai"          (self / loopback for health check)
+    Rtl,         // agent-cli peer "rtl"         (RTL upstream)
     Fpga,        // agent-cli peer "fpga"
     Asic,        // agent-cli peer "asic"
     Pcb,         // agent-cli peer "pcb"
-    Hal,         // agent-cli peer "hal"          (HAL 生成)
-    Apps,        // agent-cli peer "apps"         (アプリ FW)
+    Hal,         // agent-cli peer "hal"          (HAL generation)
+    Apps,        // agent-cli peer "apps"         (application FW)
     Debug,       // agent-cli peer "debug"
-    Rag,         // agent-cli peer "rag"          (旧 ai-conductor::rag-engine から分離)
+    Rag,         // agent-cli peer "rag"          (separated from former ai-conductor::rag-engine)
 }
 
 pub enum ConductorStatus {
-    Online,     // 正常稼働中
-    Offline,    // 停止中
-    Degraded,   // 劣化状態（一部機能制限あり）
-    Upgrading,  // アップグレード中
+    Online,     // Running normally
+    Offline,    // Stopped
+    Degraded,   // Degraded state (some functionality restricted)
+    Upgrading,  // Upgrading
 }
 ```
 
 ---
 
-## 4. メタオーケストレーション機能
+## 4. Meta-Orchestration Functions
 
-ai-conductor 自身が agent-cli プロセス（peer 名 `ai`）として起動され、以下の機能を提供する。下流 conductor との通信は agent-cli ネイティブ IPC のみを使用する。
+ai-conductor itself is launched as an agent-cli process (peer name `ai`) and provides the following functions. Communication with downstream conductors uses agent-cli native IPC exclusively.
 
 ```
 ai-conductor (= agent-cli process / peer name "ai")
     │
-    ├── task-router ───── フロントエンド指示の理解・タスク分解・振り分け
-    ├── health-checker ── 全 conductor の定期ヘルスチェック
-    ├── conductor-router ─── 下流 conductor への agent-cli IPC ルーティング
+    ├── task-router ───── Understanding, decomposition, and routing of frontend instructions
+    ├── health-checker ── Periodic health checks for all conductors
+    ├── conductor-router ─── agent-cli IPC routing to downstream conductors
     │   ├── rtl-conductor         (peer "rtl")
     │   ├── fpga-conductor        (peer "fpga")
     │   ├── asic-conductor        (peer "asic")
@@ -138,22 +138,22 @@ ai-conductor (= agent-cli process / peer name "ai")
     │   ├── apps-conductor        (peer "apps")
     │   ├── debug-conductor       (peer "debug")
     │   └── rag-conductor         (peer "rag")
-    ├── conductor-startup ─── 起動順序オーケストレーション
-    │   ├── Group 0: ai-conductor（最高優先度、直列）
-    │   └── Group 1: rtl / fpga / asic / pcb / hal / apps / debug / rag（8 並列、ai readiness 後）
-    ├── upgrade-manager ─── 持続可能アップグレード
-    ├── workflow-engine ─── DAG ベースワークフロー
-    ├── spec-driven ─── 仕様書駆動開発
-    ├── skill-system ─── スキルプラグイン
-    ├── backend-switching ─── LLM バックエンド切替
-    └── container-manager ─── コンテナライフサイクル管理
+    ├── conductor-startup ─── Startup sequence orchestration
+    │   ├── Group 0: ai-conductor (highest priority, serial)
+    │   └── Group 1: rtl / fpga / asic / pcb / hal / apps / debug / rag (8 in parallel, after ai readiness)
+    ├── upgrade-manager ─── Sustainable upgrade
+    ├── workflow-engine ─── DAG-based workflow
+    ├── spec-driven ─── Spec-driven development
+    ├── skill-system ─── Skill plugin
+    ├── backend-switching ─── LLM backend switching
+    └── container-manager ─── Container lifecycle management
 ```
 
 ---
 
-## 5. タスク振り分けフロー
+## 5. Task Routing Flow
 
-フロントエンドから ai-conductor への指示は自然言語または構造化 JSON ペイロードとして受領される。`task-router` は agent-cli の LLM 推論を活用してタスクを分解し、依存関係を解析した上で配下 conductor へ dispatch する。
+Instructions from the frontend to ai-conductor are received as natural language or structured JSON payloads. `task-router` leverages agent-cli's LLM inference to decompose tasks, analyze dependencies, and dispatch them to subordinate conductors.
 
 ```
 [Frontend (VSCode/Tauri/CLI)]
@@ -162,54 +162,54 @@ ai-conductor (= agent-cli process / peer name "ai")
        ▼
 [ai-conductor: task-router]
        │
-       │ Step 1. 意図理解 (intent classification)
-       │    - 自然言語 → 設計タスク種別判定
-       │    - 構造化 JSON → method 名前空間で直接判定
+       │ Step 1. Intent understanding (intent classification)
+       │    - Natural language → design task type classification
+       │    - Structured JSON → direct classification via method namespace
        │
-       │ Step 2. タスク分解 (task decomposition)
-       │    - 単一 conductor で完結 → そのまま dispatch
-       │    - 複数 conductor 横断   → workflow-engine に委譲し DAG 化
-       │    - 仕様書ベース          → spec-driven で DesignSpec 生成 → DAG 化
+       │ Step 2. Task decomposition
+       │    - Single conductor completion → dispatch directly
+       │    - Cross-conductor → delegate to workflow-engine and DAG-ify
+       │    - Specification-based → generate DesignSpec via spec-driven → DAG-ify
        │
-       │ Step 3. 振り分け (routing via conductor-router)
-       │    - 適切な peer に agent-cli send <peer> <payload>
+       │ Step 3. Routing (via conductor-router)
+       │    - agent-cli send <peer> <payload> to appropriate peer
        │
        ▼
-[配下 conductor]
-       │ 結果応答（同じ trace_id で agent-cli send ai <result>）
+[Subordinate conductor]
+       │ Result response (agent-cli send ai <result> with same trace_id)
        ▼
-[ai-conductor: 結果集約 → フロントエンドへ通知]
+[ai-conductor: Result aggregation → notification to frontend]
 ```
 
-**タスク分解・振り分け例:**
+**Task Decomposition and Routing Examples:**
 
-| 入力例 | 分解後タスク | 振り分け先 |
+| Input example | Decomposed tasks | Routing target |
 |--------|-----------|----------|
-| "Vivado で artix7 用にビルドして" | `fpga.build.v1.start { target: "artix7" }` | fpga-conductor |
-| "RTL を lint して合成可能か確認して" | `rtl.lint.v1` → `rtl.handoff.v1 { target: "fpga" }` | rtl-conductor → fpga-conductor |
-| "FPGA プロトタイプから ASIC 化して GDSII まで作って" | DAG: `rtl.handoff` → `asic.synth` → ... → `asic.gdsii` | workflow-engine 経由 / 複数 conductor |
+| "Build with Vivado for artix7" | `fpga.build.v1.start { target: "artix7" }` | fpga-conductor |
+| "Lint RTL and check if synthesizable" | `rtl.lint.v1` → `rtl.handoff.v1 { target: "fpga" }` | rtl-conductor → fpga-conductor |
+| "Convert FPGA prototype to ASIC and generate GDSII" | DAG: `rtl.handoff` → `asic.synth` → ... → `asic.gdsii` | via workflow-engine / multiple conductors |
 | `{"method":"meta.dualBuild.v1", "params":{...}}` | DAG: `fpga.build` ‖ `asic.synth` → `meta.collect` | workflow-engine |
 
 ---
 
-## 6. ヘルスチェック機能
+## 6. Health Check Function
 
-`health-checker` は全 conductor の生存・正常性を定期的に確認し、ConductorManager の `ConductorStatus` を更新する。異常検出時は自動再起動を試み、回復不能な場合は upgrade-manager または人間（フロントエンド通知）にエスカレーションする。
+`health-checker` periodically confirms the liveness and health of all conductors and updates `ConductorStatus` in ConductorManager. On failure detection, it attempts automatic restart, and if unrecoverable, escalates to the upgrade-manager or humans (frontend notification).
 
-- **ポーリング間隔**: 既定 30 秒（`[health] interval_secs` で変更可）
-- **方式**: `agent-cli send <peer> '{"method":"system.health.v1","id":"hc_<ts>"}'`
-- **応答パターン**:
-  - 3 秒以内に "online" 応答 → Online
-  - タイムアウト (3 秒) → Offline
-  - "degraded" 応答 → Degraded
-  - "upgrading" 応答 → Upgrading
-- **状態変化時アクション**:
-  - Online → Offline / Degraded → 自動再起動試行 (max 3)
-  - 連続 3 回失敗 → フロントエンド通知
-  - Upgrading → Online → upgrade-manager に成功通知
-  - 任意 → 状態履歴を sled に永続化
+- **Polling interval**: Default 30 seconds (configurable via `[health] interval_secs`)
+- **Method**: `agent-cli send <peer> '{"method":"system.health.v1","id":"hc_<ts>"}'`
+- **Response patterns**:
+  - "online" response within 3 seconds → Online
+  - Timeout (3 seconds) → Offline
+  - "degraded" response → Degraded
+  - "upgrading" response → Upgrading
+- **Actions on state change**:
+  - Online → Offline / Degraded → Automatic restart attempt (max 3)
+  - 3 consecutive failures → Frontend notification
+  - Upgrading → Online → Notify upgrade-manager of success
+  - Any → Persist state history to sled
 
-**ヘルスチェック設定例（container.toml `[health]` セクション）:**
+**Health Check Configuration Example (`container.toml` `[health]` section):**
 
 ```toml
 [health]
@@ -223,130 +223,130 @@ restart_on_fail = true
 
 ---
 
-## 7. UpgradeManager 詳細
+## 7. UpgradeManager Details
 
-セマンティックバージョニングに基づく互換性評価・段階的ロールアウト・自動ロールバックを提供する。
+Provides compatibility assessment based on semantic versioning, gradual rollout, and automatic rollback.
 
-### 7.1 互換性判定
+### 7.1 Compatibility Assessment
 
-| バージョン変更 | 互換性 | 要求される戦略 |
+| Version change | Compatibility | Required strategy |
 |--------------|--------|-------------|
-| `1.0.0` → `1.1.0` | 互換 | Production 可 |
-| `1.0.0` → `1.0.1` | 互換 | Production 可 |
-| `1.0.0` → `2.0.0` | 非互換 | Canary または Staging 必須 |
+| `1.0.0` → `1.1.0` | Compatible | Production OK |
+| `1.0.0` → `1.0.1` | Compatible | Production OK |
+| `1.0.0` → `2.0.0` | Incompatible | Canary or Staging required |
 
-### 7.2 段階的ロールアウト戦略
+### 7.2 Gradual Rollout Strategy
 
-| 戦略 | 説明 | 使用場面 |
+| Strategy | Description | Use case |
 |------|------|---------|
-| `Canary` | 少数環境に先行展開 | メジャーバージョン変更時 |
-| `Staging` | ステージング環境で検証後に本番展開 | マイナーバージョン更新 |
-| `Production` | 本番環境に直接展開 | パッチリリース |
+| `Canary` | Deploy to a small number of environments first | Major version changes |
+| `Staging` | Deploy to production after staging environment verification | Minor version updates |
+| `Production` | Deploy directly to production | Patch releases |
 
-### 7.3 エージェントチェーン
+### 7.3 Agent Chain
 
 ```
 WatcherAgent → ProbeAgent → PatcherAgent → ValidatorAgent
 ```
 
-- **WatcherAgent**: ベンダーツールのリリースノートを監視・検知
-- **ProbeAgent**: リリースノートから変更内容を分析・影響評価
-- **PatcherAgent**: Anthropic SDK の Tool Use 機能を活用し、エージェントループ内でパッチを自動生成
-- **ValidatorAgent**: 生成されたパッチの検証を実施
+- **WatcherAgent**: Monitors and detects vendor tool release notes
+- **ProbeAgent**: Analyzes change content and assesses impact from release notes
+- **PatcherAgent**: Automatically generates patches using Anthropic SDK's Tool Use functionality within the agent loop
+- **ValidatorAgent**: Verifies generated patches
 
 ### 7.4 RollbackConfig
 
 ```rust
 pub struct RollbackConfig {
-    pub auto_rollback: bool,     // 自動ロールバック有効化
-    pub timeout_secs: u64,       // タイムアウト（デフォルト: 300秒）
-    pub max_retries: u32,        // 最大リトライ回数（デフォルト: 3回）
+    pub auto_rollback: bool,     // Enable automatic rollback
+    pub timeout_secs: u64,       // Timeout (default: 300 seconds)
+    pub max_retries: u32,        // Maximum retry count (default: 3)
 }
 ```
 
 ---
 
-## 8. WorkflowEngine 詳細
+## 8. WorkflowEngine Details
 
-DAG ベースのクロス conductor パイプラインエンジンである。カーンのアルゴリズムによるトポロジカルソートで実行順序を決定し、sled で状態を永続化する。
+A DAG-based cross-conductor pipeline engine. It determines execution order via topological sort using Kahn's algorithm and persists state in sled.
 
 ```rust
 pub struct WorkflowStep {
-    pub id: String,              // ステップ ID
-    pub name: String,            // ステップ名
-    pub conductor: String,       // 対象 conductor
-    pub method: String,          // 実行する agent-cli メッセージ method
-    pub params: Option<Value>,   // パラメータ
-    pub depends_on: Vec<String>, // 依存ステップ ID（DAG 構造）
-    pub status: StepStatus,      // 現在の状態
+    pub id: String,              // Step ID
+    pub name: String,            // Step name
+    pub conductor: String,       // Target conductor
+    pub method: String,          // agent-cli message method to execute
+    pub params: Option<Value>,   // Parameters
+    pub depends_on: Vec<String>, // Dependency step IDs (DAG structure)
+    pub status: StepStatus,      // Current status
 }
 ```
 
-**ダイヤモンド型依存関係の例:**
+**Diamond Dependency Example:**
 
 ```
-        [A: FPGA 合成]
+        [A: FPGA Synthesis]
        /              \
-[B: ASIC 合成]    [C: PCB 設計]
+[B: ASIC Synthesis]    [C: PCB Design]
        \              /
-        [D: 統合検証]
+        [D: Integration Verification]
 ```
 
 ---
 
-## 9. SpecDriven（仕様書駆動開発）詳細
+## 9. SpecDriven (Spec-Driven Development) Details
 
-自然言語仕様書から設計データを自動生成する。`REQ:` / `CON:` / `IF:` プレフィックスで要件・制約・インターフェースを自動解析する。
+Automatically generates design data from natural language specifications. Automatically analyzes requirements, constraints, and interfaces using `REQ:` / `CON:` / `IF:` prefixes.
 
 ```rust
 pub struct SpecParser;
 
 impl SpecParser {
     pub fn parse(spec_text: &str) -> Result<DesignSpec, SpecError> {
-        // REQ: で始まる行 → 要件
-        // CON: で始まる行 → 制約
-        // IF:  で始まる行 → インターフェース定義
-        // 必須要件が1件以上なければエラー
+        // Lines starting with REQ: → requirements
+        // Lines starting with CON: → constraints
+        // Lines starting with IF:  → interface definitions
+        // Error if no mandatory requirements exist
     }
 }
 ```
 
-**フロー**: `仕様書（自然言語）→ SpecParser → DesignSpec → AI 生成エンジン → HDL / 制約 / テストベンチ`
+**Flow**: `Specification (natural language) → SpecParser → DesignSpec → AI generation engine → HDL / constraints / testbench`
 
-公開 method: `ai.spec.init` / `ai.spec.update` / `ai.spec.review`
+Public methods: `ai.spec.init` / `ai.spec.update` / `ai.spec.review`
 
 ---
 
-## 10. SkillSystem（スキルプラグイン）詳細
+## 10. SkillSystem (Skill Plugin) Details
 
-SkillRegistry に専門スキルを登録し、AI エージェント（agent-cli プロセス）が呼び出す。スキルは agent-cli のペルソナファイル（YAML+Markdown）と組み合わせて conductor ごとのメインエージェント・サブエージェントの能力を定義する。
+Registers specialized skills in SkillRegistry for AI agents (agent-cli processes) to invoke. Skills are combined with agent-cli persona files (YAML+Markdown) to define the capabilities of each conductor's main agent and sub-agents.
 
-**デフォルトスキル:**
+**Default Skills:**
 
-| スキル | 説明 |
+| Skill | Description |
 |--------|------|
-| HDL 生成 | SystemVerilog / Verilog / VHDL コード自動生成 |
-| 制約生成 | XDC / SDC / PCF 制約ファイル自動生成 |
-| テストベンチ生成 | テストベンチスケルトン + アサーション自動生成 |
+| HDL generation | Automatic SystemVerilog / Verilog / VHDL code generation |
+| Constraint generation | Automatic XDC / SDC / PCF constraint file generation |
+| Testbench generation | Automatic testbench skeleton + assertion generation |
 
-カスタムスキルは `Skill` トレイトを実装して SkillRegistry に登録する。
+Custom skills can be registered in SkillRegistry by implementing the `Skill` trait.
 
 ---
 
-## 11. container.toml リファレンス
+## 11. container.toml Reference
 
-各 conductor が使用するコンテナ環境を宣言的に定義するファイルである。
+A file that declaratively defines the container environment used by each conductor.
 
-| セクション | 必須 | 説明 |
+| Section | Required | Description |
 |-----------|------|------|
-| `[container]` | 必須 | コンテナ基本設定（名前、ベースイメージ、対象 conductor） |
-| `[tools.*]` | 任意 | インストールするツール定義 |
-| `[env]` | 任意 | 環境変数 |
-| `[[volumes]]` | 任意 | ボリュームマウント定義 |
-| `[health]` | 任意 | ヘルスチェック設定 |
-| `[update]` | 任意 | アップデートポリシー |
+| `[container]` | Required | Container basic settings (name, base image, target conductor) |
+| `[tools.*]` | Optional | Tool definitions to install |
+| `[env]` | Optional | Environment variables |
+| `[[volumes]]` | Optional | Volume mount definitions |
+| `[health]` | Optional | Health check settings |
+| `[update]` | Optional | Update policy |
 
-**container.toml サンプル:**
+**container.toml sample:**
 
 ```toml
 [container]
@@ -392,7 +392,7 @@ rollback_on_failure = true
 
 ---
 
-## 12. upgrade.toml リファレンス
+## 12. upgrade.toml Reference
 
 ```toml
 [upgrade]
@@ -418,16 +418,16 @@ max_retries = 3
 
 ---
 
-## 13. サブエージェント構成
+## 13. Sub-agent Configuration
 
-ai-conductor はタスク振り分けと SpecDriven を支援するために、配下に **2 種類のサブエージェント** を持つ。各サブエージェントは独立した agent-cli プロセスとして起動され、`agent-cli send <peer>` IPC で ai-conductor 本体（peer 名 `ai`）と協調する。
+ai-conductor has **two types of sub-agents** to support task routing and SpecDriven. Each sub-agent is launched as an independent agent-cli process and coordinates with the ai-conductor main body (peer name `ai`) via `agent-cli send <peer>` IPC.
 
-| サブエージェント | peer 名 | 役割 | 多重度 | persona ファイル |
+| Sub-agent | Peer name | Role | Multiplicity | Persona file |
 |----------------|---------|------|-------|-----------------|
-| **planner** | `ai-planner` | フロントエンド指示タスクの分解、実行プランニング（DAG 化、依存関係解析、配下 conductor への dispatch 戦略）を作成 | 1（高負荷時 N 並列可）| `.hestia/personas/ai-planner.md` |
-| **designer** | `ai-designer` | フロントエンド指示に基づき全体仕様（DesignSpec、HW/SW 統合の上位設計、conductor 間連携契約）を作成 | 1 | `.hestia/personas/ai-designer.md` |
+| **planner** | `ai-planner` | Creates task decomposition and execution planning (DAG-ification, dependency analysis, dispatch strategy to subordinate conductors) for frontend instructions | 1 (N in parallel under high load) | `.hestia/personas/ai-planner.md` |
+| **designer** | `ai-designer` | Creates overall specifications (DesignSpec, HW/SW integration high-level design, inter-conductor coordination contracts) based on frontend instructions | 1 | `.hestia/personas/ai-designer.md` |
 
-**起動と協調フロー:**
+**Startup and Coordination Flow:**
 
 ```
 [Frontend (VSCode/Tauri/CLI)]
@@ -436,22 +436,22 @@ ai-conductor はタスク振り分けと SpecDriven を支援するために、�
 [ai-conductor (peer "ai")]
        │
        ├── agent-cli send ai-planner '{"method":"plan.v1.create",...}'
-       │       ↓ プラン応答（DAG / Step リスト / 配下 conductor 割当案）
+       │       ↓ Plan response (DAG / Step list / subordinate conductor assignment proposal)
        │
        ├── agent-cli send ai-designer '{"method":"design.v1.create",...}'
-       │       ↓ DesignSpec 応答（上位仕様 / conductor 間連携契約）
+       │       ↓ DesignSpec response (high-level specification / inter-conductor coordination contract)
        │
        ▼
-[ai-conductor: planner + designer の出力を統合 → conductor-router で dispatch]
+[ai-conductor: Integrate planner + designer output → dispatch via conductor-router]
 ```
 
-**スケーリングと寿命:**
+**Scaling and Lifetime:**
 
-- planner / designer はいずれも常駐型で、ai-conductor の寿命と同期して起動・停止される
-- 高負荷時には planner を複数 instance 起動可能（peer 名 `ai-planner-1`, `ai-planner-2` ...）
-- `agent-cli list` で discoverable、health-checker の対象に含まれる
+- Both planner and designer are resident, started and stopped in sync with ai-conductor's lifetime
+- Under high load, multiple planner instances can be launched (peer names `ai-planner-1`, `ai-planner-2`, ...)
+- Discoverable via `agent-cli list`, included in health-checker targets
 
-**起動コマンド例:**
+**Startup Command Example:**
 
 ```bash
 agent-cli run --persona-file ./.hestia/personas/ai-planner.md  --name ai-planner  &
@@ -460,15 +460,15 @@ agent-cli run --persona-file ./.hestia/personas/ai-designer.md --name ai-designe
 
 ---
 
-## 関連ドキュメント
+## Related Documentation
 
-- [ai_conductor.md](ai_conductor.md) — ai-conductor 全体概要（要約版）
-- [rtl_conductor.md](rtl_conductor.md) — RTL 設計フローオーケストレーター
-- [fpga_conductor.md](fpga_conductor.md) — FPGA 設計フローオーケストレーター
-- [asic_conductor.md](asic_conductor.md) — ASIC 設計フローオーケストレーター
-- [pcb_conductor.md](pcb_conductor.md) — PCB 設計フローオーケストレーター
-- [hal_conductor.md](hal_conductor.md) — HAL 生成オーケストレーター
-- [apps_conductor.md](apps_conductor.md) — アプリケーションソフトウェア開発オーケストレーター
-- [debug_conductor.md](debug_conductor.md) — デバッグ環境オーケストレーター
-- [rag_conductor.md](rag_conductor.md) — 知識基盤オーケストレーター
-- [architecture_overview.md](architecture_overview.md) — 全体アーキテクチャ概要
+- [ai_conductor.md](ai_conductor.md) — ai-conductor overview (summary version)
+- [rtl_conductor.md](rtl_conductor.md) — RTL design flow orchestrator
+- [fpga_conductor.md](fpga_conductor.md) — FPGA design flow orchestrator
+- [asic_conductor.md](asic_conductor.md) — ASIC design flow orchestrator
+- [pcb_conductor.md](pcb_conductor.md) — PCB design flow orchestrator
+- [hal_conductor.md](hal_conductor.md) — HAL generation orchestrator
+- [apps_conductor.md](apps_conductor.md) — Application software development orchestrator
+- [debug_conductor.md](debug_conductor.md) — Debug environment orchestrator
+- [rag_conductor.md](rag_conductor.md) — Knowledge base orchestrator
+- [architecture_overview.md](architecture_overview.md) — Overall architecture overview

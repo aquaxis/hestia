@@ -1,22 +1,22 @@
-# WASM 波形ビューア
+# WASM Waveform Viewer
 
-**対象領域**: common — 波形表示
-**ソース**: 設定仕様書 §13.2
+**Domain**: common — Waveform Display
+**Source**: Design Specification §13.2
 
-## 概要
+## Overview
 
-VCD / FST / GHW / EVCD をストリーミングパース可能な波形ビューア。`waveform-core` クレートを `cdylib` + `rlib` でビルドし、ブラウザは WebWorker + SharedArrayBuffer 経由でロード、Tauri / VSCode WebView は同クレートを直接利用する。100 万サンプル表示時に 60fps を目標とする。
+A waveform viewer capable of streaming-parse VCD / FST / GHW / EVCD formats. The `waveform-core` crate is built as both `cdylib` and `rlib`; browsers load it via WebWorker + SharedArrayBuffer, while Tauri / VSCode WebView uses the same crate directly. The target is 60fps at 1 million sample display.
 
-## 対応フォーマット
+## Supported Formats
 
-| フォーマット | 識別子 | 説明 |
+| Format | Identifier | Description |
 |------------|-------|------|
-| VCD | `Vcd` | Value Change Dump（標準）|
-| FST | `Fst` | Fast Signal Trace（圧縮）|
+| VCD | `Vcd` | Value Change Dump (standard)|
+| FST | `Fst` | Fast Signal Trace (compressed)|
 | GHW | `Ghw` | GHDL Waveform |
 | EVCD | `Evcd` | Extended VCD |
 
-## 主要型
+## Key Types
 
 ### WaveformFormat
 
@@ -60,63 +60,63 @@ pub enum SignalValue {
 }
 ```
 
-## ビルド構成
+## Build Configuration
 
-`waveform-core` クレートは2つの crate-type でビルド:
+The `waveform-core` crate is built with two crate types:
 
-| crate-type | 用途 |
+| crate-type | Purpose |
 |-----------|------|
-| `cdylib` | WASM コンパイル（ブラウザ向け）|
-| `rlib` | Rust ライブラリ（Tauri / VSCode WebView 向け）|
+| `cdylib` | WASM compilation (for browsers)|
+| `rlib` | Rust library (for Tauri / VSCode WebView)|
 
-## レンダリング経路
+## Rendering Paths
 
-### ブラウザ経路
+### Browser Path
 
 ```
-waveform-core (cdylib → WASM)
-  → WebWorker でロード
-  → SharedArrayBuffer でメインスレッドと共有
-  → Canvas / WebGL で 60fps レンダリング
+waveform-core (cdylib -> WASM)
+  -> Loaded in WebWorker
+  -> Shared with main thread via SharedArrayBuffer
+  -> 60fps rendering via Canvas / WebGL
 ```
 
-### Tauri / VSCode WebView 経路
+### Tauri / VSCode WebView Path
 
 ```
 waveform-core (rlib)
-  → 直接リンク
-  → ネイティブレンダリング
+  -> Directly linked
+  -> Native rendering
 ```
 
-## パフォーマンス目標
+## Performance Targets
 
-| 指標 | 目標値 |
+| Metric | Target |
 |------|-------|
-| 表示サンプル数 | 100 万サンプル |
-| フレームレート | 60fps |
-| ストリーミングパース | ファイル全体をメモリに載せず段階的読込 |
+| Display sample count | 1 million samples |
+| Frame rate | 60fps |
+| Streaming parse | Incremental reading without loading entire file into memory |
 
-## 統合先
+## Integration Targets
 
-- VSCode 拡張: WebView 内 WASM レンダリング（§16.1）
-- Tauri IDE: ネイティブレンダリング（§16.2）
-- debug-conductor: 波形データ提供元
+- VSCode extension: WASM rendering within WebView (§16.1)
+- Tauri IDE: Native rendering (§16.2)
+- debug-conductor: Waveform data provider
 
-## クレート構成
+## Crate Structure
 
 ```
 waveform-core/
 ├── Cargo.toml         # crate-type = ["cdylib", "rlib"]
 └── src/
-    ├── lib.rs          # 公開 API
-    ├── vcd.rs          # VCD パーサ
-    ├── fst.rs          # FST パーサ
-    ├── ghw.rs          # GHW パーサ
-    ├── evcd.rs         # EVCD パーサ
-    └── render.rs       # レンダリング抽象
+    ├── lib.rs          # Public API
+    ├── vcd.rs          # VCD parser
+    ├── fst.rs          # FST parser
+    ├── ghw.rs          # GHW parser
+    ├── evcd.rs         # EVCD parser
+    └── render.rs       # Rendering abstraction
 ```
 
-## 関連ドキュメント
+## Related Documents
 
 - [hdl_lsp_broker.md](hdl_lsp_broker.md) — HDL LSP Broker
-- [observability.md](observability.md) — 監視
+- [observability.md](observability.md) — Monitoring

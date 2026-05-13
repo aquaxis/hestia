@@ -1,86 +1,86 @@
-# debug-conductor エラーコード
+# debug-conductor Error Codes
 
-**対象 Conductor**: debug-conductor
-**ソース**: 設計仕様書 §14.3（3565-3581行目付近）
+**Target Conductor**: debug-conductor
+**Source**: Design Specification §14.3 (around lines 3565-3581)
 
-## エラーコード範囲
+## Error Code Range
 
-debug-conductor のエラーコードは **-32500 〜 -32599** の範囲を使用する。
+debug-conductor error codes use the range **-32500 to -32599**.
 
-## エラーカテゴリ
+## Error Categories
 
 ### JTAG
 
-| コード | 名称 | 説明 |
+| Code | Name | Description |
 |-------|------|------|
-| -32500 | JTAG_CONNECTION_FAILED | JTAG 接続失敗 |
-| -32501 | JTAG_TAP_NOT_DETECTED | TAP デバイス未検出 |
-| -32502 | JTAG_IR_DR_ERROR | IR/DR スキャンチェーンエラー |
-| -32503 | JTAG_RESET_FAILED | JTAG リセット（TRST/SRST）失敗 |
+| -32500 | JTAG_CONNECTION_FAILED | JTAG connection failed |
+| -32501 | JTAG_TAP_NOT_DETECTED | TAP device not detected |
+| -32502 | JTAG_IR_DR_ERROR | IR/DR scan chain error |
+| -32503 | JTAG_RESET_FAILED | JTAG reset (TRST/SRST) failed |
 
 ### SWD
 
-| コード | 名称 | 説明 |
+| Code | Name | Description |
 |-------|------|------|
-| -32510 | SWD_CONNECTION_FAILED | SWD 接続失敗 |
-| -32511 | SWD_DP_READ_FAILED | Debug Port レジスタ読み出し失敗 |
-| -32512 | SWD_DP_WRITE_FAILED | Debug Port レジスタ書き込み失敗 |
-| -32513 | SWD_AP_READ_FAILED | Access Port レジスタ読み出し失敗 |
-| -32514 | SWD_AP_WRITE_FAILED | Access Port レジスタ書き込み失敗 |
-| -32515 | SWD_PARITY_ERROR | SWD パリティエラー |
+| -32510 | SWD_CONNECTION_FAILED | SWD connection failed |
+| -32511 | SWD_DP_READ_FAILED | Debug Port register read failed |
+| -32512 | SWD_DP_WRITE_FAILED | Debug Port register write failed |
+| -32513 | SWD_AP_READ_FAILED | Access Port register read failed |
+| -32514 | SWD_AP_WRITE_FAILED | Access Port register write failed |
+| -32515 | SWD_PARITY_ERROR | SWD parity error |
 
 ### Session
 
-| コード | 名称 | 説明 |
+| Code | Name | Description |
 |-------|------|------|
-| -32520 | SESSION_CREATE_FAILED | セッション作成失敗 |
-| -32521 | SESSION_NOT_FOUND | 指定されたセッションが存在しない |
-| -32522 | SESSION_ALREADY_CONNECTED | 既に接続済み |
-| -32523 | SESSION_DISCONNECTED | 予期せぬ切断 |
+| -32520 | SESSION_CREATE_FAILED | Session creation failed |
+| -32521 | SESSION_NOT_FOUND | Specified session does not exist |
+| -32522 | SESSION_ALREADY_CONNECTED | Already connected |
+| -32523 | SESSION_DISCONNECTED | Unexpected disconnection |
 
 ### Waveform
 
-| コード | 名称 | 説明 |
+| Code | Name | Description |
 |-------|------|------|
-| -32530 | CAPTURE_START_FAILED | 波形キャプチャ開始失敗 |
-| -32531 | CAPTURE_STOP_FAILED | 波形キャプチャ停止失敗 |
-| -32532 | CAPTURE_BUFFER_OVERFLOW | キャプチャバッファオーバーフロー |
-| -32533 | VCD_PARSE_ERROR | VCD ファイルパースエラー |
-| -32534 | FST_PARSE_ERROR | FST ファイルパースエラー |
+| -32530 | CAPTURE_START_FAILED | Waveform capture start failed |
+| -32531 | CAPTURE_STOP_FAILED | Waveform capture stop failed |
+| -32532 | CAPTURE_BUFFER_OVERFLOW | Capture buffer overflow |
+| -32533 | VCD_PARSE_ERROR | VCD file parse error |
+| -32534 | FST_PARSE_ERROR | FST file parse error |
 
 ### Programming
 
-| コード | 名称 | 説明 |
+| Code | Name | Description |
 |-------|------|------|
-| -32540 | PROGRAM_FAILED | ファームウェア書込失敗 |
-| -32541 | PROGRAM_VERIFY_FAILED | 書込検証失敗 |
-| -32542 | PROGRAM_UNSUPPORTED_FORMAT | 未対応のファームウェアフォーマット |
+| -32540 | PROGRAM_FAILED | Firmware programming failed |
+| -32541 | PROGRAM_VERIFY_FAILED | Programming verification failed |
+| -32542 | PROGRAM_UNSUPPORTED_FORMAT | Unsupported firmware format |
 
 ### Signal / Trigger
 
-| コード | 名称 | 説明 |
+| Code | Name | Description |
 |-------|------|------|
-| -32550 | SIGNAL_NOT_FOUND | 指定された信号が存在しない |
-| -32551 | TRIGGER_CONDITION_INVALID | トリガ条件が不正 |
-| -32552 | TRIGGER_TIMEOUT | トリガ待機タイムアウト |
+| -32550 | SIGNAL_NOT_FOUND | Specified signal does not exist |
+| -32551 | TRIGGER_CONDITION_INVALID | Invalid trigger condition |
+| -32552 | TRIGGER_TIMEOUT | Trigger wait timeout |
 
 ### Reset
 
-| コード | 名称 | 説明 |
+| Code | Name | Description |
 |-------|------|------|
-| -32555 | RESET_FAILED | リセット失敗 |
-| -32556 | RESET_TIMEOUT | リセット応答タイムアウト |
+| -32555 | RESET_FAILED | Reset failed |
+| -32556 | RESET_TIMEOUT | Reset response timeout |
 
 ### Protocol
 
-| コード | 名称 | 説明 |
+| Code | Name | Description |
 |-------|------|------|
-| -32560 | PROTOCOL_DECODE_ERROR | プロトコルデコードエラー |
-| -32561 | PROTOCOL_UNSUPPORTED | 未対応のプロトコル |
+| -32560 | PROTOCOL_DECODE_ERROR | Protocol decode error |
+| -32561 | PROTOCOL_UNSUPPORTED | Unsupported protocol |
 
-## 関連ドキュメント
+## Related Documentation
 
-- [debug/message_methods.md](message_methods.md) — debug.* メソッド一覧
-- [debug/debug_protocols.md](debug_protocols.md) — JTAG/SWD プロトコル
-- [debug/state_machines.md](state_machines.md) — セッション管理ステートマシン
-- [../common/error_registry.md](../common/error_registry.md) — HESTIA 共通エラーレジストリ
+- [debug/message_methods.md](message_methods.md) — debug.* method list
+- [debug/debug_protocols.md](debug_protocols.md) — JTAG/SWD protocols
+- [debug/state_machines.md](state_machines.md) — Session management state machine
+- [../common/error_registry.md](../common/error_registry.md) — HESTIA common error registry

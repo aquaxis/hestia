@@ -1,29 +1,29 @@
-# rag-conductor 設定スキーマ
+# rag-conductor Configuration Schema
 
-**対象 Conductor**: rag-conductor
-**ソース**: 設計仕様書 §13.7.6（3307-3323行目付近）
+**Target Conductor**: rag-conductor
+**Source**: Design Specification §13.7.6 (around lines 3307-3323)
 
-## config.toml [rag] セクション
+## config.toml [rag] Section
 
-rag-conductor の動作設定を宣言的に定義する。
+Declaratively defines rag-conductor operational settings.
 
-### 設定項目一覧
+### Configuration Fields
 
-| フィールド | 型 | 既定値 | 説明 |
-|-----------|---|-------|------|
-| `backend` | string | `"chroma"` | ベクトル DB バックエンド（`chroma` / `qdrant`） |
-| `embedding_model` | string | `"nomic-embed-text"` | 埋め込みモデル名（768 次元） |
-| `top_k` | integer | 5 | 検索時の取得件数 |
-| `chunk_size` | integer | 1000 | チャンク分割サイズ（トークン） |
-| `chunk_overlap` | integer | 200 | チャンクオーバーラップ（トークン） |
-| `vector_db_url` | string | `"http://localhost:8000"` | ベクトル DB 接続 URL |
-| `batch_size` | integer | 32 | 埋め込みバッチサイズ |
-| `retention_days` | integer | 90 | 既存ソース保持期間（日） |
-| `retention_days_work_log` | integer | 365 | 自己学習 conductor-work-logs/ の保持期間（日） |
-| `self_learning_enabled` | boolean | true | 自己学習機能（§13.7.8）の ON/OFF |
-| `queue_dir` | string | `".hestia/rag/queue"` | rag offline 時のローカルバッファ |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `backend` | string | `"chroma"` | Vector DB backend (`chroma` / `qdrant`) |
+| `embedding_model` | string | `"nomic-embed-text"` | Embedding model name (768 dimensions) |
+| `top_k` | integer | 5 | Number of results to retrieve on search |
+| `chunk_size` | integer | 1000 | Chunk size (tokens) |
+| `chunk_overlap` | integer | 200 | Chunk overlap (tokens) |
+| `vector_db_url` | string | `"http://localhost:8000"` | Vector DB connection URL |
+| `batch_size` | integer | 32 | Embedding batch size |
+| `retention_days` | integer | 90 | Existing source retention period (days) |
+| `retention_days_work_log` | integer | 365 | Self-learning conductor-work-logs/ retention period (days) |
+| `self_learning_enabled` | boolean | true | Self-learning feature (§13.7.8) ON/OFF |
+| `queue_dir` | string | `".hestia/rag/queue"` | Local buffer when rag is offline |
 
-### 設定例
+### Configuration Example
 
 ```toml
 [rag]
@@ -40,12 +40,12 @@ self_learning_enabled = true
 queue_dir = ".hestia/rag/queue"
 ```
 
-## ナレッジベース構成
+## Knowledge Base Structure
 
 ```
 .hestia/rag/
-├── sources/                    # 取得元の生データ
-│   ├── conductor-work-logs/    # 自己学習用蓄積領域（§13.7.8）
+├── sources/                    # Raw data from sources
+│   ├── conductor-work-logs/    # Self-learning accumulation area (§13.7.8)
 │   │   ├── ai/      YYYY-MM-DD_<task_id>.md
 │   │   ├── rtl/     YYYY-MM-DD_<task_id>.md
 │   │   ├── fpga/    YYYY-MM-DD_<task_id>.md
@@ -54,31 +54,31 @@ queue_dir = ".hestia/rag/queue"
 │   │   ├── hal/     YYYY-MM-DD_<task_id>.md
 │   │   ├── apps/    YYYY-MM-DD_<task_id>.md
 │   │   └── debug/   YYYY-MM-DD_<task_id>.md
-│   ├── datasheets/             # 外部データシート PDF
-│   └── vendor-guides/          # ベンダーガイド
-├── chunks/                     # チャンク分割済みテキスト
-├── embeddings/                 # ベクトル化済み（Chroma/Qdrant にインデックス）
+│   ├── datasheets/             # External datasheet PDFs
+│   └── vendor-guides/          # Vendor guides
+├── chunks/                     # Chunked text
+├── embeddings/                 # Vectorized (indexed in Chroma/Qdrant)
 ├── index-metadata.toml
-├── queries/                    # クエリログ・ヒット率
-├── quarantine/                 # 品質ゲート不合格データ（保留）
-└── queue/                      # offline 時のローカルバッファ
+├── queries/                    # Query logs and hit rates
+├── quarantine/                 # Data that failed quality gate (held)
+└── queue/                      # Local buffer when offline
 ```
 
-## 技術スタック
+## Technology Stack
 
-| 区分 | 技術 |
-|------|------|
-| バイナリ | `hestia-rag-conductor`（Rust + tokio） |
-| ベクトル DB | Chroma（既定） / Qdrant |
-| 埋め込み | Ollama `nomic-embed-text`（768 次元） |
-| Rust 部分 | `rag-ingest` クレート（PDF 7 段 / Web 8 段パイプライン） |
-| TS 部分 | `rag-engine`（Vector Search / Embedding / Citation Generation） |
-| PDF 解析 | PyPDF / pdfplumber / Tesseract OCR / Camelot |
-| Web 取得 | trafilatura / BeautifulSoup / CLD3 / fasttext |
+| Category | Technology |
+|----------|------------|
+| Binary | `hestia-rag-conductor` (Rust + tokio) |
+| Vector DB | Chroma (default) / Qdrant |
+| Embedding | Ollama `nomic-embed-text` (768 dimensions) |
+| Rust part | `rag-ingest` crate (PDF 7-stage / Web 8-stage pipeline) |
+| TS part | `rag-engine` (Vector Search / Embedding / Citation Generation) |
+| PDF parsing | PyPDF / pdfplumber / Tesseract OCR / Camelot |
+| Web fetching | trafilatura / BeautifulSoup / CLD3 / fasttext |
 
-## 関連ドキュメント
+## Related Documentation
 
-- [rag/binary_spec.md](binary_spec.md) — hestia-rag-cli バイナリ仕様
-- [rag/ingest_pipeline.md](ingest_pipeline.md) — 取り込みパイプライン
-- [rag/search_engine.md](search_engine.md) — 検索エンジン仕様
-- [rag/state_machines.md](state_machines.md) — インデックス状態遷移
+- [rag/binary_spec.md](binary_spec.md) — hestia-rag-cli binary specification
+- [rag/ingest_pipeline.md](ingest_pipeline.md) — Ingestion pipeline
+- [rag/search_engine.md](search_engine.md) — Search engine specification
+- [rag/state_machines.md](state_machines.md) — Index state transitions

@@ -1,52 +1,52 @@
-# ai-conductor WorkflowEngine 詳細
+# ai-conductor WorkflowEngine Details
 
-**対象 Conductor**: ai-conductor
-**ソース**: 設計仕様書 §3.5（1052-1077行目付近）, §1.3.5（148-177行目付近）
+**Target Conductor**: ai-conductor
+**Source**: Design Specification §3.5 (around lines 1052-1077), §1.3.5 (around lines 148-177)
 
-## 概要
+## Overview
 
-WorkflowEngine は DAG（有向非巡回グラフ）ベースのクロス conductor パイプラインエンジンである。カーンのアルゴリズム（Kahn's algorithm）によるトポロジカルソートで実行順序を決定し、sled で状態を永続化する。
+WorkflowEngine is a DAG (Directed Acyclic Graph)-based cross-conductor pipeline engine. It determines execution order via topological sort using Kahn's algorithm and persists state with sled.
 
-## クレート構成
+## Crate Structure
 
 ```
 workflow-engine/
 └── src/
-    ├── lib.rs      # WorkflowEngine 本体
-    ├── dag.rs      # DAG 定義・実行
-    └── pipeline.rs # クロス conductor パイプライン
+    ├── lib.rs      # WorkflowEngine body
+    ├── dag.rs      # DAG definition and execution
+    └── pipeline.rs # Cross-conductor pipeline
 ```
 
-## WorkflowStep 構造体
+## WorkflowStep Structure
 
 ```rust
 pub struct WorkflowStep {
-    pub id: String,              // ステップ ID
-    pub name: String,            // ステップ名
-    pub conductor: String,       // 対象 conductor（peer 名）
-    pub method: String,          // 実行する agent-cli メッセージ method（§14）
-    pub params: Option<Value>,   // パラメータ
-    pub depends_on: Vec<String>, // 依存ステップ ID（DAG 構造）
-    pub status: StepStatus,      // 現在の状態
+    pub id: String,              // Step ID
+    pub name: String,            // Step name
+    pub conductor: String,       // Target conductor (peer name)
+    pub method: String,          // agent-cli message method to execute (§14)
+    pub params: Option<Value>,   // Parameters
+    pub depends_on: Vec<String>, // Dependency step IDs (DAG structure)
+    pub status: StepStatus,      // Current state
 }
 ```
 
-## StepStatus 状態一覧
+## StepStatus States
 
-| 状態 | 説明 |
+| State | Description |
 |------|------|
-| Pending | 依存ステップ未完了 |
-| Ready | 依存ステップ完了、実行可能 |
-| Running | 実行中 |
-| Completed | 成功完了 |
-| Failed | 失敗 |
-| Skipped | スキップ（依存ステップ失敗等） |
+| Pending | Dependency steps not yet completed |
+| Ready | Dependency steps completed, executable |
+| Running | Currently executing |
+| Completed | Successfully completed |
+| Failed | Failed |
+| Skipped | Skipped (due to dependency step failure, etc.) |
 
-## DAG 定義とトポロジカルソート
+## DAG Definition and Topological Sort
 
-カーンのアルゴリズム（Kahn）により依存関係を解決し、実行可能なステップから順に実行する。依存関係を満たしたステップは並列実行可能。
+Kahn's algorithm resolves dependencies and executes steps from those whose dependencies are satisfied. Steps with satisfied dependencies can run in parallel.
 
-### ワークフロー定義例（YAML 形式）
+### Workflow Definition Example (YAML format)
 
 ```yaml
 steps:
@@ -64,52 +64,52 @@ steps:
     depends_on: [fpga_synth, pcb_design]
 ```
 
-## ダイヤモンド型依存関係
+## Diamond Dependency Pattern
 
-分岐→合流のパターンにも対応する。
+Branching and merging patterns are supported.
 
 ```
-        [A: FPGA 合成]
+        [A: FPGA Synthesis]
        /              \
-[B: ASIC 合成]    [C: PCB 設計]
+[B: ASIC Synthesis]    [C: PCB Design]
        \              /
-        [D: 統合検証]
+        [D: Integration Verification]
 ```
 
-A 完了後、B・C は並列実行。D は B・C 両方完了後に実行。
+After A completes, B and C run in parallel. D runs after both B and C complete.
 
-## sled 永続化
+## sled Persistence
 
-ワークフローの実行状態（各 StepStatus）は sled（Rust ネイティブ組み込み KV ストア）に永続化される。これにより:
+Workflow execution state (each StepStatus) is persisted to sled (a Rust-native embedded key-value store). This enables:
 
-- プロセス再起動後の実行状態復元
-- 長時間ワークフローの中断・再開
-- 実行履歴のトレーサビリティ
+- Execution state restoration after process restart
+- Interruption and resumption of long-running workflows
+- Execution history traceability
 
-## クロス conductor パイプライン
+## Cross-Conductor Pipeline
 
-WorkflowEngine は `meta.*` メソッド群を通じて、複数 conductor 間の連携を自動化する。
+WorkflowEngine automates coordination across multiple conductors via the `meta.*` method group.
 
-| メソッド | 説明 |
+| Method | Description |
 |---------|------|
-| `meta.dualBuild` | 複数 conductor 並列ビルド（例: fpga.build ‖ asic.synth → meta.collect） |
-| `meta.boardWithFpga` | FPGA + PCB 連携ワークフロー |
-| `meta.handoff` | conductor 間ハンドオフイベント（rtl → fpga/asic 等） |
+| `meta.dualBuild` | Parallel build across multiple conductors (e.g., fpga.build ‖ asic.synth → meta.collect) |
+| `meta.boardWithFpga` | FPGA + PCB integration workflow |
+| `meta.handoff` | Inter-conductor handoff event (rtl → fpga/asic, etc.) |
 
-## 実行フロー
+## Execution Flow
 
 ```
-1. ワークフローを DAG として定義（YAML / 構造化 JSON）
-2. WorkflowEngine がトポロジカルソートで実行順序を決定
-3. 依存関係を満たしたステップから順に実行（並列実行対応）
-4. 各ステップは対象 conductor の agent-cli peer に対して構造化メッセージ送信
-5. ダイヤモンド型依存関係（分岐→合流）にも対応
-6. ステップ間メッセージは構造化 JSON ペイロードまたは自然言語テキストとして伝搬
+1. Define workflow as DAG (YAML / structured JSON)
+2. WorkflowEngine determines execution order via topological sort
+3. Execute steps in order as dependencies are satisfied (parallel execution supported)
+4. Each step sends a structured message to the target conductor's agent-cli peer
+5. Diamond dependency patterns (branch → merge) are supported
+6. Inter-step messages propagate as structured JSON payloads or natural language text
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [ai/state_machines.md](state_machines.md) — タスク状態遷移
-- [ai/agent_hierarchy.md](agent_hierarchy.md) — サブエージェント構成
-- [ai/message_methods.md](message_methods.md) — ai.* / meta.* メソッド一覧
-- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli メッセージング仕様
+- [ai/state_machines.md](state_machines.md) — Task state transitions
+- [ai/agent_hierarchy.md](agent_hierarchy.md) — Sub-agent hierarchy
+- [ai/message_methods.md](message_methods.md) — ai.* / meta.* method list
+- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli messaging specification

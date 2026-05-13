@@ -1,15 +1,15 @@
-//! FIFO ベースの peer 間 IPC。
+//! FIFO-based inter-peer IPC.
 //!
-//! - `Run` 起動時: `/tmp/claude-cli-shim-<peer>.fifo` を mkfifo (0600) で作成。
-//! - 受信: 別 task で FIFO を非同期 read、行単位で channel に push。
-//! - 送信 (`Send` subcommand): registry を引き、対応 FIFO に書き込む。
+//! - On `Run` startup: creates `/tmp/claude-cli-shim-<peer>.fifo` via mkfifo (0600).
+//! - Receiving: a separate task reads the FIFO asynchronously, pushing lines to a channel.
+//! - Sending (`Send` subcommand): looks up the registry and writes to the corresponding FIFO.
 
 use crate::{config, registry};
 use anyhow::{anyhow, bail, Context, Result};
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
-/// FIFO を mkfifo で作成（既に存在する場合は無視）。
+/// Create a FIFO with mkfifo (ignore if it already exists).
 pub fn ensure_fifo(path: &Path) -> Result<()> {
     if path.exists() {
         return Ok(());
@@ -19,7 +19,7 @@ pub fn ensure_fifo(path: &Path) -> Result<()> {
     let rc = unsafe { libc::mkfifo(cstr.as_ptr(), 0o600) };
     if rc != 0 {
         let err = std::io::Error::last_os_error();
-        // EEXIST は問題なし（race conditon で別プロセスが先に作った）
+        // EEXIST is harmless (another process created it first due to a race condition)
         if err.raw_os_error() != Some(libc::EEXIST) {
             return Err(anyhow!("mkfifo {} failed: {err}", path.display()));
         }
@@ -27,7 +27,7 @@ pub fn ensure_fifo(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// `Send` subcommand 本体: registry を引き、peer の FIFO に text を書き込む。
+/// `Send` subcommand body: looks up the registry and writes text to the peer's FIFO.
 pub fn send(peer: &str, text: &str, registry_path: Option<PathBuf>) -> Result<()> {
     let registry_dir = config::registry_dir(registry_path);
     let entry = registry::read_entry(&registry_dir, peer)?
@@ -36,7 +36,7 @@ pub fn send(peer: &str, text: &str, registry_path: Option<PathBuf>) -> Result<()
     if !fifo.exists() {
         bail!("FIFO {} does not exist for peer '{peer}'", fifo.display());
     }
-    // FIFO への書込。改行で行区切り（受信側は行単位で read）。
+    // Write to FIFO. Newline-delimited (receiver reads line by line).
     use std::io::Write;
     let mut file = std::fs::OpenOptions::new()
         .write(true)
@@ -60,7 +60,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let p = dir.path().join("test.fifo");
         ensure_fifo(&p).unwrap();
-        // FIFO は通常ファイルとは異なる: stat で確認
+        // FIFOs differ from regular files: verify via stat
         let meta = std::fs::metadata(&p).unwrap();
         use std::os::unix::fs::FileTypeExt;
         assert!(meta.file_type().is_fifo());
@@ -71,6 +71,6 @@ mod tests {
         let dir = tempdir().unwrap();
         let p = dir.path().join("test2.fifo");
         ensure_fifo(&p).unwrap();
-        ensure_fifo(&p).unwrap();  // 二度目もエラーにならない
+        ensure_fifo(&p).unwrap();  // Second call should not error
     }
 }

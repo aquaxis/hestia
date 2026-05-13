@@ -1,196 +1,196 @@
-# 用語集（Glossary）
+# Glossary
 
-**対象領域**: Hestia 全体
-**ソース**: 設計仕様書 §1〜§20 横断
+**Scope**: Hestia overall
+**Source**: Design specification §1-§20 (cross-cutting)
 
 ---
 
 ## A
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| adapter.toml | アダプター・トムル | 新規ベンダーツールをコード変更なしで統合するための宣言型設定ファイル（§1.2 原則2）|
-| AdapterRegistry | アダプター・レジストリ | Capability ベースのアダプター登録・解決エンジン（§2.2）|
-| agent-cli | エージェント・クライ | Hestia の各 conductor が AI エージェントとして起動する Rust 製 CLI バイナリ（既定 engine）。peer 間 IPC を提供（§20）。Phase 113 以降は `claude-cli-shim` と切替可能。|
-| ai-conductor | AI コンダクター | メタオーケストレーター。全 conductor を統括し、人間との唯一の入口（§3）|
-| apps-conductor | アップス・コンダクター | アプリケーションソフトウェア（FW / RTOS / ベアメタル）開発オーケストレーター（§9）|
-| ASIC | エーシック | Application-Specific Integrated Circuit。特定用途向け集積回路（§6）|
-| asic-conductor | エーシック・コンダクター | ASIC 設計フロー（RTL-to-GDSII 13ステップ）オーケストレーター（§6）|
-| AsicToolAdapter | エーシック・ツール・アダプター | ASIC ツールの統一インターフェースを定義するトレイト（§6.4）|
+| adapter.toml | adapter TOML | Declarative configuration file for integrating new vendor tools without code changes (§1.2 Principle 2) |
+| AdapterRegistry | adapter registry | Capability-based adapter registration and resolution engine (§2.2) |
+| agent-cli | agent CLI | Rust CLI binary that each Hestia conductor runs as an AI agent (default engine). Provides peer-to-peer IPC (§20). Switchable with `claude-cli-shim` from Phase 113 onward. |
+| ai-conductor | AI conductor | Meta-orchestrator. Orchestrates all conductors and serves as the sole entry point for humans (§3) |
+| apps-conductor | Apps conductor | Application software (FW / RTOS / bare-metal) development orchestrator (§9) |
+| ASIC | ASIC | Application-Specific Integrated Circuit (§6) |
+| asic-conductor | ASIC conductor | ASIC design flow (RTL-to-GDSII 13-step) orchestrator (§6) |
+| AsicToolAdapter | ASIC tool adapter | Trait defining the unified interface for ASIC tools (§6.4) |
 
 ## B
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| Backend Switching | バックエンド・スイッチング | LLM バックエンド（Claude / Codex / Ollama / llama.cpp）の切替機構（§20）|
+| Backend Switching | Backend Switching | Mechanism for switching LLM backends (Claude / Codex / Ollama / llama.cpp) (§20) |
 
 ## C
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| Capability | ケイパビリティ | アダプターが提供する機能の宣言。AdapterRegistry が Capability ベースでアダプターを解決（§2.2）|
-| CLI | シーエルアイ | Command Line Interface。Hestia は統合 CLI（`hestia`）+ 各 conductor 個別 CLI（10種）を提供（§15）|
-| claude-cli-shim | クロード・クライ・シム | Claude Code (`claude` CLI) を agent-cli 互換 API でラップする wrapper クレート（Phase 113、案 C）。`run` / `list` / `send` / `providers` / `doctor` を提供し、内部で `claude` プロセスを永続 session として保持。`.hestia/config.toml` の `[engine] type = "claude_cli_shim"` で選択。|
-| Conductor | コンダクター | 各設計領域の専用オーケストレーター。Hestia では9種（ai / rtl / fpga / asic / pcb / hal / apps / debug / rag）が存在（§2.2）|
-| ConductorId | コンダクター・アイディ | conductor を一意に識別する文字列。agent-cli の peer 名と同一（`ai` / `rtl` / `fpga` 等）（§2.3）|
-| conductor-sdk | コンダクター・エスディーケー | conductor 共通 SDK クレート（§2.2）|
-| Constraint Bridge | コンストレイント・ブリッジ | XDC ⇔ SDC ⇔ PCF ⇔ Efinity XML 間の制約ファイル変換サービス（§13.3）|
-| container-manager | コンテナ・マネージャー | 全 conductor のコンテナライフサイクルを管理するモジュール（§12）|
+| Capability | Capability | Declaration of functionality provided by an adapter. AdapterRegistry resolves adapters based on Capability (§2.2) |
+| CLI | CLI | Command Line Interface. Hestia provides a unified CLI (`hestia`) + individual conductor CLIs (10 types) (§15) |
+| claude-cli-shim | Claude CLI shim | Wrapper crate that wraps Claude Code (`claude` CLI) with an agent-cli compatible API (Phase 113, Option C). Provides `run` / `list` / `send` / `providers` / `doctor`, and maintains `claude` processes as persistent sessions. Selected via `.hestia/config.toml` `[engine] type = "claude_cli_shim"`. |
+| Conductor | Conductor | Domain-specific orchestrator. Hestia has 9 types (ai / rtl / fpga / asic / pcb / hal / apps / debug / rag) (§2.2) |
+| ConductorId | Conductor ID | String that uniquely identifies a conductor. Identical to the agent-cli peer name (`ai` / `rtl` / `fpga` etc.) (§2.3) |
+| conductor-sdk | conductor SDK | Conductor common SDK crate (§2.2) |
+| Constraint Bridge | Constraint Bridge | Constraint file conversion service between XDC ⇔ SDC ⇔ PCF ⇔ Efinity XML (§13.3) |
+| container-manager | Container Manager | Module that manages container lifecycle for all conductors (§12) |
 
 ## D
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| DAG | ダグ | Directed Acyclic Graph。有向非巡回グラフ。WorkflowEngine がワークフローを DAG として定義（§1.3.5）|
-| debug-conductor | デバッグ・コンダクター | デバッグ環境オーケストレーター。ローカル実行専用（USB プローブアクセス用）（§10）|
-| DesignSpec | デザイン・スペック | SpecParser が仕様書から生成する構造化設計仕様オブジェクト（§1.3.1）|
-| DRC | ディーアールシー | Design Rule Check。設計ルールチェック（§6, §7）|
+| DAG | DAG | Directed Acyclic Graph. WorkflowEngine defines workflows as DAGs (§1.3.5) |
+| debug-conductor | Debug conductor | Debug environment orchestrator. Local execution only (for USB probe access) (§10) |
+| DesignSpec | Design Spec | Structured design specification object generated by SpecParser from specifications (§1.3.1) |
+| DRC | DRC | Design Rule Check (§6, §7) |
 
 ## E
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| Efinity | エフィニティ | Efinix 社の FPGA 開発ツール。Python API ベース（§5.7）|
-| Engine | エンジン | peer 駆動バイナリの選択（Phase 113）。`agent-cli`（既定）と `claude-cli-shim`（案 C wrapper）の 2 種から `.hestia/config.toml` の `[engine] type` で選択。LLM バックエンド切替（agent-cli 配下の 4 種）とは別レイヤ。|
+| Efinity | Efinity | Efinix FPGA development tool. Python API-based (§5.7) |
+| Engine | Engine | Selection of peer-driven binary (Phase 113). Choose between `agent-cli` (default) and `claude-cli-shim` (Option C wrapper) via `.hestia/config.toml` `[engine] type`. A different layer from LLM backend switching (4 types under agent-cli). |
 
 ## F
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| fpga-conductor | エフピージーエー・コンダクター | FPGA 設計フローオーケストレーター（§5）|
-| fpga.lock | エフピージーエー・ロック | FPGA ビルドの完全再現を保証するロックファイル（§1.2 原則5）|
+| fpga-conductor | FPGA conductor | FPGA design flow orchestrator (§5) |
+| fpga.lock | FPGA lock | Lock file guaranteeing complete FPGA build reproducibility (§1.2 Principle 5) |
 
 ## G
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| GDSII | ジーディーエスツー | IC レイアウトの業界標準フォーマット。ASIC 最終出力（§6）|
+| GDSII | GDSII | Industry standard format for IC layout. ASIC final output (§6) |
 
 ## H
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| hal-conductor | ハル・コンダクター | Hardware Abstraction Layer 生成オーケストレーター（§8）|
-| HDL | エイチディーエル | Hardware Description Language。ハードウェア記述言語（Verilog / VHDL / SystemVerilog）（§4）|
-| Hestia | ヘスティア | 本プロジェクト名。Hardware Engineering Stack for Tool Integration and Automation（§1.5）|
-| HumanReviewGate | ヒューマン・レビュー・ゲート | PatcherAgent のパッチ適用可否を信頼度スコアに基づき判定する機構（§1.3.7）|
+| hal-conductor | HAL conductor | Hardware Abstraction Layer generation orchestrator (§8) |
+| HDL | HDL | Hardware Description Language (Verilog / VHDL / SystemVerilog) (§4) |
+| Hestia | Hestia | This project's name. Hardware Engineering Stack for Tool Integration and Automation (§1.5) |
+| HumanReviewGate | Human Review Gate | Mechanism that determines whether PatcherAgent's patch should be applied based on a confidence score (§1.3.7) |
 
 ## I
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| ILA | アイエルエー | Integrated Logic Analyzer。Xilinx 社のオンチップロジックアナライザ（§10）|
-| IPC | アイピーシー | Inter-Process Communication。Hestia では agent-cli ネイティブ IPC に統一（§2.3）|
+| ILA | ILA | Integrated Logic Analyzer. Xilinx on-chip logic analyzer (§10) |
+| IPC | IPC | Inter-Process Communication. Unified under agent-cli native IPC in Hestia (§2.3) |
 
 ## J
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| JTAG | ジェイタグ | Joint Test Action Group。ボードレベル・チップレベルデバッグ用インターフェース（§10.5）|
+| JTAG | JTAG | Joint Test Action Group. Board-level and chip-level debug interface (§10.5) |
 
 ## K
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| KiCad | キカッド | オープンソース PCB 設計ツール（§7.5）|
+| KiCad | KiCad | Open-source PCB design tool (§7.5) |
 
 ## L
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| LSP | エルエスピー | Language Server Protocol。HDL LSP Broker が svls / vhdl_ls / verilog-ams-ls を統合（§13.1）|
-| LVS | エルブイエス | Layout Versus Schematic。レイアウトと回路図の一致検証（§6）|
+| LSP | LSP | Language Server Protocol. HDL LSP Broker integrates svls / vhdl_ls / verilog-ams-ls (§13.1) |
+| LVS | LVS | Layout Versus Schematic. Verification of layout versus schematic consistency (§6) |
 
 ## M
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| MCP | エムシーピー | Model Context Protocol。LLM から外部ツールを呼び出すためのプロトコル（§19）|
+| MCP | MCP | Model Context Protocol. Protocol for invoking external tools from LLMs (§19) |
 
 ## N
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| nextpnr | ネクストピーエヌアール | オープンソース配置配線ツール。iCE40/ECP5/Gowin 対応（§18.1）|
+| nextpnr | nextpnr | Open-source place-and-route tool. Supports iCE40/ECP5/Gowin (§18.1) |
 
 ## O
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| OpenLane 2 | オープンレーン・ツー | RTL-to-GDSII 自動化フレームワーク。Python ベース（§6.2）|
-| Ollama | オラマ | ローカル LLM 実行エンジン。Hestia の OSS バックエンド（§18.5）|
-| Orchestration | オーケストレーション | 複数 conductor にまたがるワークフローを自動制御する機構（§1.3.5）|
+| OpenLane 2 | OpenLane 2 | RTL-to-GDSII automation framework. Python-based (§6.2) |
+| Ollama | Ollama | Local LLM execution engine. Hestia's OSS backend (§18.5) |
+| Orchestration | Orchestration | Mechanism for automatically controlling workflows across multiple conductors (§1.3.5) |
 
 ## P
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| PatcherAgent | パッチャー・エージェント | AI がベンダーツールの非互換パッチを自動生成するエージェント（§1.3.7）|
-| PCB | ピーシービー | Printed Circuit Board。プリント基板（§7）|
-| pcb-conductor | ピーシービー・コンダクター | PCB 設計フローオーケストレーター + AI 回路図生成（§7）|
-| PDK | ピーディーケー | Process Design Kit。ASIC 製造プロセスの設計キット（Sky130 / GF180MCU）（§6.3）|
-| Peer | ピア | agent-cli IPC ネットワーク上の通信エンドポイント。各 conductor が peer として参加（§2.3）|
-| Podman | ポッドマン | Docker 代替の rootless コンテナランタイム（§11）|
-| ProbeAgent | プローブ・エージェント | 新バージョンのベンダーツールでテストビルドを実行し非互換を検出するエージェント（§1.3.7）|
+| PatcherAgent | Patcher Agent | Agent that automatically generates patches for vendor tool incompatibilities (§1.3.7) |
+| PCB | PCB | Printed Circuit Board (§7) |
+| pcb-conductor | PCB conductor | PCB design flow orchestrator + AI schematic generation (§7) |
+| PDK | PDK | Process Design Kit. ASIC manufacturing process design kit (Sky130 / GF180MCU) (§6.3) |
+| Peer | Peer | Communication endpoint on the agent-cli IPC network. Each conductor joins as a peer (§2.3) |
+| Podman | Podman | Docker-alternative rootless container runtime (§11) |
+| ProbeAgent | Probe Agent | Agent that runs test builds on new vendor tool versions to detect incompatibilities (§1.3.7) |
 
 ## Q
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| Quartus | クワータス | Intel 社の FPGA 開発ツール（§5.6）|
+| Quartus | Quartus | Intel FPGA development tool (§5.6) |
 
 ## R
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| rag-conductor | ラグ・コンダクター | 知識基盤の構築・管理・検索オーケストレーター（§13.7）|
-| RAG | ラグ | Retrieval-Augmented Generation。外部知識を LLM コンテキストに注入する手法（§1.3.9）|
-| rtl-conductor | アールティーエル・コンダクター | RTL 設計フローオーケストレーター（HDL Lint / Sim / Formal / Transpile）（§4）|
-| RtlToolAdapter | アールティーエル・ツール・アダプター | RTL ツールの統一インターフェースを定義するトレイト（§4.2）|
+| rag-conductor | RAG conductor | Knowledge base construction, management, and search orchestrator (§13.7) |
+| RAG | RAG | Retrieval-Augmented Generation. Method for injecting external knowledge into LLM context (§1.3.9) |
+| rtl-conductor | RTL conductor | RTL design flow orchestrator (HDL Lint / Sim / Formal / Transpile) (§4) |
+| RtlToolAdapter | RTL tool adapter | Trait defining the unified interface for RTL tools (§4.2) |
 
 ## S
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| SDD | エスディーディー | Spec-Driven Development。仕様書駆動開発（§1.3.1）|
-| SkillSystem | スキル・システム | AI エージェントの専門的設計能力をプラグインとして管理する機構（§1.3.2）|
-| SKiDL | スキドル | Python ベースの回路記述言語。LLM との親和性が高い（§7.2）|
-| sled | スレッド | Rust ネイティブ KV ストア。messages / agent_state / task_queue 等に使用（§18.9）|
-| SpecParser | スペック・パーサー | 自然言語仕様書を構造化 DesignSpec に変換するパーサー（§1.3.1）|
-| SWD | エスダブリューディー | Serial Wire Debug。ARM のデバッグインターフェース（§10.6）|
+| SDD | SDD | Spec-Driven Development (§1.3.1) |
+| SkillSystem | Skill System | Mechanism for managing AI agent specialized design capabilities as plugins (§1.3.2) |
+| SKiDL | SKiDL | Python-based circuit description language. High LLM compatibility (§7.2) |
+| sled | sled | Rust-native KV store. Used for messages / agent_state / task_queue etc. (§18.9) |
+| SpecParser | Spec Parser | Parser that converts natural language specifications into structured DesignSpec (§1.3.1) |
+| SWD | SWD | Serial Wire Debug. ARM debug interface (§10.6) |
 
 ## T
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| ToolAdapter | ツール・アダプター | ツールの統一インターフェースを定義するトレイトの総称（§1.2 原則1）|
-| Tool Use | ツール・ユース | 生成 AI が外部ツールを呼び出しながら反復的に問題を解決するエージェントループ機構（§1.3.8）|
-| trace_id | トレース・アイディ | ワークフロー横断の分散トレース ID（§14.1, §19）|
+| ToolAdapter | Tool Adapter | General term for traits defining unified tool interfaces (§1.2 Principle 1) |
+| Tool Use | Tool Use | Agent loop mechanism where generative AI iteratively solves problems by calling external tools (§1.3.8) |
+| trace_id | Trace ID | Cross-workflow distributed trace ID (§14.1, §19) |
 
 ## U
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| UpgradeManager | アップグレード・マネージャー | セマンティックバージョニングに基づく段階的ロールアウト（Canary → Staging → Production）を制御（§3.4）|
+| UpgradeManager | Upgrade Manager | Controls gradual rollout (Canary → Staging → Production) based on semantic versioning (§3.4) |
 
 ## V
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| ValidatorAgent | バリデーター・エージェント | サンドボックス環境でパッチを検証し信頼度スコアを算出するエージェント（§1.3.7）|
-| VendorAdapter | ベンダー・アダプター | ベンダーツールの統一インターフェースを定義するトレイト（§5.2）|
-| Vivado | ビバド | AMD（Xilinx）社の FPGA 開発ツール（§5.5）|
+| ValidatorAgent | Validator Agent | Agent that verifies patches in a sandbox environment and calculates confidence scores (§1.3.7) |
+| VendorAdapter | Vendor Adapter | Trait defining the unified interface for vendor tools (§5.2) |
+| Vivado | Vivado | AMD (Xilinx) FPGA development tool (§5.5) |
 
 ## W
 
-| 用語 | 読み方 | 定義 |
+| Term | Reading | Definition |
 |------|--------|------|
-| WatcherAgent | ウォッチャー・エージェント | 6時間ごとにベンダーサイトを監視し新バージョンを検出するエージェント（§1.3.7）|
-| WorkflowEngine | ワークフロー・エンジン | DAG として定義されたワークフローをトポロジカルソートで実行制御（§3.5）|
+| WatcherAgent | Watcher Agent | Agent that monitors vendor sites every 6 hours to detect new versions (§1.3.7) |
+| WorkflowEngine | Workflow Engine | Executes workflows defined as DAGs via topological sort (§3.5) |
 
-## 略語一覧
+## Abbreviation List
 
-| 略語 | 正式名称 |
+| Abbreviation | Full Name |
 |------|---------|
 | ASIC | Application-Specific Integrated Circuit |
 | DRC | Design Rule Check |
@@ -218,7 +218,7 @@
 
 ---
 
-## 関連ドキュメント
+## Related Documentation
 
-- [architecture_overview.md](architecture_overview.md) — アーキテクチャ概要
-- [agent_communication.md](agent_communication.md) — 通信仕様
+- [architecture_overview.md](architecture_overview.md) — Architecture overview
+- [agent_communication.md](agent_communication.md) — Communication specification

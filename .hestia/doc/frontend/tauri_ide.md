@@ -1,29 +1,29 @@
-# Tauri デスクトップアプリ
+# Tauri Desktop App
 
-**対象領域**: frontend — デスクトップ IDE
-**ソース**: 設計仕様書 §16.2
+**Target Domain**: frontend — desktop IDE
+**Source**: Design Specification §16.2
 
-## 概要
+## Overview
 
-Tauri（Rust + React）ベースのデスクトップアプリ。VSCode 拡張と同等の機能をネイティブデスクトップ環境で提供する。
+A Tauri (Rust + React) based desktop app. Provides equivalent functionality to the VSCode extension in a native desktop environment.
 
-## 基本設定
+## Basic Settings
 
-| 項目 | 値 |
-|------|-----|
-| バージョン | 0.1.0 |
-| 識別子 | `dev.hestia.ide` |
-| 設定ファイル | `tauri.conf.json` |
+| Item | Value |
+|------|-------|
+| Version | 0.1.0 |
+| Identifier | `dev.hestia.ide` |
+| Configuration file | `tauri.conf.json` |
 
-## ウィンドウ構成
+## Window Configuration
 
-| ウィンドウ | サイズ | 用途 |
-|----------|-------|------|
-| main | 1440 x 900 | メインエディタ・conductor 管理パネル |
-| waveform | 1200 x 600 | 波形ビューア（WASM / ネイティブ）|
-| settings | 800 x 600 | 設定画面 |
+| Window | Size | Purpose |
+|--------|------|---------|
+| main | 1440 x 900 | Main editor and conductor management panel |
+| waveform | 1200 x 600 | Waveform viewer (WASM / native) |
+| settings | 800 x 600 | Settings screen |
 
-## セキュリティ
+## Security
 
 ### Content Security Policy (CSP)
 
@@ -31,25 +31,25 @@ Tauri（Rust + React）ベースのデスクトップアプリ。VSCode 拡張�
 connect-src 'self' ipc: ws://localhost:*
 ```
 
-- `connect-src 'self'`: 同一オリジンからの通信を許可
-- `ipc:`: Tauri IPC チャンネル
-- `ws://localhost:*`: 開発時の HMR（Hot Module Replacement）
+- `connect-src 'self'`: Allow communication from the same origin
+- `ipc:`: Tauri IPC channel
+- `ws://localhost:*`: HMR (Hot Module Replacement) during development
 
-## バンドルターゲット
+## Bundle Targets
 
-| ターゲット | フォーマット |
-|----------|------------|
+| Target | Format |
+|--------|--------|
 | Debian / Ubuntu | `.deb` |
 | RHEL / Fedora | `.rpm` |
-| Linux 汎用 | `.AppImage` |
+| Linux (generic) | `.AppImage` |
 
-## Shell プラグイン
+## Shell Plugin
 
-Tauri Shell プラグイン経由で以下の 10 コマンドを呼び出し可能:
+The following 10 commands can be invoked via the Tauri Shell plugin:
 
-| コマンド | 用途 |
-|---------|------|
-| `hestia` | 統合ランナー |
+| Command | Purpose |
+|---------|---------|
+| `hestia` | Unified runner |
 | `hestia-ai-cli` | ai-conductor CLI |
 | `hestia-rtl-cli` | rtl-conductor CLI |
 | `hestia-fpga-cli` | fpga-conductor CLI |
@@ -60,12 +60,12 @@ Tauri Shell プラグイン経由で以下の 10 コマンドを呼び出し可�
 | `hestia-debug-cli` | debug-conductor CLI |
 | `hestia-rag-cli` | rag-conductor CLI |
 
-## UI コンポーネント
+## UI Components
 
-`hestia-ui`（§16.3）のコンポーネントを流用し、Tauri 固有のテーマ変数に追従して表示を統一。
+Reuses components from `hestia-ui` (§16.3), with display unified by adhering to Tauri-specific theme variables.
 
-## 関連ドキュメント
+## Related Documentation
 
-- [vscode_extension.md](vscode_extension.md) — VSCode 拡張
-- [ui_components.md](ui_components.md) — UI コンポーネントライブラリ
-- [agent_cli_client.md](agent_cli_client.md) — agent-cli クライアント仕様
+- [vscode_extension.md](vscode_extension.md) — VSCode extension
+- [ui_components.md](ui_components.md) — UI component library
+- [agent_cli_client.md](agent_cli_client.md) — agent-cli client specification

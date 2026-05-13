@@ -1,13 +1,13 @@
 # IP Manager
 
-**対象領域**: common — IP コア管理
-**ソース**: 設計仕様書 §13.4
+**Domain**: common — IP Core Management
+**Source**: Design Specification §13.4
 
-## 概要
+## Overview
 
-IP コアの登録・検索・バージョン解決・ライセンス管理・依存関係解決を提供する共有サービス。`petgraph` の DAG ベース解決アルゴリズム（トポロジカルソート）で多段依存を解く。agent-cli peer `ip-manager` として提供される。
+A shared service that provides IP core registration, search, version resolution, license management, and dependency resolution. It uses `petgraph`'s DAG-based resolution algorithm (topological sort) to resolve multi-level dependencies. Provided as agent-cli peer `ip-manager`.
 
-## 主要型
+## Key Types
 
 ### IpCore
 
@@ -41,58 +41,58 @@ pub struct IpDependency {
 pub struct IpFile {
     pub path: String,
     pub file_type: IpFileType,     // rtl | testbench | doc | constraint
-    pub language: IpLanguage,       // verilog | vhdl | その他
+    pub language: IpLanguage,       // verilog | vhdl | other
 }
 ```
 
-## 依存関係解決アルゴリズム
+## Dependency Resolution Algorithm
 
-`petgraph` の DAG で IP コア間の依存関係を構築し、トポロジカルソートで解決順序を決定する。
+A DAG of dependencies between IP cores is constructed using `petgraph`, and the resolution order is determined via topological sort.
 
 ```
 IpCore A (depends on B, C)
-  ├── IpCore B (depends on D)
-  └── IpCore C (depends on D)
-      └── IpCore D (no dependencies)
+  +-- IpCore B (depends on D)
+  +-- IpCore C (depends on D)
+      +-- IpCore D (no dependencies)
 
-トポロジカルソート結果: [D, B, C, A]
+Topological sort result: [D, B, C, A]
 ```
 
-循環依存を検出した場合はエラー（DAG ではない）。
+If a circular dependency is detected, an error is raised (not a DAG).
 
-## ライセンス分類
+## License Classification
 
-| 分類 | 対象ライセンス | 扱い |
+| Classification | Target Licenses | Treatment |
 |------|-------------|------|
-| `Oss` | MIT / Apache-2.0 / BSD / GPL / ISC / CC0 | 自由に利用・公開可能 |
-| `VendorProprietary` | FlexLM・seat 制限 | `terms_accepted=true` 必須、社内利用のみ |
-| `Unknown` | 不明 | **拒否**（取り込み不可）|
+| `Oss` | MIT / Apache-2.0 / BSD / GPL / ISC / CC0 | Freely usable and publishable |
+| `VendorProprietary` | FlexLM / seat-limited | `terms_accepted=true` required, internal use only |
+| `Unknown` | Unknown | **Rejected** (cannot be imported)|
 
-## バージョン解決
+## Version Resolution
 
-semver に基づくバージョン制約の解決:
+Version constraint resolution based on semver:
 
-| 制約 | 意味 |
+| Constraint | Meaning |
 |------|------|
-| `>=0.40` | 0.40 以上 |
-| `^1.0.0` | 1.x.x（互換性維持）|
-| `~1.2.0` | 1.2.x（パッチ更新のみ）|
-| `=2025.2` | 厳密一致 |
+| `>=0.40` | 0.40 or higher |
+| `^1.0.0` | 1.x.x (maintaining compatibility)|
+| `~1.2.0` | 1.2.x (patch updates only)|
+| `=2025.2` | Exact match |
 
-## クレート構成
+## Crate Structure
 
 ```
 ip-manager/
 ├── Cargo.toml
 └── src/
     ├── lib.rs              # IpCore, IpRegistry
-    ├── resolver.rs         # DAG 解決（petgraph）
-    ├── license.rs          # ライセンス分類・検証
-    └── version.rs          # semver バージョン解決
+    ├── resolver.rs         # DAG resolution (petgraph)
+    ├── license.rs          # License classification and verification
+    └── version.rs          # semver version resolution
 ```
 
-## 関連ドキュメント
+## Related Documents
 
-- [constraint_bridge.md](constraint_bridge.md) — 制約ファイル変換
-- [database_schema.md](database_schema.md) — ip_registry スキーマ
-- [observability.md](observability.md) — 監視
+- [constraint_bridge.md](constraint_bridge.md) — Constraint file conversion
+- [database_schema.md](database_schema.md) — ip_registry schema
+- [observability.md](observability.md) — Monitoring

@@ -1,4 +1,4 @@
-//! hal.toml 設定モデル（§8.4）
+//! hal.toml configuration model (section 8.4)
 
 use serde::{Deserialize, Serialize};
 

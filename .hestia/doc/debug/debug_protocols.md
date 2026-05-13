@@ -1,13 +1,13 @@
-# debug-conductor デバッグプロトコル
+# debug-conductor Debug Protocols
 
-**対象 Conductor**: debug-conductor
-**ソース**: 設計仕様書 §10.5（2495-2528行目付近）
+**Target Conductor**: debug-conductor
+**Source**: Design Specification §10.5 (around lines 2495-2528)
 
-## JTAG TAP ステートマシン（§10.5）
+## JTAG TAP State Machine (§10.5)
 
-adapter-jtag は IEEE 1149.1 準拠の TAP（Test Access Port）ステートマシンを実装する。TMS 信号で状態遷移を制御する。
+adapter-jtag implements a TAP (Test Access Port) state machine compliant with IEEE 1149.1. State transitions are controlled by the TMS signal.
 
-### TapState 一覧
+### TapState Enumeration
 
 ```rust
 pub enum TapState {
@@ -17,71 +17,71 @@ pub enum TapState {
 }
 ```
 
-### TAP ステートマシン遷移図
+### TAP State Machine Transitions
 
-TMS=0 / TMS=1 で制御される16状態の有限オートマトン。
+A 16-state finite automaton controlled by TMS=0 / TMS=1.
 
-- `TestLogicReset` は TMS=1 を5クロック連続入力で常に到達可能（リセット状態）
-- `RunTestIdle` はアイドル状態
-- DR パス: `SelectDR → CaptureDR → ShiftDR → Exit1DR → PauseDR → Exit2DR → UpdateDR`
-- IR パス: `SelectIR → CaptureIR → ShiftIR → Exit1IR → PauseIR → Exit2IR → UpdateIR`
+- `TestLogicReset` is always reachable by holding TMS=1 for 5 consecutive clock cycles (reset state)
+- `RunTestIdle` is the idle state
+- DR path: `SelectDR → CaptureDR → ShiftDR → Exit1DR → PauseDR → Exit2DR → UpdateDR`
+- IR path: `SelectIR → CaptureIR → ShiftIR → Exit1IR → PauseIR → Exit2IR → UpdateIR`
 
-## SWD プロトコル（§10.6）
+## SWD Protocol (§10.6)
 
-adapter-swd は ARM Serial Wire Debug（2線式: SWCLK / SWDIO）を実装する。
+adapter-swd implements ARM Serial Wire Debug (2-wire: SWCLK / SWDIO).
 
-### リクエスト種別
+### Request Types
 
-| リクエスト種別 | 説明 | 対象レジスタ |
+| Request Type | Description | Target Registers |
 |---------------|------|------------|
-| `ReadDP` | Debug Port レジスタ読み出し | DPIDR, CTRL/STAT, SELECT 等 |
-| `WriteDP` | Debug Port レジスタ書き込み | SELECT, ABORT 等 |
-| `ReadAP` | Access Port レジスタ読み出し | CSW, TAR, DRW 等 |
-| `WriteAP` | Access Port レジスタ書き込み | CSW, TAR, DRW 等 |
+| `ReadDP` | Debug Port register read | DPIDR, CTRL/STAT, SELECT, etc. |
+| `WriteDP` | Debug Port register write | SELECT, ABORT, etc. |
+| `ReadAP` | Access Port register read | CSW, TAR, DRW, etc. |
+| `WriteAP` | Access Port register write | CSW, TAR, DRW, etc. |
 
-### SWD パケット構成
+### SWD Packet Structure
 
 ```
 [Start] [APnDP] [RnW] [Addr(2bit)] [Parity] [Stop] [Park] → [Trn] → [Data(32bit)] [Parity]
 ```
 
-### SWD 特記事項
+### SWD Notable Points
 
-- JTAG（4線: TCK/TMS/TDI/TDO）に対して2線（SWCLK/SWDIO）で実装
-- ARM Cortex-M プロセッサの標準デバッグインターフェース
-- OpenOCD / pyOCD でサポート
+- Implements 2-wire (SWCLK/SWDIO) compared to JTAG (4-wire: TCK/TMS/TDI/TDO)
+- Standard debug interface for ARM Cortex-M processors
+- Supported by OpenOCD / pyOCD
 
-## プロトコルデコーダ（§10.7）
+## Protocol Decoders (§10.7)
 
-debug-conductor は以下のプロトコルデコーダを内蔵する（sigrok / PulseView 統合）。
+debug-conductor includes the following built-in protocol decoders (sigrok / PulseView integration).
 
-| プロトコル | デコード対象 | 設定パラメータ |
+| Protocol | Decode Target | Configuration Parameters |
 |-----------|------------|--------------|
-| UART | ボーレート自動検出、8N1/7E1 等のフレーム設定 | ボーレート、データビット、パリティ、ストップビット |
-| SPI | Mode 0〜3、CPOL/CPHA 設定 | クロック極性・位相、CS 極性 |
-| I2C | 7bit/10bit アドレス、ACK/NACK 解析 | アドレスモード |
-| CAN | Standard/Extended ID、DLC、データフィールド | ビットレート |
-| LIN | Break/Sync/PID/Data/Checksum 解析 | ボーレート |
+| UART | Baud rate auto-detection, 8N1/7E1 and other frame settings | Baud rate, data bits, parity, stop bits |
+| SPI | Mode 0-3, CPOL/CPHA settings | Clock polarity/phase, CS polarity |
+| I2C | 7-bit/10-bit address, ACK/NACK analysis | Address mode |
+| CAN | Standard/Extended ID, DLC, data field | Bit rate |
+| LIN | Break/Sync/PID/Data/Checksum analysis | Baud rate |
 
-## オンチップデバッグ統合
+## On-Chip Debug Integration
 
-| ILA 種別 | ベンダー | 接続方式 |
+| ILA Type | Vendor | Connection Method |
 |---------|---------|---------|
-| Xilinx ILA | AMD/Xilinx | Vivado hw_server 経由 |
-| Intel SignalTap | Intel/Altera | Quartus Signal Tap 経由 |
-| Lattice Reveal | Lattice | Radiant Reveal 経由 |
+| Xilinx ILA | AMD/Xilinx | Via Vivado hw_server |
+| Intel SignalTap | Intel/Altera | Via Quartus Signal Tap |
+| Lattice Reveal | Lattice | Via Radiant Reveal |
 
-## 波形フォーマット
+## Waveform Formats
 
-| フォーマット | 説明 |
+| Format | Description |
 |------------|------|
-| VCD | Value Change Dump（標準波形フォーマット） |
-| FST | Fast Signal Trace（圧縮波形フォーマット） |
-| WASM | WASM ベース波形ビューア（100万サンプル、60fps） |
+| VCD | Value Change Dump (standard waveform format) |
+| FST | Fast Signal Trace (compressed waveform format) |
+| WASM | WASM-based waveform viewer (1 million samples, 60fps) |
 
-## 関連ドキュメント
+## Related Documentation
 
-- [debug/binary_spec.md](binary_spec.md) — hestia-debug-cli バイナリ仕様
-- [debug/state_machines.md](state_machines.md) — セッション管理ステートマシン
-- [debug/message_methods.md](message_methods.md) — debug.* メソッド一覧
-- [debug/error_types.md](error_types.md) — debug-conductor エラーコード
+- [debug/binary_spec.md](binary_spec.md) — hestia-debug-cli binary specification
+- [debug/state_machines.md](state_machines.md) — Session management state machine
+- [debug/message_methods.md](message_methods.md) — debug.* method list
+- [debug/error_types.md](error_types.md) — debug-conductor error codes

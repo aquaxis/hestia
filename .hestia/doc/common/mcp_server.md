@@ -1,64 +1,64 @@
-# MCP サーバー仕様
+# MCP Server Specification
 
-**対象領域**: common — AI ツール連携
-**ソース**: 設計仕様書 §17.2, §13.7.5, §18.9
+**Domain**: common — AI Tool Integration
+**Source**: Design Specification §17.2, §13.7.5, §18.9
 
-## 概要
+## Overview
 
-MCP（Model Context Protocol）サーバーは、LLM から外部ツールを呼び出すための標準化されたインターフェースを提供する。HESTIA では共有サービス層の peer `mcp` として実装され、AI エージェント（agent-cli プロセス）が各種ツールを LLM の Tool Use 機能経由で呼び出せるようにする。
+The MCP (Model Context Protocol) server provides a standardized interface for invoking external tools from LLMs. In HESTIA, it is implemented as a shared service layer peer `mcp`, enabling AI agents (agent-cli processes) to call various tools via LLM Tool Use functionality.
 
-## アーキテクチャ
+## Architecture
 
 ```
-[agent-cli (LLM)] → Tool Use 要求 → [MCP Server] → ツール実行 → 結果返却
-                                              │
-                                              ├── HDL LSP Broker
-                                              ├── Constraint Bridge
-                                              ├── IP Manager
-                                              ├── CI/CD API
-                                              ├── Observability
-                                              ├── RAG (hestia_rag_search)
-                                              └── kicad-mcp-python
+[agent-cli (LLM)] -> Tool Use request -> [MCP Server] -> Tool execution -> Result returned
+                                              |
+                                              +-- HDL LSP Broker
+                                              +-- Constraint Bridge
+                                              +-- IP Manager
+                                              +-- CI/CD API
+                                              +-- Observability
+                                              +-- RAG (hestia_rag_search)
+                                              +-- kicad-mcp-python
 ```
 
-## 提供ツール
+## Provided Tools
 
-| ツール名 | 対象サービス | 機能 |
+| Tool Name | Target Service | Function |
 |---------|------------|------|
-| `hestia_rag_search` | rag-conductor | ナレッジベース検索（`rag.search` と同等）|
-| `hestia_lsp_diagnostics` | HDL LSP Broker | HDL 診断情報取得 |
-| `hestia_constraint_convert` | Constraint Bridge | 制約ファイル変換 |
-| `hestia_ip_resolve` | IP Manager | IP 依存関係解決 |
-| `hestia_pipeline_run` | CI/CD API | パイプライン実行 |
-| `hestia_health_check` | Observability | ヘルスチェック実行 |
+| `hestia_rag_search` | rag-conductor | Knowledge base search (equivalent to `rag.search`)|
+| `hestia_lsp_diagnostics` | HDL LSP Broker | HDL diagnostic information retrieval |
+| `hestia_constraint_convert` | Constraint Bridge | Constraint file conversion |
+| `hestia_ip_resolve` | IP Manager | IP dependency resolution |
+| `hestia_pipeline_run` | CI/CD API | Pipeline execution |
+| `hestia_health_check` | Observability | Health check execution |
 
-## MCP と agent-cli バックエンド切替の違い
+## Difference Between MCP and agent-cli Backend Switching
 
-| 項目 | MCP サーバー | agent-cli バックエンド切替 |
+| Item | MCP Server | agent-cli Backend Switching |
 |------|------------|-------------------------|
-| 用途 | AI からの外部ツール呼出 | agent-cli 自身の LLM バックエンド選択 |
-| 経路 | Tool Use → MCP Server → ツール | agent-cli → LLM API |
-| 設計 | 独立 | §20 `[agent_cli]` |
+| Purpose | External tool invocation from AI | Selection of agent-cli's own LLM backend |
+| Path | Tool Use -> MCP Server -> Tool | agent-cli -> LLM API |
+| Design | Independent | §20 `[agent_cli]` |
 
-両者は独立した設計であり、MCP サーバーは「AI が呼び出すツールの経路」、バックエンド切替は「AI 自身の推論エンジンの選択」をそれぞれ担当する。
+The two are independent designs: the MCP server handles "the path for AI to call tools," while backend switching handles "the selection of AI's own inference engine."
 
-## 実装クレート
+## Implementation Crate
 
 ```
 hestia-mcp-server/
 ├── Cargo.toml
 └── src/
-    ├── lib.rs          # MCP サーバーエントリ
-    ├── tools.rs        # ツール定義・ディスパッチ
-    └── transport.rs    # MCP プロトコル処理
+    ├── lib.rs          # MCP server entry point
+    ├── tools.rs        # Tool definition and dispatch
+    └── transport.rs    # MCP protocol handling
 ```
 
-## kicad-mcp-python 連携
+## kicad-mcp-python Integration
 
-KiCad との連携には `kicad-mcp-python`（MIT ライセンス）を使用。PCB conductor が KiCad 操作を MCP 経由で AI に公開する。
+KiCad integration uses `kicad-mcp-python` (MIT license). The PCB conductor exposes KiCad operations to AI via MCP.
 
-## 関連ドキュメント
+## Related Documents
 
-- [backend_switching.md](backend_switching.md) — LLM バックエンド切替
-- [agent_cli_messaging.md](agent_cli_messaging.md) — メッセージング仕様
-- [observability.md](observability.md) — 監視
+- [backend_switching.md](backend_switching.md) — LLM backend switching
+- [agent_cli_messaging.md](agent_cli_messaging.md) — Messaging specification
+- [observability.md](observability.md) — Monitoring

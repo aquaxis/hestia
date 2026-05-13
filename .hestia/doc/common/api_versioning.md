@@ -1,22 +1,22 @@
-# メソッド名前空間・バージョニング
+# Method Namespace and Versioning
 
-**対象領域**: common — API バージョニング
-**ソース**: 設計仕様書 §14.2
+**Domain**: common — API Versioning
+**Source**: Design Specification §14.2
 
-## 概要
+## Overview
 
-agent-cli IPC 上の構造化メッセージのメソッド名は、ドメイン x 機能 x バージョンの3階層で命名される。後方互換性と段階的廃止を保証するため、セマンティックバージョニングに基づくバージョンプレフィックスを採用する。
+Method names for structured messages on agent-cli IPC follow a three-level naming scheme: domain x feature x version. To ensure backward compatibility and gradual deprecation, a semantic versioning-based version prefix is adopted.
 
-## 命名規則
+## Naming Convention
 
 ```
 {domain}.{method_group}.{version_prefix}.{action}
 ```
 
-- 例: `fpga.build.v1.synthesize`
-- 簡略形 `{domain}.{action}` も同義（v1 既定）
+- Example: `fpga.build.v1.synthesize`
+- Shorthand `{domain}.{action}` is equivalent (defaults to v1)
 
-## 主要型
+## Key Types
 
 ### ApiVersion
 
@@ -50,19 +50,19 @@ pub struct DeprecationNotice {
 }
 ```
 
-## 互換性規則
+## Compatibility Rules
 
-| 変更種別 | バージョン影響 | 後方互換 |
+| Change Type | Version Impact | Backward Compatible |
 |---------|-------------|---------|
-| 必須パラメータ追加 | major バンプ | 不可 |
-| 既存パラメータ型変更 | major バンプ | 不可 |
-| メソッド削除 | major バンプ | 不可 |
-| 任意パラメータ追加 | minor バンプ | 可能 |
-| 応答フィールド追加 | minor バンプ | 可能 |
+| Required parameter added | Major bump | No |
+| Existing parameter type changed | Major bump | No |
+| Method removed | Major bump | No |
+| Optional parameter added | Minor bump | Yes |
+| Response field added | Minor bump | Yes |
 
-## ドメイン一覧
+## Domain Listing
 
-| ドメイン | 例 |
+| Domain | Examples |
 |---------|----|
 | `ai.*` | `ai.spec.init` / `ai.spec.update` / `ai.spec.review` / `ai.exec` / `agent_spawn` / `agent_list` |
 | `fpga.*` | `fpga.synthesize` / `fpga.implement` / `fpga.bitstream` / `fpga.simulate` / `fpga.program` |
@@ -70,18 +70,18 @@ pub struct DeprecationNotice {
 | `pcb.*` | `pcb.generate_schematic` / `pcb.run_drc` / `pcb.run_erc` / `pcb.generate_bom` / `pcb.place_components` / `pcb.route_traces` / `pcb.generate_output` / `pcb.ai_synthesize` / `pcb.status` |
 | `debug.*` | `debug.connect` / `debug.disconnect` / `debug.program` / `debug.start_capture` / `debug.stop_capture` / `debug.read_signals` / `debug.set_trigger` / `debug.reset` / `debug.status` |
 | `rag.*` | `rag.ingest` / `rag.search` / `rag.cleanup` / `rag.status` |
-| `meta.*` | `meta.dualBuild` / `meta.boardWithFpga` ほかクロス Conductor ワークフロー |
+| `meta.*` | `meta.dualBuild` / `meta.boardWithFpga` and other cross-Conductor workflows |
 | `system.*` | `system.readiness` / `system.health` / `system.shutdown` |
 
-## 廃止予告フロー
+## Deprecation Notice Flow
 
-1. 新バージョンのメソッドを追加
-2. 旧メソッドに `DeprecationNotice` を付与
-3. 移行期間中は旧メソッドも動作（警告ログ出力）
-4. `removal_scheduled` バージョン到達時に旧メソッドを削除
+1. Add the new version of the method
+2. Attach a `DeprecationNotice` to the old method
+3. During the migration period, the old method still works (with warning log output)
+4. Remove the old method when the `removal_scheduled` version is reached
 
-## 関連ドキュメント
+## Related Documents
 
-- [agent_message.md](agent_message.md) — メッセージペイロード形式
-- [error_registry.md](error_registry.md) — エラーコード規約
-- [agent_cli_messaging.md](agent_cli_messaging.md) — 完全なメッセージング仕様
+- [agent_message.md](agent_message.md) — Message payload format
+- [error_registry.md](error_registry.md) — Error code conventions
+- [agent_cli_messaging.md](agent_cli_messaging.md) — Complete messaging specification

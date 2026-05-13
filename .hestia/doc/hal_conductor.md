@@ -1,36 +1,36 @@
-# HAL 生成オーケストレーター
+# HAL Generation Orchestrator
 
-**対象領域**: hal-conductor
-**ソース**: 設計仕様書 §8（2175-2280行目）
-
----
-
-## 概要
-
-`hal-conductor` は HDL（RTL）と Application Software の境界に位置する Hardware Abstraction Layer (HAL) の生成・管理を担う conductor である。SystemRDL / IP-XACT / 独自スキーマからレジスタ定義を読み込み、複数言語（C / Rust / Python）のドライバスケルトン・レジスタアクセス API・メモリマップ定義を自動生成する。`rtl-conductor` が定義したバスインターフェースと、`apps-conductor` が利用する高水準ドライバを橋渡しする。
+**Target Domain**: hal-conductor
+**Source**: Design specification §8 (lines 2175-2280)
 
 ---
 
-## クレート構成
+## Overview
+
+`hal-conductor` is the conductor responsible for generating and managing the Hardware Abstraction Layer (HAL) that sits at the boundary between HDL (RTL) and application software. It reads register definitions from SystemRDL / IP-XACT / custom schemas and auto-generates driver skeletons, register access APIs, and memory map definitions in multiple languages (C / Rust / Python). It bridges the bus interface definitions from `rtl-conductor` with the high-level drivers used by `apps-conductor`.
+
+---
+
+## Crate Structure
 
 ```
 crates/hal-conductor/
 ├── src/
-│   ├── lib.rs              # Conductor 本体・agent-cli メッセージハンドラ
-│   ├── adapter.rs          # HalToolAdapter トレイト
-│   ├── register_map.rs     # レジスタマップモデル（フィールド/ビット/アクセス権）
-│   ├── codegen.rs          # 多言語コード生成（C / Rust / Python）
-│   ├── memory_map.rs       # アドレス空間管理・重複検出
-│   ├── bus_protocol.rs     # バスプロトコル定義（AXI / Wishbone / AHB）
-│   └── fsm_states.rs       # ビルドステートマシン
+│   ├── lib.rs              # Conductor body, agent-cli message handler
+│   ├── adapter.rs          # HalToolAdapter trait
+│   ├── register_map.rs     # Register map model (fields/bits/access rights)
+│   ├── codegen.rs          # Multi-language code generation (C / Rust / Python)
+│   ├── memory_map.rs       # Address space management, overlap detection
+│   ├── bus_protocol.rs     # Bus protocol definitions (AXI / Wishbone / AHB)
+│   └── fsm_states.rs       # Build state machine
 └── Cargo.toml
 ```
 
 ---
 
-## HalToolAdapter トレイト
+## HalToolAdapter Trait
 
-統一インターフェース。全ての HAL ツールアダプターが実装すべきトレイトである。
+A unified interface. All HAL tool adapters must implement this trait.
 
 ```rust
 #[async_trait]
@@ -48,17 +48,17 @@ pub trait HalToolAdapter: Send + Sync {
 
 ---
 
-## ビルドステートマシン（5状態）
+## Build State Machine (5 States)
 
 ```
 Idle → Parsing → Validating → Generating → Reporting → Done
-                          ↓ (バス境界違反 / アドレス重複 / 型不整合)
-                      Failed → Diagnosing → 修正提案
+                          ↓ (bus boundary violation / address overlap / type mismatch)
+                      Failed → Diagnosing → Fix proposal
 ```
 
 ---
 
-## 統一プロジェクトフォーマット（hal.toml）
+## Unified Project Format (hal.toml)
 
 ```toml
 [project]
@@ -84,54 +84,54 @@ svd = "build/hal/svd/soc_hal.svd"
 
 ---
 
-## 主要アダプター
+## Major Adapters
 
-| アダプター | 役割 | 入力 | 出力 |
-|-----------|------|------|------|
-| `peakrdl` | SystemRDL 多言語生成 | SystemRDL | C / Markdown / HTML |
-| `peakrdl-rust` | Rust ドライバ生成 | SystemRDL | Rust（embedded-hal 互換）|
-| `ipyxact` | IP-XACT パース | IP-XACT XML | 内部レジスタモデル |
-| `csr2regs` | CSR レジスタ生成 | TOML / YAML | C / SystemVerilog |
-| `cmsis-svd-gen` | CMSIS SVD 生成 | 内部モデル | SVD XML |
-| `svd2rust-bridge` | SVD → Rust crate | SVD | Rust（svd2rust 互換）|
-
----
-
-## 上流・下流連携
-
-- **上流（rtl-conductor）**: rtl-conductor が定義したバスインターフェース宣言を入力に取り、レジスタマップを SystemRDL 形式でエクスポート可能。`hal.handoff` イベントで rtl-conductor からトリガーされる
-- **下流（apps-conductor）**: 生成された C ヘッダ / Rust crate / Python モジュールを apps-conductor の `[hal] import = "..."` で取り込む
-- **横断（debug-conductor）**: 同一レジスタマップを debug-conductor が再利用し、ライブデバッグ時のレジスタ表示・編集 UI に活用
-- **横断（asic-conductor / fpga-conductor）**: レジスタブロックの SystemVerilog テンプレート出力を、対応する conductor の `[sources]` に直接渡せる
+| Adapter | Role | Input | Output |
+|---------|------|-------|--------|
+| `peakrdl` | SystemRDL multi-language generation | SystemRDL | C / Markdown / HTML |
+| `peakrdl-rust` | Rust driver generation | SystemRDL | Rust (embedded-hal compatible) |
+| `ipyxact` | IP-XACT parsing | IP-XACT XML | Internal register model |
+| `csr2regs` | CSR register generation | TOML / YAML | C / SystemVerilog |
+| `cmsis-svd-gen` | CMSIS SVD generation | Internal model | SVD XML |
+| `svd2rust-bridge` | SVD → Rust crate | SVD | Rust (svd2rust compatible) |
 
 ---
 
-## 公開 method
+## Upstream/Downstream Integration
 
-`hal.parse.v1` / `hal.validate.v1` / `hal.generate.v1` / `hal.export.v1`（rtl/asic 向けエクスポート）/ `hal.diff.v1`（レジスタマップ差分）の5系統。agent-cli IPC 上の構造化 JSON ペイロードとして送信される。
-
----
-
-## サブエージェント構成
-
-hal-conductor は **planner / designer / coder（複数）/ validator** の4種類のサブエージェントを持ち、レジスタマップから多言語ドライバ生成フローを分担する。各サブエージェントは独立した agent-cli プロセスとして起動され、`agent-cli send <peer>` IPC で hal-conductor 本体（peer 名 `hal`）と協調する。
-
-| サブエージェント | peer 名 | 役割 | 多重度 |
-|----------------|---------|------|-------|
-| **planner** | `hal-planner` | HAL 生成プランニング（レジスタブロック分割、バスプロトコル選定、出力言語決定）| 1 |
-| **designer** | `hal-designer` | HAL 詳細仕様（レジスタフィールド、アクセス権、メモリマップ、SystemRDL/IP-XACT スキーマ）| 1 |
-| **coder** | `hal-coder-{lang}` | 言語ごとのドライバコード生成（`hal-coder-c` / `hal-coder-rust` / `hal-coder-python` / `hal-coder-svd`）| **N**（出力言語数だけ並列起動）|
-| **validator** | `hal-validator` | レジスタマップ検証（アドレス重複 / 型整合性 / バス境界チェック / プロトコル準拠）| 1 |
-
-**フロー**: planner → designer → coder（言語ごとに並列）→ validator の順次実行。出力言語が C / Rust / Python の3つなら coder は3並列起動。
+- **Upstream (rtl-conductor)**: Takes bus interface declarations defined by rtl-conductor as input and can export the register map in SystemRDL format. Triggered from rtl-conductor via the `hal.handoff` event
+- **Downstream (apps-conductor)**: Generated C headers / Rust crates / Python modules are imported via apps-conductor's `[hal] import = "..."`
+- **Cross-cutting (debug-conductor)**: debug-conductor reuses the same register map for live debugging register display and editing UI
+- **Cross-cutting (asic-conductor / fpga-conductor)**: SystemVerilog template output of register blocks can be passed directly to the corresponding conductor's `[sources]`
 
 ---
 
-## 関連ドキュメント
+## Public Methods
 
-- [master_agent_design.md](master_agent_design.md) — ai-conductor 詳細設計
-- [rtl_conductor.md](rtl_conductor.md) — RTL 設計フローオーケストレーター（上流）
-- [apps_conductor.md](apps_conductor.md) — アプリケーションソフトウェア開発オーケストレーター（下流）
-- [fpga_conductor.md](fpga_conductor.md) — FPGA 設計フローオーケストレーター（横断）
-- [asic_conductor.md](asic_conductor.md) — ASIC 設計フローオーケストレーター（横断）
-- [debug_conductor.md](debug_conductor.md) — デバッグ環境オーケストレーター（横断）
+Five method families: `hal.parse.v1` / `hal.validate.v1` / `hal.generate.v1` / `hal.export.v1` (rtl/asic export) / `hal.diff.v1` (register map diff). Sent as structured JSON payloads over agent-cli IPC.
+
+---
+
+## Sub-agent Configuration
+
+hal-conductor has four types of sub-agents: **planner / designer / coder (multiple) / validator**, each sharing the multi-language driver generation flow from register maps. Each sub-agent is launched as an independent agent-cli process and coordinates with the hal-conductor main body (peer name `hal`) via `agent-cli send <peer>` IPC.
+
+| Sub-agent | Peer Name | Role | Multiplicity |
+|-----------|-----------|------|-------------|
+| **planner** | `hal-planner` | HAL generation planning (register block partitioning, bus protocol selection, output language decision) | 1 |
+| **designer** | `hal-designer` | HAL detailed specification (register fields, access rights, memory map, SystemRDL/IP-XACT schema) | 1 |
+| **coder** | `hal-coder-{lang}` | Per-language driver code generation (`hal-coder-c` / `hal-coder-rust` / `hal-coder-python` / `hal-coder-svd`) | **N** (launched in parallel for each output language) |
+| **validator** | `hal-validator` | Register map validation (address overlap / type consistency / bus boundary checks / protocol compliance) | 1 |
+
+**Flow**: planner → designer → coder (in parallel per language) → validator, executed sequentially. If output languages are C / Rust / Python, three coders launch in parallel.
+
+---
+
+## Related Documentation
+
+- [master_agent_design.md](master_agent_design.md) — ai-conductor detailed design
+- [rtl_conductor.md](rtl_conductor.md) — RTL design flow orchestrator (upstream)
+- [apps_conductor.md](apps_conductor.md) — Application software development orchestrator (downstream)
+- [fpga_conductor.md](fpga_conductor.md) — FPGA design flow orchestrator (cross-cutting)
+- [asic_conductor.md](asic_conductor.md) — ASIC design flow orchestrator (cross-cutting)
+- [debug_conductor.md](debug_conductor.md) — Debug environment orchestrator (cross-cutting)

@@ -1,73 +1,73 @@
-# エラーコード全一覧
+# Error Code Complete Listing
 
-**対象領域**: common — エラーコード
-**ソース**: 設計仕様書 §14.3
+**Domain**: common — Error Codes
+**Source**: Design Specification §14.3
 
-## 概要
+## Overview
 
-HESTIA の構造化メッセージにおけるエラーコードの全範囲を定義する。レガシー JSON-RPC 2.0 の番号体系を流用しつつ、HESTIA 固有の拡張範囲を設けている。
+Defines the complete range of error codes for HESTIA's structured messages. It reuses the numbering scheme from legacy JSON-RPC 2.0 while establishing HESTIA-specific extension ranges.
 
-## エラーコード範囲一覧
+## Error Code Range Listing
 
-| 範囲 | 領域 | 詳細 |
+| Range | Domain | Details |
 |------|------|------|
-| `-32700` | Parse Error | JSON ペイロードのパース失敗 |
-| `-32600` ~ `-32603` | リクエスト標準エラー | レガシー JSON-RPC 2.0 流用 |
-| `-32000` ~ `-32099` | HESTIA 共通 | タイムアウト / NotFound / AlreadyExists 等 |
-| `-32100` ~ `-32199` | ai-conductor | オーケストレーション / エージェント管理 / 仕様書 / バージョン追従 / LLM |
-| `-32200` ~ `-32299` | fpga-conductor | 合成 / 配置配線 / ビットストリーム / タイミング / デバッグ / HLS / デバイス / シミュレーション / 制約 / アダプター |
-| `-32300` ~ `-32399` | asic-conductor | RTL 合成 / フロアプラン / 配置 / CTS / 配線 / その他 |
-| `-32400` ~ `-32499` | pcb-conductor | 回路図 / DRC/ERC / BOM/配置 / Gerber / AI 合成 / KG / 制約検証 |
-| `-32500` ~ `-32599` | debug-conductor | JTAG / SWD / セッション / 波形 / プログラミング / 信号 / トリガ / リセット / プロトコル |
-| `-32600` ~ `-32699` | rag-conductor | インジェスト / PDF / Web / 品質ゲート / チャンク/埋め込み / ベクトル/検索 / ライセンス/PII / スケジューラ / キャッシュ |
+| `-32700` | Parse Error | JSON payload parse failure |
+| `-32600` ~ `-32603` | Standard request errors | Reused from legacy JSON-RPC 2.0 |
+| `-32000` ~ `-32099` | HESTIA common | Timeout / NotFound / AlreadyExists, etc. |
+| `-32100` ~ `-32199` | ai-conductor | Orchestration / agent management / specification / version tracking / LLM |
+| `-32200` ~ `-32299` | fpga-conductor | Synthesis / place-and-route / bitstream / timing / debug / HLS / device / simulation / constraints / adapter |
+| `-32300` ~ `-32399` | asic-conductor | RTL synthesis / floorplan / placement / CTS / routing / other |
+| `-32400` ~ `-32499` | pcb-conductor | Schematic / DRC/ERC / BOM/placement / Gerber / AI synthesis / KG / constraint verification |
+| `-32500` ~ `-32599` | debug-conductor | JTAG / SWD / session / waveform / programming / signals / trigger / reset / protocol |
+| `-32600` ~ `-32699` | rag-conductor | Ingest / PDF / Web / quality gate / chunk-embedding / vector-search / license-PII / scheduler / cache |
 
-## 標準エラー（-32600 ~ -32603）
+## Standard Errors (-32600 ~ -32603)
 
-| コード | 名前 | 意味 |
+| Code | Name | Meaning |
 |-------|------|------|
-| `-32600` | Invalid Request | リクエスト形式不正 |
-| `-32601` | Method not found | 未定義のメソッド |
-| `-32602` | Invalid params | パラメータ不正 |
-| `-32603` | Internal error | 内部エラー |
+| `-32600` | Invalid Request | Invalid request format |
+| `-32601` | Method not found | Undefined method |
+| `-32602` | Invalid params | Invalid parameters |
+| `-32603` | Internal error | Internal error |
 
-## HESTIA 共通エラー（-32000 ~ -32099）
+## HESTIA Common Errors (-32000 ~ -32099)
 
-| コード | 名前 | 意味 |
+| Code | Name | Meaning |
 |-------|------|------|
-| `-32000` | Internal | 内部エラー（汎用）|
-| `-32001` | Timeout | タイムアウト |
-| `-32002` | NotFound | リソース未検出 |
-| `-32003` | AlreadyExists | リソース重複 |
-| `-32004` | PermissionDenied | 権限不足 |
-| `-32005` | InvalidState | 不正状態 |
-| `-32006` | ServiceUnavailable | サービス利用不可 |
+| `-32000` | Internal | Internal error (generic)|
+| `-32001` | Timeout | Timeout |
+| `-32002` | NotFound | Resource not found |
+| `-32003` | AlreadyExists | Resource duplicate |
+| `-32004` | PermissionDenied | Insufficient permissions |
+| `-32005` | InvalidState | Invalid state |
+| `-32006` | ServiceUnavailable | Service unavailable |
 
-## ai-conductor エラー（-32100 ~ -32199）
+## ai-conductor Errors (-32100 ~ -32199)
 
-| コード範囲 | サブ領域 |
+| Code Range | Sub-domain |
 |----------|---------|
-| `-32100` ~ `-32119` | オーケストレーション |
-| `-32120` ~ `-32139` | エージェント管理 |
-| `-32140` ~ `-32159` | 仕様書駆動 |
-| `-32160` ~ `-32179` | バージョン追従 |
+| `-32100` ~ `-32119` | Orchestration |
+| `-32120` ~ `-32139` | Agent management |
+| `-32140` ~ `-32159` | Specification-driven |
+| `-32160` ~ `-32179` | Version tracking |
 | `-32180` ~ `-32199` | LLM |
 
-## fpga-conductor エラー（-32200 ~ -32299）
+## fpga-conductor Errors (-32200 ~ -32299)
 
-| コード範囲 | サブ領域 |
+| Code Range | Sub-domain |
 |----------|---------|
-| `-32200` ~ `-32209` | 合成 |
-| `-32210` ~ `-32219` | 配置配線 |
-| `-32220` ~ `-32229` | ビットストリーム |
-| `-32230` ~ `-32239` | タイミング |
-| `-32240` ~ `-32249` | デバッグ |
+| `-32200` ~ `-32209` | Synthesis |
+| `-32210` ~ `-32219` | Place and route |
+| `-32220` ~ `-32229` | Bitstream |
+| `-32230` ~ `-32239` | Timing |
+| `-32240` ~ `-32249` | Debug |
 | `-32250` ~ `-32259` | HLS |
-| `-32260` ~ `-32269` | デバイス |
-| `-32270` ~ `-32279` | シミュレーション |
-| `-32280` ~ `-32289` | 制約 |
-| `-32290` ~ `-32299` | アダプター |
+| `-32260` ~ `-32269` | Device |
+| `-32270` ~ `-32279` | Simulation |
+| `-32280` ~ `-32289` | Constraints |
+| `-32290` ~ `-32299` | Adapter |
 
-## エラー応答フォーマット
+## Error Response Format
 
 ```json
 {
@@ -88,8 +88,8 @@ HESTIA の構造化メッセージにおけるエラーコードの全範囲を�
 }
 ```
 
-## 関連ドキュメント
+## Related Documents
 
-- [error_handling_strategy.md](error_handling_strategy.md) — エラー処理戦略
-- [agent_message.md](agent_message.md) — メッセージペイロード形式
-- [api_versioning.md](api_versioning.md) — メソッド名前空間
+- [error_handling_strategy.md](error_handling_strategy.md) — Error handling strategy
+- [agent_message.md](agent_message.md) — Message payload format
+- [api_versioning.md](api_versioning.md) — Method namespace

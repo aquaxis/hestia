@@ -1,10 +1,10 @@
 //! hestia-ai-cli -- AI conductor CLI client
 //!
-//! Phase 16 改修: 2 系統サブコマンド構成
-//! - `exec` / `spec.*` / `agent_*` / `container.*` / `workflow.*` / `status` →
-//!   `AiHandler` を in-process で呼び出して構造化 JSON を即時返却
-//! - `run --file` → agent-cli send で AI conductor (LLM) に投函し、
-//!   `.hestia/run_log/<run-id>.json` のファイル出現を待機して結果を取得
+//! Phase 16 revision: two subcommand lineages
+//! - `exec` / `spec.*` / `agent_*` / `container.*` / `workflow.*` / `status` ->
+//!   calls `AiHandler` in-process and returns structured JSON immediately
+//! - `run --file` -> posts to AI conductor (LLM) via agent-cli send, then polls
+//!   `.hestia/run_log/<run-id>.json` for the result file to appear
 
 use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
@@ -137,13 +137,13 @@ fn run_log_dir() -> PathBuf {
         .join(".hestia/run_log")
 }
 
-/// Phase 115 — engine binary 名を解決する。
+/// Phase 115 -- Resolve the engine binary name.
 ///
-/// 優先順位:
-/// 1. env `HESTIA_ENGINE_BINARY`（hestia 親プロセスから export される）
-/// 2. CWD の `.hestia/config.toml` の `[engine]` セクション直読（hestia-ai-cli が
-///    独立に呼ばれた場合の互換性確保）
-/// 3. `agent-cli`（後方互換 fallback）
+/// Priority order:
+/// 1. env `HESTIA_ENGINE_BINARY` (exported by the hestia parent process)
+/// 2. Direct read of the `[engine]` section from `.hestia/config.toml` in CWD
+///    (ensures compatibility when hestia-ai-cli is invoked independently)
+/// 3. `agent-cli` (backward-compatible fallback)
 fn engine_binary() -> String {
     if let Ok(v) = std::env::var("HESTIA_ENGINE_BINARY") {
         if !v.is_empty() {
@@ -173,7 +173,7 @@ fn read_engine_from_config() -> Option<String> {
     })
 }
 
-/// `run --file` 経路: <engine> send で AI conductor LLM に投函 → 結果ファイル待機
+/// `run --file` route: posts to AI conductor LLM via <engine> send -> polls for result file
 async fn run_with_orchestrator(
     common: &CommonOpts,
     file_path: &str,
@@ -199,11 +199,11 @@ async fn run_with_orchestrator(
         eprintln!("[ai.run] result_path={result_path_str}");
     }
 
-    // Phase 115 — agent-cli ハードコード解消。hestia 親が設定した
-    // HESTIA_ENGINE_BINARY env、または .hestia/config.toml の [engine] から
-    // 解決した binary を呼ぶ（claude_cli_shim engine 時は claude-cli-shim send）。
+    // Phase 115 -- Eliminated hardcoded agent-cli. Uses the binary resolved
+    // from HESTIA_ENGINE_BINARY env or .hestia/config.toml [engine]
+    // (e.g. `claude-cli-shim send` when using the claude_cli_shim engine).
     let engine_bin = engine_binary();
-    // tokio::process::Command で非同期実行し、async ランタイムをブロックしない
+    // Run asynchronously via tokio::process::Command to avoid blocking the async runtime
     let status = tokio::process::Command::new(&engine_bin)
         .args(["send", "ai", &prompt])
         .status()
@@ -244,8 +244,9 @@ async fn run_with_orchestrator(
         tokio::time::sleep(interval).await;
     }
 
-    // ファイル書き込みのレースコンディション回避: 一度安定した内容を取得できるまで再試行
-    // 末尾が `}` で終わり、JSON parse が成功するまで最大 5 回（合計 1 秒）リトライ
+    // Avoid file write race condition: retry until stable content is available.
+    // Retry up to 5 times (total 1 second) until content ends with `}` and
+    // JSON parsing succeeds.
     let value = read_result_with_retry(&result_path).await?;
 
     let status_field = value
@@ -253,7 +254,7 @@ async fn run_with_orchestrator(
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
     emit(common, "ai.run", &value, status_field == "error")?;
-    // stdout を確実に flush してから exit する（パイプ／リダイレクト経路での信頼性確保）
+    // Flush stdout reliably before exit (ensures reliability through pipe/redirect paths)
     std::io::stdout().flush().ok();
     std::io::stderr().flush().ok();
     if status_field == "error" {
@@ -262,8 +263,8 @@ async fn run_with_orchestrator(
     Ok(())
 }
 
-/// fs_write の途中で読み込まれることによる JSON parse 失敗を回避するため、
-/// 安定した完全 JSON が読めるまで最大 5 回リトライする。
+/// To avoid JSON parse failures caused by reading a file while fs_write is
+/// still in progress, retry up to 5 times until a stable complete JSON can be read.
 async fn read_result_with_retry(path: &Path) -> Result<serde_json::Value> {
     let mut last_err: Option<String> = None;
     for _ in 0..5 {
@@ -310,7 +311,7 @@ fn synthesize_timeout_aggregate(
         "run_id": run_id,
         "status": "error",
         "instruction": instruction,
-        // Phase 50 canonical field — see persona ステップ 6.
+        // Phase 50 canonical field -- see persona step 6.
         "halted_reason": "timeout",
         // Backward-compat alias retained for parsers written before Phase 50.
         "aborted_reason": "timeout",
@@ -319,7 +320,7 @@ fn synthesize_timeout_aggregate(
              Common causes: the LLM exhausted its tool-use iteration budget \
              (agent-cli max_iterations = 8) before reaching its final fs_write, \
              or the underlying provider stalled in a long thinking loop \
-             (Phase 48–50). Inspect {agent_log_hint}"
+             (Phase 48-50). Inspect {agent_log_hint}"
         ),
         "aborted_message": format!(
             "AI conductor LLM did not write {result_path} within {timeout_secs}s."
@@ -330,7 +331,7 @@ fn synthesize_timeout_aggregate(
     })
 }
 
-/// in-process 経路: AiHandler を直接呼び出して即時応答
+/// In-process route: calls AiHandler directly and returns immediately
 async fn run_in_process(
     common: &CommonOpts,
     method: &str,
@@ -360,7 +361,7 @@ async fn main() -> Result<()> {
     }
 
     if let Some(ref config_path) = cli.common.config {
-        // 設定ファイルが指定された場合は読み込みのみ実行（in-process Handler は使わない）
+        // If a config file is specified, only read it (do not use in-process Handler)
         if !Path::new(config_path).exists() {
             return Err(anyhow!("config file not found: {config_path}"));
         }

@@ -23,7 +23,7 @@ enum Commands {
     Init,
     /// Request FPGA design (Phase 54 — delegates to fpga-designer in Phase 55)
     Design {
-        /// Target device (artix7 / kintex7 / zynq7000 等)
+        /// Target device (artix7 / kintex7 / zynq7000, etc.)
         #[arg(long, default_value = "artix7")]
         target: String,
         /// Optional natural-language instruction for the designer

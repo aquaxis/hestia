@@ -1,7 +1,7 @@
-//! Peer registry の永続化。
+//! Peer registry persistence.
 //!
-//! 配置: `<registry_dir>/<peer>.json`
-//! agent-cli 互換の `list` は `ID NAME PROVIDER MODEL ROLE [SKILLS]` 列を出力する。
+//! Layout: `<registry_dir>/<peer>.json`
+//! The agent-cli compatible `list` outputs columns `ID NAME PROVIDER MODEL ROLE [SKILLS]`.
 
 use crate::config;
 use anyhow::{Context, Result};
@@ -82,14 +82,14 @@ pub fn read_all(registry_dir: &Path) -> Result<Vec<PeerEntry>> {
     Ok(out)
 }
 
-/// `list` subcommand の本体。agent-cli 互換の整形済テキストを stdout に出力。
+/// Body of the `list` subcommand. Outputs agent-cli compatible formatted text to stdout.
 ///
-/// Phase 115 — `hestia status` の列検出（≥2 spaces を separator とみなす）に
-/// 確実に追従するため、各列間に **2 spaces を literal で挿入** し、ID 列の
-/// 既定幅も `shim-<uuid>` (= 41 chars) に合わせる。1 space 区切り + `{:<36}`
-/// だと shim ID が overflow した時に ID-NAME 間が 1 space に縮退し、hestia の
-/// `nth_separator_end(line, 2)` が separator 1 を取りこぼして STATUS 列を
-/// PROVIDER と MODEL の間に誤挿入していた。
+/// Phase 115 -- To reliably follow `hestia status` column detection (which treats >=2 spaces
+/// as a separator), we insert **2 spaces as a literal** between each column, and align
+/// the ID column width to `shim-<uuid>` (= 41 chars). With 1-space separators + `{:<36}`,
+/// a shim ID overflow would shrink the gap between ID and NAME to 1 space, causing
+/// `hestia`'s `nth_separator_end(line, 2)` to miss separator 1 and mistakenly insert
+/// the STATUS column between PROVIDER and MODEL.
 pub fn list(registry_path: Option<PathBuf>) -> Result<()> {
     let dir = config::registry_dir(registry_path);
     let entries = read_all(&dir)?;

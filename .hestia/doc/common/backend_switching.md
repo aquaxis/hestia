@@ -1,60 +1,60 @@
-# LLM バックエンド切替 / Engine 切替
+# LLM Backend Switching / Engine Switching
 
-**対象領域**: common — peer 駆動エンジン
-**ソース**: 設計仕様書 §20 / Phase 113
+**Domain**: common — Peer-driven Engine
+**Source**: Design Specification §20 / Phase 113
 
-## 概要
+## Overview
 
-HESTIA の peer 駆動には 2 段階の切替が存在する:
+HESTIA's peer-driven system has two levels of switching:
 
-1. **Engine 切替（Phase 113）** — peer を起動するバイナリそのものを `agent-cli` か `claude-cli-shim` から選択。`.hestia/config.toml` の `[engine]` セクションで指定。
-2. **LLM バックエンド切替** — engine が `agent-cli` の場合、agent-cli のバックエンド LLM を 4 種類から選択（`[agent_cli]` セクション）。`claude-cli-shim` engine の場合は Claude Code (Anthropic API) 単一固定。
+1. **Engine Switching (Phase 113)** — Choose between `agent-cli` or `claude-cli-shim` as the binary that drives peers. Specified in the `[engine]` section of `.hestia/config.toml`.
+2. **LLM Backend Switching** — When the engine is `agent-cli`, select from 4 backend LLM types (via the `[agent_cli]` section). When using the `claude-cli-shim` engine, Claude Code (Anthropic API) is the sole fixed backend.
 
-## Engine（Phase 113）
+## Engine (Phase 113)
 
-| Engine | `[engine] type` 値 | バイナリ | 用途 |
+| Engine | `[engine] type` value | Binary | Purpose |
 |--------|--------------------|----------|------|
-| agent-cli（既定） | `"agent_cli"` または未設定 | `agent-cli` | 4 種 LLM backend 対応、従来挙動 |
-| claude-cli-shim | `"claude_cli_shim"` | `claude-cli-shim` | Claude Code (`claude` CLI) を子プロセスで保持する wrapper、案 C |
+| agent-cli (default) | `"agent_cli"` or unset | `agent-cli` | Supports 4 LLM backends, legacy behavior |
+| claude-cli-shim | `"claude_cli_shim"` | `claude-cli-shim` | Wrapper that holds Claude Code (`claude` CLI) as a subprocess, Plan C |
 
 ```toml
 [engine]
-# "agent_cli" (既定、後方互換) | "claude_cli_shim"
+# "agent_cli" (default, backward compatible) | "claude_cli_shim"
 type = "agent_cli"
-binary = ""           # 省略時は type に応じた既定 path
-registry_path = ""    # 省略時は engine 既定 (~/.local/share/<engine>/registry)
-log_path = ""         # 省略時は engine 既定 (~/.local/share/<engine>/logs)
+binary = ""           # When omitted, default path based on type
+registry_path = ""    # When omitted, engine default (~/.local/share/<engine>/registry)
+log_path = ""         # When omitted, engine default (~/.local/share/<engine>/logs)
 ```
 
-`[engine]` 未設定時は `type = "agent_cli"` 既定で従来挙動と完全互換。
+When `[engine]` is unset, `type = "agent_cli"` is the default, fully compatible with legacy behavior.
 
-`type = "claude_cli_shim"` を選ぶと、hestia は `claude-cli-shim run` を spawn し、shim が内部で `claude --input-format stream-json --output-format stream-json --print` を子プロセスとして保持する。registry / log は agent-cli 互換 schema で別ディレクトリに記録される。
+When `type = "claude_cli_shim"` is selected, hestia spawns `claude-cli-shim run`, and the shim internally holds `claude --input-format stream-json --output-format stream-json --print` as a subprocess. The registry/log are recorded in a separate directory using an agent-cli compatible schema.
 
-## 対応バックエンド（agent-cli engine 配下のみ）
+## Supported Backends (agent-cli engine only)
 
-| バックエンド | `backend` 値 | 特徴 |
+| Backend | `backend` value | Characteristics |
 |------------|-------------|------|
-| Anthropic Claude | `"claude"` | 既定。高精度 Tool Use |
-| OpenAI Codex | `"codex"` | OpenAI API 互換 |
-| Ollama | `"ollama"` | ローカル実行、オフライン対応 |
-| llama.cpp | `"llama_cpp"` | OpenAI 互換エンドポイント |
+| Anthropic Claude | `"claude"` | Default. High-accuracy Tool Use |
+| OpenAI Codex | `"codex"` | OpenAI API compatible |
+| Ollama | `"ollama"` | Local execution, offline support |
+| llama.cpp | `"llama_cpp"` | OpenAI-compatible endpoint |
 
-**注**: `type = "claude_cli_shim"` の場合、本表は無関係（Claude Code 経由で Anthropic API に直結）。
+**Note**: When `type = "claude_cli_shim"`, this table is irrelevant (it connects directly to the Anthropic API via Claude Code).
 
-## `[agent_cli]` スキーマ
+## `[agent_cli]` Schema
 
 ```toml
 [agent_cli]
 backend = "claude"                            # "claude" | "codex" | "ollama" | "llama_cpp"
-binary_path = ""                              # 空 = $PATH 解決 / フルパス指定可
-anthropic_base_url = ""                       # 空 = Anthropic 公式 / OpenAI 互換 API の URL
-anthropic_api_key_env = "ANTHROPIC_API_KEY"   # API キーを格納するホスト環境変数名
-model = "claude-opus-4-7"                     # LLM モデル識別子
-max_tokens = 4096                             # 既定の応答上限トークン数
-registry_dir = ""                             # agent-cli IPC レジストリ（空 = $XDG_RUNTIME_DIR/agent-cli）
+binary_path = ""                              # Empty = $PATH resolution / full path can be specified
+anthropic_base_url = ""                       # Empty = Official Anthropic / URL for OpenAI-compatible API
+anthropic_api_key_env = "ANTHROPIC_API_KEY"   # Host environment variable name storing the API key
+model = "claude-opus-4-7"                     # LLM model identifier
+max_tokens = 4096                             # Default response token limit
+registry_dir = ""                             # agent-cli IPC registry (empty = $XDG_RUNTIME_DIR/agent-cli)
 ```
 
-## Rust 型
+## Rust Types
 
 ```rust
 pub struct AgentCliSection {
@@ -68,27 +68,27 @@ pub struct AgentCliSection {
 }
 ```
 
-## 環境変数フォワーディング（FR-CFG-07）
+## Environment Variable Forwarding (FR-CFG-07)
 
-1. `config.toml` を読む（`HestiaConfig::from_toml_file`）
-2. `anthropic_api_key_env` で指定された環境変数をホストから取得（未設定 / 空 → fail-fast）
-3. `anthropic_base_url` が空でなければ子プロセスに `ANTHROPIC_BASE_URL` を inject
-4. API キーを子プロセスに `ANTHROPIC_API_KEY` として inject
-5. `tokio::process::Command::spawn` で agent-cli 子プロセス起動
+1. Read `config.toml` (`HestiaConfig::from_toml_file`)
+2. Retrieve the environment variable specified by `anthropic_api_key_env` from the host (fail-fast if unset/empty)
+3. If `anthropic_base_url` is non-empty, inject `ANTHROPIC_BASE_URL` into the subprocess
+4. Inject the API key as `ANTHROPIC_API_KEY` into the subprocess
+5. Spawn agent-cli subprocess via `tokio::process::Command::spawn`
 
-ヘルパー: `AgentCliSection::build_env() -> Result<Vec<(String, String)>, AgentCliEnvError>`
+Helper: `AgentCliSection::build_env() -> Result<Vec<(String, String)>, AgentCliEnvError>`
 
-## セキュリティ考慮
+## Security Considerations
 
-- **平文 API キー禁止**: `config.toml` に直接キーを書かない
-- **環境変数経由のみ**: 1Password CLI / direnv / systemd EnvironmentFile / GPG 等の secret backend から解決
-- **未設定時 fail-fast**: `AgentCliEnvError::MissingApiKeyEnv` で起動前に失敗
-- **ログ出力 masking**: `ANTHROPIC_API_KEY=<set, len=N>` 形式で長さのみ表示
-- **レジストリパーミッション**: `0700` で他ユーザーからの peer 探索防止
+- **No plaintext API keys**: Do not write keys directly in `config.toml`
+- **Environment variables only**: Resolve from secret backends such as 1Password CLI / direnv / systemd EnvironmentFile / GPG
+- **Fail-fast when unset**: Fail before startup with `AgentCliEnvError::MissingApiKeyEnv`
+- **Log output masking**: Display length only in the format `ANTHROPIC_API_KEY=<set, len=N>`
+- **Registry permissions**: `0700` to prevent peer discovery by other users
 
-## 利用例
+## Usage Examples
 
-### Anthropic Claude（既定）
+### Anthropic Claude (default)
 
 ```toml
 [agent_cli]
@@ -98,7 +98,7 @@ model = "claude-opus-4-7"
 max_tokens = 4096
 ```
 
-### Ollama（ローカル）
+### Ollama (local)
 
 ```toml
 [agent_cli]
@@ -115,38 +115,38 @@ max_tokens = 8192
 - **llama.cpp**: `backend = "llama_cpp"` + `anthropic_base_url = "http://localhost:8080/v1/"`
 - **LM Studio**: `backend = "llama_cpp"` + `anthropic_base_url = "http://localhost:1234/v1/"`
 
-### claude-cli-shim engine（Phase 113、Claude Code wrapper）
+### claude-cli-shim engine (Phase 113, Claude Code wrapper)
 
 ```toml
 [engine]
 type = "claude_cli_shim"
-# binary = "/home/hidemi/.local/bin/claude-cli-shim"   # 省略時 PATH 解決
-# registry_path = "/custom/path"                       # 共有時のみ指定
+# binary = "/home/hidemi/.local/bin/claude-cli-shim"   # When omitted, PATH resolution
+# registry_path = "/custom/path"                       # Specify only when sharing
 # log_path = "/custom/path"
 ```
 
-前提:
-- `claude` CLI がインストール済み（`which claude`）
-- `ANTHROPIC_API_KEY` が環境変数に設定済み
-- `claude-cli-shim` バイナリが PATH に存在（`cargo build` 後 `target/debug/claude-cli-shim`）
+Prerequisites:
+- `claude` CLI installed (`which claude`)
+- `ANTHROPIC_API_KEY` set in environment variables
+- `claude-cli-shim` binary exists in PATH (after `cargo build`, `target/debug/claude-cli-shim`)
 
-cross-engine 通信が必要な場合は `[agent_cli]` `[engine] registry_path` を共有 path にして agent-cli と registry を同期させる（peer 名衝突に注意）。
+When cross-engine communication is needed, set `[agent_cli]` `[engine] registry_path` to a shared path to synchronize the registry between agent-cli and shim (be mindful of peer name collisions).
 
-## テスト戦略
+## Test Strategy
 
-`project-model::config` 配下に 8 件の単体テスト + 3 件の統合テスト:
+8 unit tests + 3 integration tests under `project-model::config`:
 
-1. `agent_cli_section_defaults` — Default 値検証
-2. `agent_cli_section_parses_with_defaults_when_omitted` — 省略時の Default 補完
-3. `agent_cli_section_round_trip_with_custom_values` — Ollama 設定の TOML round-trip
-4. `default_template_includes_agent_cli` — default_template 組み込み検証
-5. `build_env_anthropic_official_default` — 空 base_url 時の inject 検証
-6. `build_env_ollama_includes_base_url` — Ollama 設定の 2 件 inject 検証
-7. `build_env_missing_api_key_returns_error` / `build_env_empty_api_key_returns_error` — fail-fast 検証
-8. `backend_enum_parse` — 4 種バックエンドパース検証
+1. `agent_cli_section_defaults` — Default value verification
+2. `agent_cli_section_parses_with_defaults_when_omitted` — Default completion when omitted
+3. `agent_cli_section_round_trip_with_custom_values` — TOML round-trip with Ollama settings
+4. `default_template_includes_agent_cli` — Default template inclusion verification
+5. `build_env_anthropic_official_default` — Inject verification with empty base_url
+6. `build_env_ollama_includes_base_url` — 2 inject verifications with Ollama settings
+7. `build_env_missing_api_key_returns_error` / `build_env_empty_api_key_returns_error` — Fail-fast verification
+8. `backend_enum_parse` — 4 backend type parse verification
 
-## 関連ドキュメント
+## Related Documents
 
-- [agent_cli_messaging.md](agent_cli_messaging.md) — agent-cli メッセージング仕様
-- [sub_agent_lifecycle.md](sub_agent_lifecycle.md) — サブエージェント起動・終了管理
-- [error_registry.md](error_registry.md) — エラーコード規約
+- [agent_cli_messaging.md](agent_cli_messaging.md) — agent-cli messaging specification
+- [sub_agent_lifecycle.md](sub_agent_lifecycle.md) — Sub-agent startup and shutdown management
+- [error_registry.md](error_registry.md) — Error code conventions

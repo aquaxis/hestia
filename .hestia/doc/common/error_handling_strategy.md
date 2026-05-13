@@ -1,22 +1,22 @@
-# エラー処理戦略
+# Error Handling Strategy
 
-**対象領域**: common — エラー処理
-**ソース**: 設計仕様書 §18.9, §14.3
+**Domain**: common — Error Handling
+**Source**: Design Specification §18.9, §14.3
 
-## 概要
+## Overview
 
-HESTIA は Rust のエラー処理エコシステムである `thiserror` と `anyhow` を用途に応じて使い分ける。ライブラリクレートでは `thiserror` で型安全なエラーを定義し、バイナリクレートでは `anyhow` で柔軟なエラー処理を行う。エラーコード規約（§14.3）と整合させる。
+HESTIA uses Rust's `thiserror` and `anyhow` error handling ecosystem, selecting between them based on use case. Library crates define type-safe errors with `thiserror`, while binary crates use `anyhow` for flexible error handling. This aligns with the error code conventions (§14.3).
 
-## thiserror / anyhow 分離方針
+## thiserror / anyhow Separation Policy
 
-| 用途 | クレート | 選択 | 理由 |
+| Use Case | Crate | Choice | Reason |
 |------|---------|------|------|
-| ライブラリ | `conductor-sdk`, `adapter-core`, `project-model` 等 | `thiserror` | 呼び出し元がエラー種別で分岐可能、型安全 |
-| バイナリ | `hestia-fpga-conductor`, `hestia-ai-cli` 等 | `anyhow` | エラー伝搬の簡素化、トップレベルで一括処理 |
+| Library | `conductor-sdk`, `adapter-core`, `project-model`, etc. | `thiserror` | Callers can branch on error type; type-safe |
+| Binary | `hestia-fpga-conductor`, `hestia-ai-cli`, etc. | `anyhow` | Simplified error propagation; bulk handling at top level |
 
-## エラー型設計パターン
+## Error Type Design Patterns
 
-### ライブラリ側（thiserror）
+### Library Side (thiserror)
 
 ```rust
 #[derive(Debug, thiserror::Error)]
@@ -35,20 +35,20 @@ pub enum ConductorError {
 }
 ```
 
-### バイナリ側（anyhow）
+### Binary Side (anyhow)
 
 ```rust
 fn main() -> anyhow::Result<()> {
     let config = HestiaConfig::from_toml_file(path)?;
-    // ? 演算子でシンプルに伝搬
+    // Simple propagation with ? operator
     conductor.run().await?;
     Ok(())
 }
 ```
 
-## エラーコード規約との整合
+## Alignment with Error Code Conventions
 
-構造化メッセージのエラー応答（§14.3）に変換する際、ライブラリの `thiserror` 型をエラーコードにマッピングする:
+When converting library `thiserror` types to structured message error responses (§14.3), errors are mapped to error codes:
 
 ```rust
 impl From<ConductorError> for ErrorResponse {
@@ -63,21 +63,21 @@ impl From<ConductorError> for ErrorResponse {
 }
 ```
 
-## エラー応答 data フィールド規約
+## Error Response data Field Convention
 
-全エラー応答の `data` に以下を含める:
+All error responses must include the following in `data`:
 
-| フールド | 型 | 説明 |
+| Field | Type | Description |
 |---------|-----|------|
-| `tool` | string | 発生元ツール名 |
-| `exit_code` | int | プロセス終了コード |
-| `log_path` | string | ログファイルパス |
-| `errors[]` | array | エラー詳細リスト |
-| `retry_possible` | bool | リトライ可否 |
-| `suggested_action` | string | 推奨対応 |
+| `tool` | string | Originating tool name |
+| `exit_code` | int | Process exit code |
+| `log_path` | string | Log file path |
+| `errors[]` | array | Error detail list |
+| `retry_possible` | bool | Whether retry is possible |
+| `suggested_action` | string | Recommended action |
 
-## 関連ドキュメント
+## Related Documents
 
-- [error_registry.md](error_registry.md) — エラーコード全一覧
-- [agent_message.md](agent_message.md) — メッセージペイロード形式
-- [observability.md](observability.md) — 監視・ログ
+- [error_registry.md](error_registry.md) — Error code complete listing
+- [agent_message.md](agent_message.md) — Message payload format
+- [observability.md](observability.md) — Monitoring and logging

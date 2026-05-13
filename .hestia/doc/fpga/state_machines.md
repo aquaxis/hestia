@@ -1,72 +1,72 @@
-# fpga-conductor ビルドステートマシン
+# fpga-conductor Build State Machine
 
-**対象 Conductor**: fpga-conductor
-**ソース**: 設計仕様書 §5.3（1542-1575行目付近）
+**Target Conductor**: fpga-conductor
+**Source**: Design Specification §5.3 (around lines 1542-1575)
 
-## ビルドステートマシン
+## Build State Machine
 
 ```
 Idle
  │  build_start(target, steps)
  ▼
-Resolving            ← VersionSelector でツールチェーン確定
- │                      fpga.toml の [toolchain] セクション参照
- │                      CompatibilityMatrix で最良バージョン選択
+Resolving            ← VersionSelector resolves toolchain
+ │                      References [toolchain] section in fpga.toml
+ │                      CompatibilityMatrix selects best version
  ▼
-ContainerStarting    ← Podman コンテナ起動
+ContainerStarting    ← Podman container startup
  │                      --userns=keep-id --network=none
- │                      ベンダーツールイメージ選択
+ │                      Selects vendor tool image
  ▼
 Synthesizing         ← adapter.synthesize(ctx)
- │  成功                TCL/QSF/Python スクリプト自動生成
- │                      リアルタイムログパース
+ │  success           Auto-generates TCL/QSF/Python scripts
+ │                      Real-time log parsing
  ▼
 Implementing         ← adapter.implement(ctx)
- │  成功                配置配線・タイミング制約適用
+ │  success           Applies place-and-route and timing constraints
  ▼
 Bitstreamming        ← adapter.generate_bitstream(ctx)
- │  成功                ビットストリーム/JED/BIN 生成
+ │  success           Generates bitstream/JED/BIN
  ▼
-Success              → reports/ にタイミング・リソースレポート保存
-                        fpga.lock 更新
+Success              → Saves timing and resource reports to reports/
+                        Updates fpga.lock
 ```
 
-## 状態定義
+## State Definitions
 
-| 状態 | 説明 | 主要処理 |
-|------|------|---------|
-| Idle | 初期状態 | — |
-| Resolving | ツールチェーンバージョン解決中 | VersionSelector、CompatibilityMatrix |
-| ContainerStarting | Podman コンテナ起動中 | PodmanRuntime（コンテナ実行時のみ） |
-| Synthesizing | RTL 合成実行中 | adapter.synthesize、TCL/QSF スクリプト自動生成、リアルタイムログパース |
-| Implementing | 配置配線実行中 | adapter.implement、タイミング制約適用 |
-| Bitstreamming | bitstream 生成中 | adapter.generate_bitstream、ビットストリーム/JED/BIN 生成 |
-| Success | ビルド成功 | レポート保存、fpga.lock 更新 |
+| State | Description | Main Processing |
+|-------|-------------|-----------------|
+| Idle | Initial state | — |
+| Resolving | Resolving toolchain version | VersionSelector, CompatibilityMatrix |
+| ContainerStarting | Starting Podman container | PodmanRuntime (only when using containers) |
+| Synthesizing | Running RTL synthesis | adapter.synthesize, auto-generates TCL/QSF scripts, real-time log parsing |
+| Implementing | Running place-and-route | adapter.implement, applies timing constraints |
+| Bitstreamming | Generating bitstream | adapter.generate_bitstream, generates bitstream/JED/BIN |
+| Success | Build succeeded | Saves reports, updates fpga.lock |
 
-## 失敗時処理
+## Failure Handling
 
 ```
-各ステップで失敗 → SelfHealingPipeline.on_build_failure()
-                    ↓
-              CompatibilityMatrix で診断
-                    ↓
-              既知パッチあり → 自動適用/通知
-              未知エラー    → PatcherAgent 起動
+On failure at any step → SelfHealingPipeline.on_build_failure()
+                          ↓
+                    Diagnose via CompatibilityMatrix
+                          ↓
+                    Known patch available → Auto-apply/notify
+                    Unknown error         → Launch PatcherAgent
 ```
 
-SelfHealingPipeline はビルド失敗時に CompatibilityMatrix を参照して診断し、既知パッチがあれば自動適用または通知する。未知エラーの場合は PatcherAgent（TypeScript + Anthropic SDK）を起動し、Tool Use 機能でパッチを生成する。
+SelfHealingPipeline references the CompatibilityMatrix on build failure to diagnose the issue. If a known patch exists, it is auto-applied or the user is notified. For unknown errors, PatcherAgent (TypeScript + Anthropic SDK) is launched to generate a patch using Tool Use.
 
-## 複数ターゲット並列ビルド
+## Multi-Target Parallel Builds
 
-複数 target（artix7 / cyclone10 / trion 等）を同時ビルドする場合、各ターゲットごとに独立したステートマシンインスタンスが動作し、Synthesizing / Implementing ステップはターゲットごとに並列実行される。
+When building multiple targets (e.g., artix7 / cyclone10 / trion) simultaneously, each target runs its own independent state machine instance. The Synthesizing / Implementing steps execute in parallel per target.
 
-## fpga.lock による再現性保証
+## Reproducibility via fpga.lock
 
-ビルド成功時、使用したツールバージョン・コンテナイメージハッシュ・ビルドパラメータを fpga.lock に記録し、同一環境での再現性を保証する。
+On successful build, the tool versions, container image hashes, and build parameters used are recorded in fpga.lock, guaranteeing reproducibility in the same environment.
 
-## 関連ドキュメント
+## Related Documentation
 
-- [fpga/binary_spec.md](binary_spec.md) — hestia-fpga-cli バイナリ仕様
-- [fpga/error_types.md](error_types.md) — fpga-conductor エラーコード
-- [fpga/vendor_adapter.md](vendor_adapter.md) — VendorAdapter トレイト
-- [fpga/config_schema.md](config_schema.md) — fpga.toml スキーマ
+- [fpga/binary_spec.md](binary_spec.md) — hestia-fpga-cli binary specification
+- [fpga/error_types.md](error_types.md) — fpga-conductor error codes
+- [fpga/vendor_adapter.md](vendor_adapter.md) — VendorAdapter trait
+- [fpga/config_schema.md](config_schema.md) — fpga.toml schema

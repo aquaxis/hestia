@@ -1,6 +1,6 @@
-//! RTL Conductor メッセージハンドラ
+//! RTL Conductor message handler
 //!
-//! RTL ドメイン固有のメソッドをディスパッチする。
+//! Dispatches domain-specific methods for the RTL domain.
 
 use std::sync::OnceLock;
 
@@ -16,12 +16,12 @@ use crate::language::HdlLanguage;
 use crate::lint::LintRunner;
 use crate::simulation::SimRunner;
 
-/// RTL Conductor メッセージハンドラ
+/// RTL Conductor message handler
 pub struct RtlHandler;
 
-/// Phase 126 — RTL conductor 配下サブエージェント並列度の上限。
-/// `HESTIA_PER_CONDUCTOR_MAX` (既定 4) で設定。`HESTIA_ACQUIRE_TIMEOUT_SECS`
-/// (既定 600) 経過で `dispatch_coders.v1` の当該 coder 起動を skip する。
+/// Phase 126 — Upper limit on sub-agent parallelism under RTL conductor.
+/// Configured via `HESTIA_PER_CONDUCTOR_MAX` (default 4). After `HESTIA_ACQUIRE_TIMEOUT_SECS`
+/// (default 600) seconds, the corresponding coder spawn in `dispatch_coders.v1` is skipped.
 static RTL_LIMITER: OnceLock<ConductorLimiter> = OnceLock::new();
 
 fn rtl_limiter() -> &'static ConductorLimiter {
@@ -91,15 +91,15 @@ impl RtlHandler {
         }))
     }
 
-    /// Phase 55c — `rtl.design.v1`: handler が直接 rtl-designer へ送信し、
-    /// `expected_artifacts` を ai-conductor に提示する fire-and-forget dispatch モデル。
-    /// designer 不在時は `phase55b-fallback` で ai-conductor 暫定 fs_write へフォールバック。
+    /// Phase 55c — `rtl.design.v1`: Handler sends directly to rtl-designer and
+    /// presents `expected_artifacts` to ai-conductor (fire-and-forget dispatch model).
+    /// When the designer is absent, falls back to ai-conductor provisional fs_write via `phase55b-fallback`.
     async fn handle_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let instruction = params.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
         let designer_peer = "rtl-designer";
         let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
         let expected_artifacts = vec!["rtl/<top>.sv", "rtl/tb_<top>.sv"];
-        // Phase 84f — strict mode: designer 不在時は fallback ではなく halt
+        // Phase 84f — strict mode: halt instead of fallback when designer is absent
         if !designer_alive && conductor_sdk::workspace::strict_subagent_enabled() {
             return Ok(serde_json::json!({
                 "status": "subagent_unavailable",
@@ -110,7 +110,7 @@ impl RtlHandler {
                 "halted_reason": "subagent_spawn_failure",
                 "expected_artifacts": expected_artifacts,
                 "instruction": instruction,
-                "note": "HESTIA_STRICT_SUBAGENT=1: rtl-designer が registry 不在のため halt。`hestia start` ログ確認 + `agent-cli list` で resident sub-agent 登録状態を調査してください。",
+                "note": "HESTIA_STRICT_SUBAGENT=1: rtl-designer is not in the registry, halting. Check `hestia start` logs and `agent-cli list` for resident sub-agent registration status.",
             }));
         }
         if designer_alive {
@@ -132,7 +132,7 @@ impl RtlHandler {
                 "designer_alive": true,
                 "dispatched": dispatched,
                 "expected_artifacts": expected_artifacts,
-                "next_action": "ai-conductor は designer の fs_write 完了後に rtl.lint.v1 / rtl.simulate.v1 を実行。expected_artifacts ファイルの存在を fs_read で確認可。",
+                "next_action": "ai-conductor should run rtl.lint.v1 / rtl.simulate.v1 after the designer's fs_write completes. expected_artifacts file existence can be confirmed via fs_read.",
                 "instruction": instruction,
             }))
         } else {
@@ -145,21 +145,21 @@ impl RtlHandler {
                 "expected_artifacts": expected_artifacts,
                 "fallback": "ai-conductor fs_write rtl/<top>.sv + rtl/tb_<top>.sv",
                 "instruction": instruction,
-                "note": "rtl-designer が agent-cli registry に不在のため移行期間動作にフォールバック。ai-conductor が暫定で fs_write してください。",
+                "note": "rtl-designer is not in the agent-cli registry; falling back to transition behavior. ai-conductor should provisionally fs_write instead.",
             }))
         }
     }
 
-    /// Phase 60 — `rtl.dispatch_coders.v1`: rtl-designer の出力（モジュール一覧）を
-    /// 受けて `rtl-coder-{module}` を動的並列起動する。設計仕様書 §4.8 の
-    /// 「N 個の coder を並列起動・割当」を Hestia ランタイムで実装する経路。
+    /// Phase 60 — `rtl.dispatch_coders.v1`: Dynamically spawn `rtl-coder-{module}`
+    /// in parallel based on rtl-designer output (module list). Implements design spec §4.8
+    /// "launch and assign N coders in parallel" via the Hestia runtime.
     ///
     /// params:
     ///   modules: ["uart_rx", "uart_tx", "led_ctrl", ...]
-    ///   spec: 各 coder に渡す設計仕様（natural language または JSON）
+    ///   spec: Design specification passed to each coder (natural language or JSON)
     /// returns:
     ///   spawned: ["rtl-coder-uart_rx", ...]
-    ///   dispatched: bool (全 coder への送信成否の AND)
+    ///   dispatched: bool (AND of send success to all coders)
     async fn handle_dispatch_coders(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let modules: Vec<String> = params.get("modules")
             .and_then(|v| v.as_array())
@@ -176,10 +176,10 @@ impl RtlHandler {
             }));
         }
 
-        // Phase 126 — 設計 §4.8 の hardcode 16 を ConductorLimiter (env 駆動) に置換。
-        // Phase 129 — per_conductor_max を **alive cap** として強制する。
-        // engine registry を query して既存 alive な rtl-coder-* 数を取得し、
-        // 残 slot だけ spawn する（複数 dispatch 呼出を跨いだ累積 alive 抑制）。
+        // Phase 126 — Replace hardcoded 16 from design §4.8 with ConductorLimiter (env-driven).
+        // Phase 129 — Enforce per_conductor_max as an **alive cap**.
+        // Query the engine registry for existing alive rtl-coder-* count and
+        // only spawn for remaining slots (cumulative alive suppression across multiple dispatch calls).
         let limiter = rtl_limiter();
         let cap = limiter.capacity();
         let alive = conductor_sdk::workspace::count_alive_peers_with_prefix("rtl-coder-");
@@ -204,8 +204,8 @@ impl RtlHandler {
                 "dispatched_all": false,
                 "max_parallel": 0,
                 "auto_review_dispatched": false,
-                "note": "per_conductor_max に到達済の rtl-coder-* が alive のため新規 spawn を skip。\
-                         既存 coder の完了を待つか hestia kill で集約してください。",
+                "note": "rtl-coder-* at per_conductor_max are alive, skipping new spawns. \
+                         Wait for existing coders to complete or use hestia kill to consolidate.",
             }));
         }
 
@@ -252,14 +252,14 @@ impl RtlHandler {
                 }
             }
 
-            // 各 coder に spec を送信（設計 §4.8 並列開発フロー Step 3）
+            // Send spec to each coder (design §4.8 parallel development flow Step 3)
             let prompt = format!("[rtl-coder-{module}] implement module: {spec}");
             if conductor_sdk::workspace::agent_cli_send(&peer, &prompt).is_err() {
                 dispatched_all = false;
             }
         }
 
-        // Phase 80: dispatch 完了後に ai-reviewer auto-spawn
+        // Phase 80: Auto-spawn ai-reviewer after dispatch completes
         let auto_review_dispatched = conductor_sdk::workspace::auto_review_after_dispatch(
             "rtl", "rtl.dispatch_coders.v1", spawned.len(),
         );

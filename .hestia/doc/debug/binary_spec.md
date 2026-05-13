@@ -1,40 +1,40 @@
-# debug-conductor CLI バイナリ仕様
+# debug-conductor CLI Binary Specification
 
-**対象 Conductor**: debug-conductor
-**ソース**: 設計仕様書 §15（3631-3730行目付近）, §10（2401-2550行目付近）
+**Target Conductor**: debug-conductor
+**Source**: Design Specification §15 (around lines 3631-3730), §10 (around lines 2401-2550)
 
-## バイナリ名
+## Binary Name
 
 `hestia-debug-cli`
 
-## サブコマンド一覧
+## Subcommand List
 
-| サブコマンド | 説明 |
+| Subcommand | Description |
 |-------------|------|
-| `create` | デバッグセッション作成 |
-| `connect` | ターゲットデバイスへ接続（JTAG / SWD） |
-| `disconnect` | ターゲットデバイスから切断 |
-| `program` | ファームウェア書込（SVF / JAM / probe-rs / OpenOCD） |
-| `capture start` | 波形キャプチャ開始 |
-| `capture stop` | 波形キャプチャ停止 |
-| `signals read` | 信号読み取り |
-| `trigger set` | トリガ条件設定 |
-| `reset` | ターゲットリセット（Hardware / Software / System） |
-| `status` | セッション状態・接続状況表示 |
+| `create` | Create debug session |
+| `connect` | Connect to target device (JTAG / SWD) |
+| `disconnect` | Disconnect from target device |
+| `program` | Firmware programming (SVF / JAM / probe-rs / OpenOCD) |
+| `capture start` | Start waveform capture |
+| `capture stop` | Stop waveform capture |
+| `signals read` | Read signals |
+| `trigger set` | Set trigger condition |
+| `reset` | Target reset (Hardware / Software / System) |
+| `status` | Display session status and connection state |
 
-## 共通オプション（CommonOpts）
+## Common Options (CommonOpts)
 
-| オプション | 値 | 説明 |
+| Option | Value | Description |
 |-----------|---|------|
-| `--output` | `human` \| `json` | 出力フォーマット（既定: human） |
-| `--timeout` | `<秒>` | RPC タイムアウト |
-| `--registry` | `<path>` | agent-cli レジストリパス |
-| `--config` | `<path>` | 設定ファイルパス |
-| `--verbose` | — | 詳細ログ出力 |
+| `--output` | `human` \| `json` | Output format (default: human) |
+| `--timeout` | `<seconds>` | RPC timeout |
+| `--registry` | `<path>` | agent-cli registry path |
+| `--config` | `<path>` | Configuration file path |
+| `--verbose` | — | Verbose log output |
 
-## Exit Code
+## Exit Codes
 
-| Exit Code | 意味 |
+| Exit Code | Meaning |
 |-----------|------|
 | 0 | SUCCESS |
 | 1 | GENERAL_ERROR |
@@ -46,31 +46,31 @@
 | 7 | SOCKET_NOT_FOUND |
 | 8 | PERMISSION_DENIED |
 
-## ローカル専用
+## Local Only
 
-debug-conductor は **ローカル専用**（USB プローブアクセス、§2.2）である。コンテナ内での実行は USB デバイスアクセスの制約により対応しない。
+debug-conductor is **local only** (USB probe access, §2.2). Execution inside containers is not supported due to USB device access constraints.
 
-## CLI 使用例
+## CLI Usage Examples
 
 ```bash
-# セッション作成・接続
+# Session creation and connection
 hestia debug create
 hestia debug connect --probe stlink-v3
 
-# ファームウェア書込
+# Firmware programming
 hestia debug program --firmware build/sensor_node_fw.bin
 
-# 波形キャプチャ
+# Waveform capture
 hestia debug capture start --signals "clk,data"
 hestia debug capture stop
 
-# リセット
+# Reset
 hestia debug reset --type hardware
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [debug/config_schema.md](config_schema.md) — debug-conductor 設定
-- [debug/message_methods.md](message_methods.md) — debug.* メソッド一覧
-- [debug/debug_protocols.md](debug_protocols.md) — JTAG/SWD プロトコル
-- [debug/state_machines.md](state_machines.md) — セッション管理ステートマシン
+- [debug/config_schema.md](config_schema.md) — debug-conductor configuration
+- [debug/message_methods.md](message_methods.md) — debug.* method list
+- [debug/debug_protocols.md](debug_protocols.md) — JTAG/SWD protocols
+- [debug/state_machines.md](state_machines.md) — Session management state machine

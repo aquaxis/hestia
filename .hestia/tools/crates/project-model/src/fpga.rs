@@ -1,4 +1,4 @@
-//! fpga.toml 設定モデル（§5.4）
+//! fpga.toml configuration model (section 5.4)
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

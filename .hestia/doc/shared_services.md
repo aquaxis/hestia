@@ -1,20 +1,20 @@
-# 共有サービス層
+# Shared Services Layer
 
-**対象領域**: 共有サービス（Layer 5）/ rag-conductor
-**ソース**: 設計仕様書 §13（3186-3491行目付近）
+**Scope**: Shared services (Layer 5) / rag-conductor
+**Source**: Design specification §13 (around lines 3186-3491)
 
 ---
 
-## 1. 概要
+## 1. Overview
 
-共有サービス層（Layer 5）は **6 種の横断サービス** を提供する。各サービスは agent-cli peer として起動され、全 conductor から利用可能である。
+The Shared Services Layer (Layer 5) provides **6 cross-cutting services**. Each service is launched as an agent-cli peer and is available to all conductors.
 
-**表 HD-040: 共有サービス 6 種**
+**Table HD-040: 6 Shared Services**
 
-| サービス | クレート / バイナリ | ソケット | 一次仕様 |
+| Service | Crate / Binary | Socket | Primary specification |
 |---------|---------------------|---------|---------|
 | HDL LSP Broker | `hdl-lsp-broker` | agent-cli peer `lsp` | `common/hdl_lsp_broker.md` |
-| WASM 波形ビューア | `waveform-core` (cdylib + rlib) | agent-cli peer `waveform`（ホスト経路）／WebWorker（WASM 経路）| `common/wasm_waveform_viewer.md` |
+| WASM Waveform Viewer | `waveform-core` (cdylib + rlib) | agent-cli peer `waveform` (host path) / WebWorker (WASM path) | `common/wasm_waveform_viewer.md` |
 | Constraint Bridge | `constraint-bridge` | agent-cli peer `constraint-bridge` | `common/constraint_bridge.md` |
 | IP Manager | `ip-manager` | agent-cli peer `ip-manager` | `common/ip_manager.md` |
 | CI/CD API | `cicd-api` | agent-cli peer `cicd` | `common/cicd_api.md` |
@@ -22,77 +22,77 @@
 
 ---
 
-## 2. HDL LSP Broker（§13.1）
+## 2. HDL LSP Broker (§13.1)
 
-Verilog / SystemVerilog / VHDL / Verilog-AMS の LSP サーバ群を統一インターフェースで提供する LSP プロキシ。フロントエンド（VSCode 拡張 / Tauri IDE）からは単一接続で複数言語の補完・診断・ジャンプ・参照・リネームを利用できる。
+An LSP proxy that provides a unified interface for Verilog / SystemVerilog / VHDL / Verilog-AMS LSP server clusters. From the frontend (VSCode Extension / Tauri IDE), completion, diagnostics, go-to-definition, references, and rename for multiple languages are available via a single connection.
 
-### 2.1 主要型
+### 2.1 Key Types
 
 - `HdlLanguage`: `Verilog` / `SystemVerilog` / `Vhdl` / `VerilogAms`
-- `LspServerConfig`: LSP サーバ設定
-- `RoutingTable`: 言語→LSPサーバのルーティング
+- `LspServerConfig`: LSP server configuration
+- `RoutingTable`: Language → LSP server routing
 
-### 2.2 対応 LSP サーバ
+### 2.2 Supported LSP Servers
 
-| LSP サーバ | バージョン | 対応言語 |
+| LSP Server | Version | Supported Languages |
 |-----------|----------|---------|
 | svls | v0.2.x | SystemVerilog |
 | vhdl_ls | v0.3.x | VHDL |
 | verilog-ams-ls | v0.1.x | Verilog-AMS |
 
-### 2.3 拡張子マップ
+### 2.3 Extension Map
 
-| 拡張子 | 言語 |
+| Extension | Language |
 |-------|------|
 | `.v` | Verilog |
 | `.sv` / `.svh` | SystemVerilog |
 | `.vhd` / `.vhdl` | VHDL |
 | `.va` / `.vams` | Verilog-AMS |
 
-### 2.4 パラメータ既定値
+### 2.4 Parameter Defaults
 
 - `max_instances=4`
 - `idle_timeout_secs=300`
 
 ---
 
-## 3. WASM 波形ビューア（§13.2）
+## 3. WASM Waveform Viewer (§13.2)
 
-VCD / FST / GHW / EVCD をストリーミングパース可能な波形ビューア。`waveform-core` クレートを `cdylib` + `rlib` でビルドし、ブラウザは WebWorker + SharedArrayBuffer 経由でロード、Tauri / VSCode WebView は同クレートを直接利用する。100 万サンプル表示時に 60fps を目標とする。
+A waveform viewer capable of streaming-parse VCD / FST / GHW / EVCD. The `waveform-core` crate is built as `cdylib` + `rlib`; browsers load it via WebWorker + SharedArrayBuffer, while Tauri / VSCode WebView uses the same crate directly. Targets 60fps at 1 million sample display.
 
-### 3.1 対応フォーマット
+### 3.1 Supported Formats
 
 `WaveformFormat`: `Vcd` / `Fst` / `Ghw` / `Evcd`
 
-### 3.2 信号モデル
+### 3.2 Signal Model
 
-- `Signal`: `id`, `full_name`, `display_name`, `bit_width`, `signal_type`（`Wire` / `Reg` / `Integer` / `Real`）, `scope`
+- `Signal`: `id`, `full_name`, `display_name`, `bit_width`, `signal_type` (`Wire` / `Reg` / `Integer` / `Real`), `scope`
 - `SignalValue`: `Logic(char)` / `Vector{bits, hex}` / `Real(f64)` / `String`
 
-### 3.3 パフォーマンス目標
+### 3.3 Performance Target
 
-100 万サンプル表示時に 60fps を目標とする。WebWorker + SharedArrayBuffer によりメインスレッドのブロックを回避する。
+Target 60fps at 1 million sample display. WebWorker + SharedArrayBuffer avoids blocking the main thread.
 
 ---
 
-## 4. Constraint Bridge（§13.3）
+## 4. Constraint Bridge (§13.3)
 
-制約ファイルの相互変換エンジン。`ConstraintModel` を中間表現とし、N 種類のフォーマット間で 2N 個のパーサ／ジェネレータで変換可能（旧 N×N → N+M 削減）。
+A mutual conversion engine for constraint files. Using `ConstraintModel` as an intermediate representation, conversion between N formats is possible with 2N parsers/generators (reduced from N x N to N + M).
 
-### 4.1 対応フォーマット
+### 4.1 Supported Formats
 
-| フォーマット | 対象 | 拡張子 |
+| Format | Target | Extension |
 |------------|------|-------|
 | XDC | Xilinx | `.xdc` |
 | PCF | iCE40 | `.pcf` |
 | SDC | Synopsys | `.sdc` |
 | Efinity XML | Efinix | XML |
 | QSF | Intel Quartus | `.qsf` |
-| UCF | 旧 ISE | `.ucf` |
+| UCF | Legacy ISE | `.ucf` |
 
-`ConstraintFormat`: `Xdc` / `Pcf` / `Sdc`（その他は拡張型）
+`ConstraintFormat`: `Xdc` / `Pcf` / `Sdc` (others are extended types)
 
-### 4.2 主要構造体
+### 4.2 Key Structures
 
 - `ClockConstraint`
 - `PinConstraint`
@@ -100,161 +100,161 @@ VCD / FST / GHW / EVCD をストリーミングパース可能な波形ビュー
 - `PlacementConstraint`
 - `RawConstraint`
 
-### 4.3 対応プロパティ
+### 4.3 Supported Properties
 
-ピンアサイン・I/O 標準・ドライブ強度・スルーレート・差動ペアまで網羅する。
+Covers pin assignment, I/O standards, drive strength, slew rate, and differential pairs.
 
 ---
 
-## 5. IP Manager（§13.4）
+## 5. IP Manager (§13.4)
 
-IP コアの登録・検索・バージョン解決・ライセンス管理・依存関係解決を提供する。`petgraph` の DAG ベース解決アルゴリズム（トポロジカルソート）で多段依存を解く。
+Provides IP core registration, search, version resolution, license management, and dependency resolution. Uses `petgraph`'s DAG-based resolution algorithm (topological sort) to resolve multi-level dependencies.
 
-### 5.1 IP コアデータモデル
+### 5.1 IP Core Data Model
 
-- `IpCore`: `id`（`com.vendor.name`）/ `version`（semver）/ `vendor` / `library` / `device_families[]` / `supported_languages[]` / `dependencies[]` / `files[]` / `parameters[]`
+- `IpCore`: `id` (`com.vendor.name`) / `version` (semver) / `vendor` / `library` / `device_families[]` / `supported_languages[]` / `dependencies[]` / `files[]` / `parameters[]`
 - `IpDependency`: `ip_id` + `VersionReq` + `optional`
-- `IpFile.type`: `rtl` / `testbench` / `doc` / `constraint`、`language`: `verilog` / `vhdl` / 他
+- `IpFile.type`: `rtl` / `testbench` / `doc` / `constraint`, `language`: `verilog` / `vhdl` / others
 
-### 5.2 依存関係解決
+### 5.2 Dependency Resolution
 
-`petgraph` を用いた DAG ベースのトポロジカルソートにより、多段依存関係を自動的に解決する。
+Multi-level dependency resolution via DAG-based topological sort using `petgraph`.
 
-### 5.3 バージョン管理
+### 5.3 Version Management
 
-semver（セマンティックバージョニング）に基づくバージョン要求（VersionReq）による解決を行う。
+Resolution via version requirements (VersionReq) based on semver (semantic versioning).
 
-### 5.4 ライセンス分類
+### 5.4 License Classification
 
-| 分類 | 内容 |
+| Classification | Content |
 |------|------|
 | `Oss` | MIT / Apache-2.0 / BSD / GPL / ISC / CC0 |
-| `VendorProprietary` | FlexLM・seat 制限 |
-| `Unknown` | 拒否 |
+| `VendorProprietary` | FlexLM / seat restrictions |
+| `Unknown` | Rejected |
 
 ---
 
-## 6. CI/CD API（§13.5）
+## 6. CI/CD API (§13.5)
 
-CI/CD パイプラインを宣言的に定義し、複数バックエンド（GitHub Actions / GitLab CI / Local）で実行する。
+Declaratively defines CI/CD pipelines and executes them across multiple backends (GitHub Actions / GitLab CI / Local).
 
-### 6.1 バックエンド
+### 6.1 Backends
 
 `Backend`: `GithubActions` / `GitlabCi` / `LocalPipeline`
 
-### 6.2 主要構造体
+### 6.2 Key Structures
 
 - `PipelineDefinition` / `PipelineStage` / `PipelineJob`
 - `StageCondition`: `Always` / `OnSuccess` / `OnFailure` / `Custom`
 
-### 6.3 制御機能
+### 6.3 Control Features
 
-成果物（Artifact）リテンション・retry policy・timeout secs・cache key を JSON 経由で制御する。
+Artifact retention, retry policy, timeout secs, and cache key control via JSON.
 
 ---
 
-## 7. Observability（§13.6）
+## 7. Observability (§13.6)
 
-### 7.1 メトリクス
+### 7.1 Metrics
 
-- `prometheus` クレート、ポート `:9090/metrics`
-- conductor／service 別 counter / gauge / histogram
+- `prometheus` crate, port `:9090/metrics`
+- Per-conductor / per-service counters / gauges / histograms
 
-### 7.2 ロギング
+### 7.2 Logging
 
-- `tracing` クレート、JSON 出力 `.hestia/logs/observability.log`
+- `tracing` crate, JSON output to `.hestia/logs/observability.log`
 
-### 7.3 トレーシング
+### 7.3 Tracing
 
-- OpenTelemetry SDK、OTLP/gRPC `:4317`
+- OpenTelemetry SDK, OTLP/gRPC `:4317`
 
-### 7.4 ヘルスチェック
+### 7.4 Health Check
 
 - HTTP `:8080/{health, ready, live}`
 - `HealthStatus`: `Healthy` / `Degraded` / `Unhealthy`
 
-### 7.5 構成
+### 7.5 Configuration
 
-`ConductorName`（`Ai` / `Fpga` / `Asic` / `Pcb` / `Debug` / `Rag`）毎にメトリクス／ヘルスを集約する。
+Metrics / health are aggregated per `ConductorName` (`Ai` / `Fpga` / `Asic` / `Pcb` / `Debug` / `Rag`).
 
 ---
 
-## 8. rag-conductor — 知識基盤オーケストレーター（§13.7）
+## 8. rag-conductor — Knowledge Base Orchestrator (§13.7)
 
-rag-conductor は **第 6 の Conductor** として、知識基盤の構築（Ingest）・管理・検索を独立プロセスで提供する。一次仕様は `.hestia/doc/rag_conductor.md` および `.hestia/doc/rag/*.md`。
+rag-conductor is the **6th Conductor**, providing knowledge base construction (Ingest), management, and search as an independent process. Primary specification: `.hestia/doc/rag_conductor.md` and `.hestia/doc/rag/*.md`.
 
-> ai-conductor からの分離: 旧 `ai-conductor::rag-engine`（TypeScript + LangChain）と `rag-ingest`（Rust）は完全に rag-conductor に移行済み。ai-conductor からは agent-cli IPC の `rag` peer に対して `rag.*` 構造化メッセージで呼び出す。
+> Separation from ai-conductor: The former `ai-conductor::rag-engine` (TypeScript + LangChain) and `rag-ingest` (Rust) have been fully migrated to rag-conductor. ai-conductor calls it by sending `rag.*` structured messages to the `rag` peer via agent-cli IPC.
 
-### 8.1 構成と技術スタック
+### 8.1 Architecture and Technology Stack
 
-| 区分 | 技術 |
+| Category | Technology |
 |------|------|
-| バイナリ | `hestia-rag-conductor`（Rust + tokio） |
-| ベクトル DB | Chroma（既定） / Qdrant |
-| 埋め込み | Ollama `nomic-embed-text`（768 次元） |
-| Rust 部分 | `rag-ingest` クレート（PDF 7 段 / Web 8 段パイプライン） |
-| TS 部分 | `rag-engine`（Vector Search / Embedding / Citation Generation） |
-| PDF 解析 | PyPDF / pdfplumber / Tesseract OCR（300 DPI、信頼度 >= 60%）/ Camelot（表抽出） |
-| Web 取得 | trafilatura / BeautifulSoup / CLD3 / fasttext |
+| Binary | `hestia-rag-conductor` (Rust + tokio) |
+| Vector DB | Chroma (default) / Qdrant |
+| Embedding | Ollama `nomic-embed-text` (768 dimensions) |
+| Rust portion | `rag-ingest` crate (PDF 7-stage / Web 8-stage pipeline) |
+| TS portion | `rag-engine` (Vector Search / Embedding / Citation Generation) |
+| PDF parsing | PyPDF / pdfplumber / Tesseract OCR (300 DPI, confidence >= 60%) / Camelot (table extraction) |
+| Web retrieval | trafilatura / BeautifulSoup / CLD3 / fasttext |
 
-### 8.2 ナレッジベース構成
+### 8.2 Knowledge Base Structure
 
 ```
 .hestia/rag/
-├── sources/        # 取得元の生データ（PDF・HTML スナップショット）
-├── chunks/         # チャンク分割済みテキスト
-├── embeddings/     # ベクトル化済み（Chroma/Qdrant にインデックス）
+├── sources/        # Raw data from sources (PDF, HTML snapshots)
+├── chunks/         # Chunked text
+├── embeddings/     # Vectorized (indexed in Chroma/Qdrant)
 ├── index-metadata.toml
-├── queries/        # クエリログ・ヒット率
-└── quarantine/     # 品質ゲート不合格データ（保留）
+├── queries/        # Query logs and hit rates
+└── quarantine/     # Quality gate failed data (on hold)
 ```
 
-### 8.3 取り込みパイプライン
+### 8.3 Ingestion Pipeline
 
-- **PDF 7 段**: テキスト抽出 → OCR フォールバック → 表抽出 → 画像抽出 → セクション認識 → メタデータ付与 → 共通パイプラインへ
-- **Web 8 段**: URL 列挙 → robots.txt 確認 → HTTP 取得 → 本文抽出 → ノイズ除去 → 言語検出 → メタデータ付与 → 共通パイプラインへ
-- **共通 6 段**: 正規化 → 品質ゲート → チャンク分割（既定 1000 トークン / オーバーラップ 200）→ 埋め込み（Ollama）→ upsert（Chroma/Qdrant）→ ログ
-- **品質ゲート 6 ルール**: 最小／最大文字数、言語検出、HTML ノイズ除去、重複（cosine >= 0.95）、UTF-8 妥当性、OCR 信頼度
+- **PDF 7 stages**: Text extraction → OCR fallback → Table extraction → Image extraction → Section recognition → Metadata attachment → Common pipeline
+- **Web 8 stages**: URL enumeration → robots.txt check → HTTP retrieval → Body extraction → Noise removal → Language detection → Metadata attachment → Common pipeline
+- **Common 6 stages**: Normalization → Quality gate → Chunk splitting (default 1000 tokens / 200 overlap) → Embedding (Ollama) → Upsert (Chroma/Qdrant) → Log
+- **Quality gate 6 rules**: Minimum/maximum character count, language detection, HTML noise removal, duplication (cosine >= 0.95), UTF-8 validity, OCR confidence
 
-### 8.4 増分更新と運用
+### 8.4 Incremental Updates and Operations
 
-- ETag / SHA-256 で変更検出 → 増分更新（180 分の全再構築 → 3 分相当に短縮）
-- ライセンス管理: OSS / free 許可、`vendor-proprietary`（`terms_accepted=true` 必須）、`CC-BY-*`（クレジット表示）、`unknown` 拒否
-- PII マスキング: 原本は GPG 暗号化保管、インデックスはマスク済みテキストのみ
-- キャッシュ保持: PDF 無期限 / Web 90 日 / quarantine 30 日
+- Change detection via ETag / SHA-256 → incremental updates (180 minutes full rebuild → equivalent to 3 minutes)
+- License management: OSS / free allowed, `vendor-proprietary` (`terms_accepted=true` required), `CC-BY-*` (attribution required), `unknown` rejected
+- PII masking: originals stored encrypted with GPG, index contains masked text only
+- Cache retention: PDF unlimited / Web 90 days / quarantine 30 days
 
-### 8.5 RPC / CLI / メトリクス
+### 8.5 RPC / CLI / Metrics
 
-- 主要 RPC: `rag.ingest`（source_type/file_path/url/source_id/all・force・incremental）、`rag.search`（query・top_k・filter・trace_id）、`rag.cleanup`、`rag.status`
-- 自己学習 RPC: `rag.ingest_work.v1`、`rag.search_similar.v1`、`rag.search_bugfix.v1`、`rag.search_design.v1`
+- Primary RPCs: `rag.ingest` (source_type/file_path/url/source_id/all/force/incremental), `rag.search` (query/top_k/filter/trace_id), `rag.cleanup`, `rag.status`
+- Self-learning RPCs: `rag.ingest_work.v1`, `rag.search_similar.v1`, `rag.search_bugfix.v1`, `rag.search_design.v1`
 - `IngestJobStatus`: `Queued` / `Processing` / `Completed` / `Failed` / `PartiallyCompleted`
 - TypeScript I/F: `RagQuery { text, top_k, filter, trace_id }` / `RagResult { chunks, citations, embedding_time_ms, retrieval_time_ms }`
-- MCP ツール: `hestia_rag_search`
+- MCP tool: `hestia_rag_search`
 - CLI: `hestia rag ingest|search|cleanup`
-- Prometheus メトリクス: `ingest_duration`, `docs_total`, `chunks_total`, `quarantine_total`, `incremental_skipped`, `license_violations`, `cache_size`, `retrieval_seconds`, `hit_ratio`
+- Prometheus metrics: `ingest_duration`, `docs_total`, `chunks_total`, `quarantine_total`, `incremental_skipped`, `license_violations`, `cache_size`, `retrieval_seconds`, `hit_ratio`
 
-### 8.6 サブエージェント構成
+### 8.6 Sub-agent Configuration
 
-| サブエージェント | peer 名 | 役割 | 多重度 |
+| Sub-agent | Peer name | Role | Multiplicity |
 |----------------|---------|------|-------|
-| **planner** | `rag-planner` | 取り込みプランニング（クロール戦略、ソース優先度、増分更新スケジュール）| 1 |
-| **designer** | `rag-designer` | 知識ベース仕様（チャンク戦略、メタデータスキーマ、埋め込みモデル選定、retention ポリシー）| 1 |
-| **ingest** | `rag-ingest-{source}` | ドキュメント取り込み（PDF 7 段 / Web 8 段パイプライン）| **N**（ソース数だけ並列起動）|
-| **search** | `rag-search` | ベクトル検索 + reranking | 1（高負荷時 N）|
-| **quality_gate** | `rag-quality` | 品質チェック（PII 検出 / ライセンス判定 / 重複排除 / quarantine 管理）| 1 |
-| **archivist** | `rag-archivist` | 自己学習用 conductor-work-logs/ への蓄積パイプライン管理 | 1（高負荷時 N）|
+| **planner** | `rag-planner` | Ingestion planning (crawl strategy, source priority, incremental update schedule) | 1 |
+| **designer** | `rag-designer` | Knowledge base specification (chunk strategy, metadata schema, embedding model selection, retention policy) | 1 |
+| **ingest** | `rag-ingest-{source}` | Document ingestion (PDF 7-stage / Web 8-stage pipeline) | **N** (launched in parallel per source) |
+| **search** | `rag-search` | Vector search + reranking | 1 (N under high load) |
+| **quality_gate** | `rag-quality` | Quality check (PII detection / license determination / deduplication / quarantine management) | 1 |
+| **archivist** | `rag-archivist` | Self-learning accumulation pipeline management for conductor-work-logs/ | 1 (N under high load) |
 
 ---
 
-## 関連ドキュメント
+## Related Documentation
 
-- [アーキテクチャ概要](architecture_overview.md) — 全体アーキテクチャにおける共有サービス層の位置づけ
-- [セキュリティ](security.md) — API キー保護・ライセンス管理
-- [コンテナ実行](container_execution.md) — コンテナビルドの Observability 連携
-- [Hestia Flow](hestia_flow.md) — RAG の概念（§1.3.9）
-- `.hestia/doc/common/observability.md` — Observability 詳細仕様
-- `.hestia/doc/common/hdl_lsp_broker.md` — HDL LSP Broker 詳細仕様
-- `.hestia/doc/common/constraint_bridge.md` — Constraint Bridge 詳細仕様
-- `.hestia/doc/common/ip_manager.md` — IP Manager 詳細仕様
-- `.hestia/doc/common/cicd_api.md` — CI/CD API 詳細仕様
-- `.hestia/doc/common/wasm_waveform_viewer.md` — WASM 波形ビューア詳細仕様
+- [Architecture Overview](architecture_overview.md) — Position of the shared services layer in the overall architecture
+- [Security](security.md) — API key protection and license management
+- [Container Execution](container_execution.md) — Container build Observability integration
+- [Hestia Flow](hestia_flow.md) — RAG concept (§1.3.9)
+- `.hestia/doc/common/observability.md` — Observability detailed specification
+- `.hestia/doc/common/hdl_lsp_broker.md` — HDL LSP Broker detailed specification
+- `.hestia/doc/common/constraint_bridge.md` — Constraint Bridge detailed specification
+- `.hestia/doc/common/ip_manager.md` — IP Manager detailed specification
+- `.hestia/doc/common/cicd_api.md` — CI/CD API detailed specification
+- `.hestia/doc/common/wasm_waveform_viewer.md` — WASM Waveform Viewer detailed specification

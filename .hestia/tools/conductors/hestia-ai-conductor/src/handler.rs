@@ -1,7 +1,7 @@
-//! AI Conductor メッセージハンドラ
+//! AI Conductor message handler
 //!
-//! メタオーケストレーターとしての AI conductor ドメイン固有メソッドをディスパッチする。
-//! 指示の解析・ルーティング・他conductorへのディスパッチを実装。
+//! Dispatches domain-specific methods as the meta-orchestrator AI conductor.
+//! Implements instruction parsing, routing, and dispatch to other conductors.
 
 use std::sync::Arc;
 
@@ -17,7 +17,7 @@ use ai_core::conductor_manager::ConductorManager;
 use spec_driven::parser::SpecParser;
 use multi_agent::agent_manager::AgentManager;
 
-/// ワークフローステップ: 実行順序付きのconductor呼び出し
+/// Workflow step: conductor invocation with execution order
 struct WorkflowStep {
     step: usize,
     conductor: ConductorId,
@@ -26,15 +26,15 @@ struct WorkflowStep {
     label: String,
 }
 
-/// AI Conductor メッセージハンドラ
+/// AI Conductor message handler
 pub struct AiHandler {
     config: HestiaClientConfig,
     conductor_mgr: Arc<ConductorManager>,
     agent_mgr: Arc<tokio::sync::Mutex<AgentManager>>,
-    /// Phase 126 — ai-conductor 配下 conductor の同時 dispatch 上限。
-    /// `HESTIA_AI_DISPATCH_MAX` (既定 2) で設定。`acquire_timeout_secs` 経過で
-    /// 当該 step を `dispatch_acquire_timeout` エラーとして記録し次へ進む
-    /// （デッドロック検知）。
+    /// Phase 126 — Upper limit on concurrent dispatches under ai-conductor.
+    /// Configured via `HESTIA_AI_DISPATCH_MAX` (default 2). After `acquire_timeout_secs`
+    /// seconds, the step is recorded as a `dispatch_acquire_timeout` error and
+    /// processing continues to the next step (deadlock detection).
     dispatch_limiter: Arc<ConductorLimiter>,
 }
 
@@ -56,61 +56,61 @@ impl AiHandler {
         }
     }
 
-    /// 指示テキストを解析し、ワークフローステップを構築する
+    /// Parse instruction text and build workflow steps
     ///
-    /// キーワードマッチングに基づいて、どのconductorにどのメソッドでディスパッチするかを決定する。
-    /// 日本語・英語キーワードの両方に対応。コンテキストに応じて適切なメソッドを選択する。
+    /// Determines which conductor and method to dispatch based on keyword matching.
+    /// Supports both Japanese and English keywords. Selects appropriate methods based on context.
     fn build_workflow(instruction: &str) -> Vec<WorkflowStep> {
         let lower = instruction.to_lowercase();
         let mut steps = Vec::new();
         let mut step_num = 0;
 
-        // RTL設計・検証
-        let rtl_keywords = ["rtl", "verilog", "systemverilog", "hdl", "lint", "シミュレーション", "simulation",
-            "formal", "transpile", "設計", "回路を作成", "回路を作る", "rtlを"];
+        // RTL design/verification
+        let rtl_keywords = ["rtl", "verilog", "systemverilog", "hdl", "lint", "simulation",
+            "formal", "transpile", "design", "create circuit", "build circuit", "rtl to"];
         let has_rtl = rtl_keywords.iter().any(|k| lower.contains(k));
 
-        // FPGA関連
-        let fpga_keywords = ["fpga", "vivado", "quartus", "efinity", "bitstream", "プログラム",
-            "artix", "kintex", "zynq", "arty", "実機", "fpga", "ボード"];
+        // FPGA related
+        let fpga_keywords = ["fpga", "vivado", "quartus", "efinity", "bitstream", "program",
+            "artix", "kintex", "zynq", "arty", "real hardware", "fpga", "board"];
         let has_fpga = fpga_keywords.iter().any(|k| lower.contains(k));
 
-        // ASIC関連
+        // ASIC related
         let asic_keywords = ["asic", "pdk", "openlane", "yosys", "gdsii", "tapeout", "sky130", "gf180mcu", "asic"];
         let has_asic = asic_keywords.iter().any(|k| lower.contains(k));
 
-        // PCB関連
-        let pcb_keywords = ["pcb", "kicad", "schematic", "基板", "配線", "gerber", "pcb"];
+        // PCB related
+        let pcb_keywords = ["pcb", "kicad", "schematic", "board", "wiring", "gerber", "pcb"];
         let has_pcb = pcb_keywords.iter().any(|k| lower.contains(k));
 
-        // HAL関連
-        let hal_keywords = ["hal", "register", "memory map", "レジスタ", "ペリフェラル", "mmio", "hal"];
+        // HAL related
+        let hal_keywords = ["hal", "register", "memory map", "register", "peripheral", "mmio", "hal"];
         let _has_hal = hal_keywords.iter().any(|k| lower.contains(k));
 
-        // アプリ・ファームウェア
-        let apps_keywords = ["firmware", "embedded", "rtos", "flash", "ファームウェア", "組込", "apps"];
+        // Application firmware
+        let apps_keywords = ["firmware", "embedded", "rtos", "flash", "firmware", "embedded", "apps"];
         let has_apps = apps_keywords.iter().any(|k| lower.contains(k));
 
-        // デバッグ・検証
-        let debug_keywords = ["jtag", "swd", "ila", "waveform", "probe", "検証", "デバッグ", "debug"];
+        // Debug / verification
+        let debug_keywords = ["jtag", "swd", "ila", "waveform", "probe", "verification", "debug", "debug"];
         let has_debug = debug_keywords.iter().any(|k| lower.contains(k));
 
-        // RAG・ドキュメント検索
-        let rag_keywords = ["rag", "document", "ingest", "ドキュメント", "search document"];
+        // RAG / document search
+        let rag_keywords = ["rag", "document", "ingest", "document", "search document"];
         let has_rag = rag_keywords.iter().any(|k| lower.contains(k));
 
-        // UART/LEDなどの周辺機能 → HAL + Apps + RTL
+        // UART/LED etc. peripheral functions -> HAL + Apps + RTL
         let has_peripheral = lower.contains("uart") || lower.contains("led") || lower.contains("gpio")
             || lower.contains("spi") || lower.contains("i2c") || lower.contains("usart");
 
-        // 合成・ビルド関連
-        let has_synthesize = lower.contains("synthesize") || lower.contains("合成") || lower.contains("ビルド") || lower.contains("build");
-        let has_simulate = lower.contains("simulate") || lower.contains("シミュレーション") || lower.contains("simulation");
-        let has_lint = lower.contains("lint") || lower.contains("静的解析");
+        // Synthesis / build related
+        let has_synthesize = lower.contains("synthesize") || lower.contains("build");
+        let has_simulate = lower.contains("simulate") || lower.contains("simulation");
+        let has_lint = lower.contains("lint") || lower.contains("static analysis");
 
-        // --- ワークフロー構築 ---
+        // --- Workflow construction ---
 
-        // 周辺機能（UART/LED等）が含まれる場合、HAL設計 → RTL設計 の順
+        // If peripheral functions (UART/LED etc.) are included, HAL design -> RTL design order
         if has_peripheral {
             step_num += 1;
             steps.push(WorkflowStep {
@@ -118,7 +118,7 @@ impl AiHandler {
                 conductor: ConductorId::Hal,
                 method: "hal.parse.v1".to_string(),
                 params: serde_json::json!({ "instruction": instruction }),
-                label: "HAL設計（周辺機能定義）".to_string(),
+                label: "HAL design (peripheral function definition)".to_string(),
             });
             step_num += 1;
             steps.push(WorkflowStep {
@@ -126,7 +126,7 @@ impl AiHandler {
                 conductor: ConductorId::Rtl,
                 method: "rtl.lint.v1".to_string(),
                 params: serde_json::json!({ "instruction": instruction }),
-                label: "RTL設計・Lint".to_string(),
+                label: "RTL design/Lint".to_string(),
             });
         } else if has_rtl || has_lint {
             step_num += 1;
@@ -139,7 +139,7 @@ impl AiHandler {
             });
         }
 
-        // シミュレーション
+        // Simulation
         if has_simulate && !steps.iter().any(|s| s.conductor == ConductorId::Rtl) {
             step_num += 1;
             steps.push(WorkflowStep {
@@ -147,21 +147,21 @@ impl AiHandler {
                 conductor: ConductorId::Rtl,
                 method: "rtl.simulate.v1".to_string(),
                 params: serde_json::json!({ "instruction": instruction }),
-                label: "RTLシミュレーション".to_string(),
+                label: "RTL simulation".to_string(),
             });
         } else if has_simulate {
-            // 既にRTLステップがある場合はシミュレーションを追加
+            // If an RTL step already exists, add simulation
             step_num += 1;
             steps.push(WorkflowStep {
                 step: step_num,
                 conductor: ConductorId::Rtl,
                 method: "rtl.simulate.v1".to_string(),
                 params: serde_json::json!({ "instruction": instruction }),
-                label: "RTLシミュレーション".to_string(),
+                label: "RTL simulation".to_string(),
             });
         }
 
-        // FPGAビルド
+        // FPGA build
         if has_fpga || has_synthesize {
             step_num += 1;
             steps.push(WorkflowStep {
@@ -169,11 +169,11 @@ impl AiHandler {
                 conductor: ConductorId::Fpga,
                 method: "fpga.build.v1.start".to_string(),
                 params: serde_json::json!({ "instruction": instruction, "target": if lower.contains("arty") || lower.contains("artix") { "artix7" } else { "xilinx" } }),
-                label: "FPGAビルド".to_string(),
+                label: "FPGA build".to_string(),
             });
         }
 
-        // ASIC合成
+        // ASIC synthesis
         if has_asic {
             step_num += 1;
             steps.push(WorkflowStep {
@@ -181,11 +181,11 @@ impl AiHandler {
                 conductor: ConductorId::Asic,
                 method: "asic.synthesize".to_string(),
                 params: serde_json::json!({ "instruction": instruction }),
-                label: "ASIC合成".to_string(),
+                label: "ASIC synthesis".to_string(),
             });
         }
 
-        // PCB設計
+        // PCB design
         if has_pcb {
             step_num += 1;
             steps.push(WorkflowStep {
@@ -197,7 +197,7 @@ impl AiHandler {
             });
         }
 
-        // アプリ・ファームウェア
+        // Application firmware
         if has_apps {
             step_num += 1;
             steps.push(WorkflowStep {
@@ -205,23 +205,23 @@ impl AiHandler {
                 conductor: ConductorId::Apps,
                 method: "apps.build.v1".to_string(),
                 params: serde_json::json!({ "instruction": instruction }),
-                label: "ファームウェアビルド".to_string(),
+                label: "Firmware build".to_string(),
             });
         }
 
-        // デバッグ・実機検証
-        if has_debug || lower.contains("検証") || lower.contains("実機") {
+        // Debug / real-hardware verification
+        if has_debug || lower.contains("verification") || lower.contains("real hardware") {
             step_num += 1;
             steps.push(WorkflowStep {
                 step: step_num,
                 conductor: ConductorId::Debug,
                 method: "debug.connect".to_string(),
                 params: serde_json::json!({ "instruction": instruction }),
-                label: "デバッグ・検証".to_string(),
+                label: "Debug/verification".to_string(),
             });
         }
 
-        // RAG検索
+        // RAG search
         if has_rag {
             step_num += 1;
             steps.push(WorkflowStep {
@@ -229,11 +229,11 @@ impl AiHandler {
                 conductor: ConductorId::Rag,
                 method: "rag.search".to_string(),
                 params: serde_json::json!({ "instruction": instruction }),
-                label: "ドキュメント検索".to_string(),
+                label: "Document search".to_string(),
             });
         }
 
-        // 何もマッチしなかった場合のフォールバック
+        // Fallback when nothing matches
         if steps.is_empty() {
             step_num += 1;
             steps.push(WorkflowStep {
@@ -241,14 +241,14 @@ impl AiHandler {
                 conductor: ConductorId::Ai,
                 method: "ai.exec".to_string(),
                 params: serde_json::json!({ "instruction": instruction }),
-                label: "AI処理".to_string(),
+                label: "AI processing".to_string(),
             });
         }
 
         steps
     }
 
-    /// conductorにメッセージを送信してレスポンスを取得する
+    /// Send a message to a conductor and get the response
     async fn dispatch_to_conductor(
         config: &HestiaClientConfig,
         conductor: ConductorId,
@@ -272,7 +272,7 @@ impl AiHandler {
         let response = client.send_to_conductor(conductor, &payload).await
             .map_err(|e| format!("failed to send to {:?}: {e}", conductor))?;
 
-        // レスポンスをJSONとしてパース
+        // Parse the response as JSON
         let json: serde_json::Value = serde_json::from_str(&response)
             .unwrap_or_else(|_| serde_json::json!({ "raw": response }));
 
@@ -344,22 +344,24 @@ impl MessageHandler for AiHandler {
 }
 
 impl AiHandler {
-    // Phase 102 — `spec_driven_emit_skeleton` 関数を削除。
-    // Phase 59 で「setup_ai 自己実行の最小実装（Q6 ギャップ部分解消）」として
-    // `<workspace>/.aiprj/{AI_PRJ_REQUIREMENTS,AI_PRJ_DESIGN,AI_PRJ_TASKS}.md` を
-    // fs_write していたが、Phase 91 で全 50 persona の禁止事項に明記した
-    // 「.aiprj/ 配下の参照 / 書込」と矛盾していたため。
-    // 3 文書管理は project 管理 AI 専有領域で hestia agent runtime からは触らない。
+    // Phase 102 — Removed `spec_driven_emit_skeleton` function.
+    // Phase 59 wrote `<workspace>/.aiprj/{AI_PRJ_REQUIREMENTS,AI_PRJ_DESIGN,AI_PRJ_TASKS}.md`
+    // as a minimal setup_ai self-execution implementation (Q6 gap partial resolution), but
+    // this contradicted the Phase 91 prohibition against `.aiprj/` read/write
+    // documented in all 50 personas.
+    // The 3 document management is the exclusive domain of the project management AI;
+    // the hestia agent runtime must not touch it.
 
-    /// Phase 77 — ワークフロー完了後に ai-reviewer サブエージェントを自動 spawn し、
-    /// 品質ゲート判定を依頼する。Phase 74 で追加した ai-reviewer (`hestia spawn-subagent
-    /// --persona ai-reviewer --name ai-reviewer`) を呼び出し、`agent-cli send` で
-    /// run_id + workflow_steps 数を渡す。
+    /// Phase 77 — Auto-spawn ai-reviewer sub-agent after workflow completion and
+    /// request quality gate evaluation. Calls the ai-reviewer added in Phase 74
+    /// (`hestia spawn-subagent --persona ai-reviewer --name ai-reviewer`) and sends
+    /// run_id + workflow_steps count via `agent-cli send`.
     ///
-    /// 戻り値: dispatch 成功なら true、失敗（hestia バイナリ不在 / agent-cli 不在等）なら false。
-    /// 失敗は警告ログのみで ai.exec 全体には影響なし。
+    /// Returns: true if dispatch succeeds, false on failure (hestia binary absent /
+    /// agent-cli absent etc.). Failure only produces a warning log; it does not
+    /// affect the overall ai.exec result.
     async fn auto_spawn_reviewer(instruction: &str, total_steps: usize) -> bool {
-        // 1. ai-reviewer を spawn
+        // 1. Spawn ai-reviewer
         let spawn_result = std::process::Command::new("hestia")
             .args(["spawn-subagent", "--persona", "ai-reviewer", "--name", "ai-reviewer"])
             .output();
@@ -369,8 +371,8 @@ impl AiHandler {
             return false;
         }
 
-        // 2. ai-reviewer に review 依頼 prompt を送信
-        // Phase 102 — レビュー成果物は project root 直下に書き出す (`.aiprj/` は project 管理 AI 専有領域)。
+        // 2. Send review request prompt to ai-reviewer
+        // Phase 102 — Review artifacts are written directly under project root (`.aiprj/` is the exclusive domain of the project management AI).
         let prompt = format!(
             "[ai.exec auto-review] workflow_steps={total_steps}, instruction={:?}. Review the artifacts under <root>/{{rtl,fpga,hal,asic,pcb,apps,debug,rag}}/ and write `<root>/REVIEW_REPORT.md` with status: pass|fail|partial.",
             instruction.chars().take(120).collect::<String>()
@@ -387,7 +389,7 @@ impl AiHandler {
         }
     }
 
-    /// ai.exec — 指示を解析し、ワークフローを構築して順次実行し、結果を集約する
+    /// ai.exec — Parse instruction, build workflow, execute sequentially, and aggregate results
     async fn handle_exec(&self, params: serde_json::Value) -> Result<serde_json::Value, String> {
         let instruction = params.get("instruction")
             .and_then(|v| v.as_str())
@@ -403,11 +405,12 @@ impl AiHandler {
 
         tracing::info!(instruction = %instruction, "ai.exec: building workflow from instruction");
 
-        // Phase 102 — Phase 59 の spec_driven_emit_skeleton (`<workspace>/.aiprj/AI_PRJ_*.md`
-        // を fs_write) を削除。Phase 91 の persona 禁止事項「.aiprj/ 配下の書込禁止」と
-        // 矛盾していたため。3 文書管理は project 管理 AI 専有領域。
+        // Phase 102 — Removed Phase 59's spec_driven_emit_skeleton (which wrote
+        // `<workspace>/.aiprj/AI_PRJ_*.md` via fs_write). This contradicted Phase 91's
+        // persona prohibition against `.aiprj/` writes. The 3 document management
+        // is the exclusive domain of the project management AI.
 
-        // 指示からワークフローを構築
+        // Build workflow from instruction
         let workflow = Self::build_workflow(&instruction);
 
         tracing::info!(steps = workflow.len(), "ai.exec: workflow has {} steps", workflow.len());
@@ -425,8 +428,8 @@ impl AiHandler {
                 "ai.exec: executing workflow step"
             );
 
-            // Phase 126 — L2 cap: ai-conductor 同時 dispatch 上限を Semaphore で保護。
-            // 取得順序固定 (L1 → L2 → L3) の L2。timeout で循環待機を破る。
+            // Phase 126 — L2 cap: protect ai-conductor concurrent dispatch limit with a Semaphore.
+            // L2 of the fixed acquisition order (L1 -> L2 -> L3). Timeout breaks circular waiting.
             let _dispatch_permit = match self.dispatch_limiter.acquire().await {
                 Ok(p) => p,
                 Err(e) => {
@@ -448,8 +451,8 @@ impl AiHandler {
                 }
             };
 
-            // Phase 101 — Phase 93 の on-demand spawn 機能の動作開始（G10 修正）。
-            // dispatch 直前に必要 conductor を spawn する。既に alive なら no-op。
+            // Phase 101 — Activate Phase 93's on-demand spawn functionality (G10 fix).
+            // Spawn the required conductor just before dispatch. No-op if already alive.
             let peer = step.conductor.peer_name();
             if let Err(e) = conductor_sdk::workspace::spawn_conductor_on_demand(peer) {
                 tracing::warn!(
@@ -495,8 +498,8 @@ impl AiHandler {
             }
         }
 
-        // Phase 77 — ワークフロー完了後、ai-reviewer を自動 spawn して品質ゲート判定を依頼。
-        // env override `HESTIA_DISABLE_AUTO_REVIEW=1` で無効化可能（テスト互換性）。
+        // Phase 77 — Auto-spawn ai-reviewer after workflow completion and request quality gate evaluation.
+        // Can be disabled with env override `HESTIA_DISABLE_AUTO_REVIEW=1` (test compatibility).
         let auto_review_dispatched = if std::env::var("HESTIA_DISABLE_AUTO_REVIEW").as_deref() != Ok("1") {
             Self::auto_spawn_reviewer(&instruction, total_steps).await
         } else {
@@ -514,7 +517,7 @@ impl AiHandler {
         }))
     }
 
-    /// ai.spec.init — SpecParserを使用して仕様テキストを解析する
+    /// ai.spec.init — Parse specification text using SpecParser
     async fn handle_spec_init(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let spec_text = params.get("spec_text").and_then(|v| v.as_str()).unwrap_or("");
         let format = params.get("format").and_then(|v| v.as_str()).unwrap_or("natural");
@@ -545,7 +548,7 @@ impl AiHandler {
         }))
     }
 
-    /// ai.spec.update — 仕様更新を処理する
+    /// ai.spec.update — Process specification updates
     async fn handle_spec_update(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let spec_id = params.get("spec_id").and_then(|v| v.as_str()).unwrap_or("");
         let updates = params.get("updates").cloned().unwrap_or(serde_json::json!({}));
@@ -558,7 +561,7 @@ impl AiHandler {
         }))
     }
 
-    /// ai.spec.review — 仕様レビューを実行する
+    /// ai.spec.review — Execute specification review
     async fn handle_spec_review(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let spec_id = params.get("spec_id").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -571,7 +574,7 @@ impl AiHandler {
         }))
     }
 
-    /// agent_spawn — AgentManagerを使用してエージェントを生成する（agent-cli run 経由）
+    /// agent_spawn — Spawn an agent using AgentManager (via agent-cli run)
     async fn handle_agent_spawn(&self, params: serde_json::Value) -> Result<serde_json::Value, String> {
         let role = params.get("role").and_then(|v| v.as_str()).unwrap_or("planner");
         let conductor_id = params.get("conductor_id").and_then(|v| v.as_str()).unwrap_or("ai");
@@ -589,7 +592,7 @@ impl AiHandler {
         }))
     }
 
-    /// agent_list — AgentManagerとConductorManagerからエージェント一覧を返す
+    /// agent_list — Return agent list from AgentManager and ConductorManager
     async fn handle_agent_list(&self) -> Result<serde_json::Value, String> {
         let agent_list = {
             let mgr = self.agent_mgr.lock().await;
@@ -614,7 +617,7 @@ impl AiHandler {
         }))
     }
 
-    /// container.list — コンテナ一覧を返す
+    /// container.list — Return container list
     async fn handle_container_list(&self) -> Result<serde_json::Value, String> {
         let conductors = self.conductor_mgr.list_conductors().await;
         Ok(serde_json::json!({
@@ -627,7 +630,7 @@ impl AiHandler {
         }))
     }
 
-    /// container.start — 指定conductorのヘルスチェックを実行して起動確認する
+    /// container.start — Health-check and confirm startup of the specified conductor
     async fn handle_container_start(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
         Ok(serde_json::json!({
@@ -637,7 +640,7 @@ impl AiHandler {
         }))
     }
 
-    /// container.stop — コンテナ停止を処理する
+    /// container.stop — Process container stop
     async fn handle_container_stop(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
         Ok(serde_json::json!({
@@ -647,7 +650,7 @@ impl AiHandler {
         }))
     }
 
-    /// container.create — コンテナ作成を処理する
+    /// container.create — Process container creation
     async fn handle_container_create(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
         Ok(serde_json::json!({
@@ -657,7 +660,7 @@ impl AiHandler {
         }))
     }
 
-    /// container.update — コンテナ更新を処理する
+    /// container.update — Process container update
     async fn handle_container_update(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
         Ok(serde_json::json!({
@@ -667,12 +670,12 @@ impl AiHandler {
         }))
     }
 
-    /// meta.dualBuild — FPGA と ASIC の並列ビルドをオーケストレーションする
+    /// meta.dualBuild — Orchestrate parallel FPGA and ASIC builds
     async fn handle_dual_build(&self, params: serde_json::Value) -> Result<serde_json::Value, String> {
         let target_fpga = params.get("target_fpga").and_then(|v| v.as_str()).unwrap_or("xilinx");
         let target_asic = params.get("target_asic").and_then(|v| v.as_str()).unwrap_or("sky130");
 
-        // FPGA ビルドをディスパッチ
+        // Dispatch FPGA build
         let fpga_result = Self::dispatch_to_conductor(
             &self.config,
             ConductorId::Fpga,
@@ -680,7 +683,7 @@ impl AiHandler {
             serde_json::json!({ "target": target_fpga }),
         ).await;
 
-        // ASIC 合成をディスパッチ
+        // Dispatch ASIC synthesis
         let asic_result = Self::dispatch_to_conductor(
             &self.config,
             ConductorId::Asic,
@@ -709,11 +712,11 @@ impl AiHandler {
         }))
     }
 
-    /// meta.boardWithFpga — PCB + FPGA 統合ワークフローを実行する
+    /// meta.boardWithFpga — Execute PCB + FPGA integrated workflow
     async fn handle_board_with_fpga(&self, params: serde_json::Value) -> Result<serde_json::Value, String> {
         let board_name = params.get("board_name").and_then(|v| v.as_str()).unwrap_or("arty-a7");
 
-        // FPGA ビルド
+        // FPGA build
         let fpga_result = Self::dispatch_to_conductor(
             &self.config,
             ConductorId::Fpga,
@@ -721,7 +724,7 @@ impl AiHandler {
             serde_json::json!({ "target": board_name }),
         ).await;
 
-        // PCB DRC チェック
+        // PCB DRC check
         let pcb_result = Self::dispatch_to_conductor(
             &self.config,
             ConductorId::Pcb,
@@ -749,7 +752,7 @@ impl AiHandler {
         }))
     }
 
-    /// system.health.v1 — ConductorManagerから全conductorの状態を集約する
+    /// system.health.v1 — Aggregate status of all conductors from ConductorManager
     async fn handle_health(&self) -> Result<serde_json::Value, String> {
         let conductors = self.conductor_mgr.list_conductors().await;
         let online_count = conductors.iter().filter(|c| matches!(c.status, conductor_sdk::agent::ConductorStatus::Online)).count();

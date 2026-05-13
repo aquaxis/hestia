@@ -34,7 +34,7 @@ async fn invoke_in_with_peers(
         std::env::set_var("HESTIA_PEER_ALIVE_FORCE", peers);
     }
     std::env::set_var("HESTIA_PEER_SEND_NOOP", "1");
-    // Phase 88: default strict ON のため fallback path テスト用に opt-out
+    // Phase 88: opt-out of default strict ON for fallback path testing
     std::env::set_var("HESTIA_STRICT_SUBAGENT", "0");
 
     let handler = HalHandler;

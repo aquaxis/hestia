@@ -1,674 +1,673 @@
-# HESTIA 小規模事業者救済 自己申告制度 運用マニュアル
+# HESTIA Small Business Relief Self-Declaration System Operations Manual
 
 Version 1.0.0
 
 Copyright (C) 2026 AQUAXIS TECHNOLOGY. All Rights Reserved.
 
-本文書は `LICENSE.md` 第0章0.2(d) に定める小規模事業者救済の自己申告制度を運用するためのマニュアルである。**本文書の内容と `LICENSE.md` 条文に不一致がある場合、`LICENSE.md` が優先する。**
+This document is the operations manual for the self-declaration system for the small business relief defined in `LICENSE.md` Chapter 0, Section 0.2(d). **In the event of any inconsistency between this document and the provisions of `LICENSE.md`, `LICENSE.md` shall prevail.**
 
-**本文書は日本語を正文とする。** 本文書の翻訳版（英語版その他の言語版）が作成された場合であっても、翻訳版は参考のためのものであり、解釈上の相違または矛盾がある場合は、日本語正文が優先して適用される。本項は、申告者が日本国外に所在する場合についても同様に適用される。日本語を解さない申告者は、本制度への申告前に、自己の費用と責任において日本語正文の内容を十分に理解する義務を負う。この条項は、`LICENSE.md` 第4.12項（言語および正文）と整合するものとする。
-
----
-
-## 目次
-
-1. [制度の概要](#1-制度の概要)
-2. [申告者向けガイド](#2-申告者向けガイド)
-3. [申告処理フロー](#3-申告処理フロー)
-4. [年次更新と閾値超過通知](#4-年次更新と閾値超過通知)
-5. [虚偽申告の取扱いと遡及失効](#5-虚偽申告の取扱いと遡及失効)
-6. [監査権](#6-監査権)
-7. [個人情報・データ保護](#7-個人情報データ保護)
-8. [社内運用マニュアル](#8-社内運用マニュアル)
-9. [通知・連絡テンプレート](#9-通知連絡テンプレート)
+**This document is written in Japanese as the authoritative text.** Even if a translation (English or other languages) of this document is produced, the translation is provided for reference only, and in the event of any interpretive differences or contradictions, the Japanese authoritative text shall prevail. This provision applies equally when the declarant is located outside Japan. Declarants who do not read Japanese are obligated to adequately understand the content of the Japanese authoritative text at their own expense and responsibility before making a declaration under this system. This provision is intended to be consistent with `LICENSE.md` Section 4.12 (Language and Authoritative Text).
 
 ---
 
-## 1. 制度の概要
+## Table of Contents
 
-### 1.1 目的
-
-本制度は、個人事業主、小規模スタートアップ、その他の小規模事業者が、商用利用の要件を形式的に満たすものの、事業規模が小さいために有償ライセンス（License C）への契約負担が大きい場合に、License A（AGPL-3.0）の下で本ソフトウェアを利用できるようにするための救済措置である。
-
-### 1.2 適用要件
-
-`LICENSE.md` 第0章0.2(d) に定める以下の要件をすべて満たす必要がある。
-
-(a) 利用者（法人の場合は企業グループ全体）の直近会計年度の年間総売上高が **所在地に応じて 1,000万円（日本企業）または 50,000米ドル（日本以外の企業）** 未満であること
-
-(b) 本運用マニュアルに定める自己申告手続きを履践し、ライセンサーから受領通知を得ること
-
-(c) 救済期間中、申告内容に変更が生じた場合の通知義務を履行すること
-
-### 1.3 適用範囲
-
-本制度の適用を受けた利用者は、救済期間中、**商用利用であっても License A（AGPL-3.0）の条件**の下で本ソフトウェアを利用できる。成果物の公開義務（License B 第2.4項）および商用サブスクリプション料金（License C）は発生しない。
-
-ただし、AGPL-3.0 自体の義務（改変部分の公開、ネットワーク提供時のソース公開等）は引き続き適用される。これらの義務を回避したい場合は、本制度ではなく License C のサブスクを選択する必要がある。
-
-### 1.4 救済期間
-
-原則として、**1会計年度**（申告受領日から申告者の次期会計年度末まで）を救済期間の単位とする。継続利用には年次更新申告が必要である。
+1. [System Overview](#1-system-overview)
+2. [Declarant Guide](#2-declarant-guide)
+3. [Declaration Processing Flow](#3-declaration-processing-flow)
+4. [Annual Renewal and Threshold Excess Notification](#4-annual-renewal-and-threshold-excess-notification)
+5. [Handling of False Declarations and Retroactive Invalidity](#5-handling-of-false-declarations-and-retroactive-invalidity)
+6. [Audit Rights](#6-audit-rights)
+7. [Personal Information and Data Protection](#7-personal-information-and-data-protection)
+8. [Internal Operations Manual](#8-internal-operations-manual)
+9. [Notification and Communication Templates](#9-notification-and-communication-templates)
 
 ---
 
-## 2. 申告者向けガイド
+## 1. System Overview
 
-### 2.1 申告方法
+### 1.1 Purpose
 
-申告は、http://aquaxis.com/declaration より行う。フォームは `self-declaration-form.html` を参照。
+This system is a relief measure that allows sole proprietors, small startups, and other small businesses that formally meet the criteria for commercial use but for whom the financial burden of a paid license (License C) would be disproportionate, to use this Software under License A (AGPL-3.0).
 
-### 2.2 申告に必要な情報
+### 1.2 Eligibility Requirements
 
-申告者は以下の情報を準備する。
+All of the following requirements defined in `LICENSE.md` Chapter 0, Section 0.2(d) must be met:
 
-- 法人/組織の基本情報（名称、所在地、代表者、連絡担当者）
-- 直近会計年度の期間（開始日・終了日）
-- 年間総売上高（税抜・整数値）
-- 企業グループ所属の有無、所属する場合のグループ合算売上高
-- 本ソフトウェアの使用目的・用途
-- 誓約事項への同意
+(a) The user's (or, if a corporation, the entire corporate group) annual gross revenue for the most recent fiscal year is below **10,000,000 JPY (for Japan-based entities) or 50,000 USD (for entities outside Japan)**, based on location
 
-### 2.3 申告に必要な裏付け資料
+(b) Completion of the self-declaration procedure defined in this operations manual and receipt of an acknowledgment notification from the Licensor
 
-**申告時には資料の添付は不要**。ただし、ライセンサーから後日提出を求められた場合、以下の資料を準備する必要がある。
+(c) Fulfillment of the notification obligation if any changes occur to the declared information during the relief period
 
-- 直近会計年度の決算書（損益計算書）
-- 企業グループ構成図（該当する場合）
-- 商業登記簿謄本または同等の公的書類（初回申告時）
+### 1.3 Scope of Application
 
-これらの資料はセクション6（監査権）に基づく確認のために使用される。
+Users granted this relief may use this Software under **License A (AGPL-3.0) conditions** even for commercial use during the relief period. The output publication obligation (License B, Section 2.4) and commercial subscription fees (License C) do not apply.
 
-### 2.4 申告の流れ
+However, AGPL-3.0's own obligations (publication of modifications, source code publication upon network interaction, etc.) continue to apply. If you wish to avoid these obligations, you must choose License C subscription instead of this system.
+
+### 1.4 Relief Period
+
+As a general rule, **one fiscal year** (from the date of declaration receipt to the end of the declarant's next fiscal year) constitutes one relief period. Annual renewal declarations are required for continued use.
+
+---
+
+## 2. Declarant Guide
+
+### 2.1 How to Declare
+
+Declarations are submitted at http://aquaxis.com/declaration. See `self-declaration-form.html` for the form.
+
+### 2.2 Information Required for Declaration
+
+Declarants must prepare the following information:
+
+- Organization/basic information (name, location, representative, contact person)
+- Most recent fiscal year period (start date, end date)
+- Annual gross revenue (excluding tax, whole number)
+- Whether affiliated with a corporate group, and if so, the group's aggregated revenue
+- Intended use and purpose of this Software
+- Agreement to the declaration terms
+
+### 2.3 Supporting Documentation Required for Declaration
+
+**No documentation needs to be attached at the time of declaration.** However, if the Licensor subsequently requests documentation, the following must be prepared:
+
+- Financial statements (income statement) for the most recent fiscal year
+- Corporate group structure chart (if applicable)
+- Commercial registry certificate or equivalent public document (for initial declarations)
+
+These documents will be used for verification under Section 6 (Audit Rights).
+
+### 2.4 Declaration Flow
 
 ```
- ① 申告者が自己申告フォームに必要事項を記入
-         ↓
- ② フォーム送信
-         ↓
- ③ 自動受領確認メール（申告者）
-         ↓
- ④ ライセンサー側で内容確認（通常5営業日以内）
-         ↓
- ⑤ 審査結果の通知
-     ├─ 承認：申告番号と救済期間の通知
-     └─ 要確認：追加情報の依頼
-         ↓
- ⑥ 承認後、申告者は救済期間中 License A として利用可能
-         ↓
- ⑦ 救済期間終了30日前に更新案内（ライセンサー発）
-         ↓
- ⑧ 年次更新申告 または 救済期間満了
+ 1. Declarant fills in the self-declaration form
+         |
+ 2. Form submission
+         |
+ 3. Automatic receipt confirmation email (to declarant)
+         |
+ 4. Licensor reviews content (typically within 5 business days)
+         |
+ 5. Review result notification
+     |-- Approved: Declaration number and relief period notification
+     +-- Needs confirmation: Request for additional information
+         |
+ 6. After approval, declarant may use the software under License A during the relief period
+         |
+ 7. Renewal reminder 30 days before relief period end (from Licensor)
+         |
+ 8. Annual renewal declaration OR relief period expiration
 ```
 
-### 2.5 申告番号
+### 2.5 Declaration Number
 
-承認された申告には、ライセンサーより固有の**申告番号**（例：`SBD-2026-00001`）が付与される。この番号は以下の場面で使用する。
+Each approved declaration is assigned a unique **declaration number** (e.g., `SBD-2026-00001`) by the Licensor. This number is used for:
 
-- 年次更新申告時の参照
-- 閾値超過通知時の参照
-- 監査対応時の参照
-- ライセンサーへの一般問合せ時の参照
+- Reference during annual renewal declarations
+- Reference during threshold excess notifications
+- Reference during audit responses
+- Reference for general inquiries to the Licensor
 
-申告番号は、承認通知メールに記載される。**紛失しないよう大切に保管すること。**
+The declaration number is included in the approval notification email. **Please keep it safe and do not lose it.**
 
 ---
 
-## 3. 申告処理フロー
+## 3. Declaration Processing Flow
 
-### 3.1 受領から承認までの標準処理期間
+### 3.1 Standard Processing Timeline from Receipt to Approval
 
-- **受領確認**：申告送信後、即時（自動メール）
-- **初期審査**：受領から3営業日以内
-- **承認通知**：受領から5営業日以内（追加確認が不要な場合）
-- **追加確認が必要な場合**：最大15営業日以内
+- **Receipt confirmation**: Immediately after submission (automatic email)
+- **Initial review**: Within 3 business days of receipt
+- **Approval notification**: Within 5 business days of receipt (if no additional confirmation needed)
+- **If additional confirmation is needed**: Up to 15 business days
 
-### 3.2 審査内容
+### 3.2 Review Content
 
-ライセンサーは、以下の観点で申告内容を確認する。
+The Licensor reviews the declared information from the following perspectives:
 
-(a) **形式審査**：必須項目の記入漏れ、明らかな矛盾、フォーマット違反
+(a) **Formal review**: Missing required fields, obvious inconsistencies, format violations
 
-(b) **実体審査**：売上高の閾値適合性、企業グループ構成の妥当性、使用目的の適法性
+(b) **Substantive review**: Revenue threshold compliance, corporate group structure validity, legality of intended use
 
-(c) **公的情報との整合性確認**：商業登記、公開決算情報（上場企業の場合）、公式ウェブサイト等の公開情報との突合
+(c) **Cross-reference with public information**: Commercial registry, public financial statements (for listed companies), official websites, and other public information
 
-(d) **過去申告との整合性**：過去の申告内容との連続性、異常な変動の有無
+(d) **Consistency with past declarations**: Continuity with past declaration content, presence of unusual fluctuations
 
-### 3.3 審査結果の区分
+### 3.3 Review Result Categories
 
-審査結果は以下の3区分で通知される。
+Review results are notified in one of three categories:
 
-| 区分 | 内容 | 対応 |
+| Category | Content | Action |
 |---|---|---|
-| **承認** | 申告内容に問題なし | 救済期間開始 |
-| **条件付承認** | 軽微な疑義あり | 追加情報提供後に承認 |
-| **却下** | 要件不適合または重大な疑義 | 救済なし、License B または C を選択 |
+| **Approved** | No issues with declaration content | Relief period begins |
+| **Conditionally Approved** | Minor concerns | Approved after additional information is provided |
+| **Rejected** | Eligibility not met or significant concerns | No relief; select License B or C |
 
-### 3.4 却下の主な理由
+### 3.4 Common Reasons for Rejection
 
-以下のいずれかに該当する場合、申告は却下される。
+A declaration will be rejected if any of the following apply:
 
-- 売上高が閾値を明らかに超過している
-- 企業グループの意図的な除外が疑われる
-- 申告者情報に虚偽または重大な齟齬がある
-- 過去に本制度の下で虚偽申告を行った履歴がある
-- 使用目的が法令または公序良俗に反する可能性がある
+- Revenue clearly exceeds the threshold
+- Intentional exclusion of corporate group entities is suspected
+- False or materially incorrect information in the declaration
+- Past history of false declarations under this system
+- Intended use may violate laws or public order and morals
 
-### 3.5 却下された場合の取扱い
+### 3.5 Actions After Rejection
 
-却下通知の受領後、申告者は以下のいずれかを選択する。
+After receiving a rejection notice, the declarant may choose one of the following:
 
-(a) 追加情報を提供した上で再申告
+(a) Re-declare after providing additional information
 
-(b) License B（相互主義、無償・成果物公開）を選択
+(b) Select License B (reciprocal, free, with output publication obligation)
 
-(c) License C（商用サブスクリプション、有償）を選択
+(c) Select License C (commercial subscription, paid)
 
-(d) 本ソフトウェアの使用を停止
+(d) Stop using this Software
 
-### 3.6 不服申立て
+### 3.6 Appeals
 
-却下の決定に対し、申告者は書面で不服申立てを行うことができる。不服申立ては却下通知の受領から14日以内に contact@aquaxis.com まで送付する。ライセンサーは不服申立てを受領から15営業日以内に再審査し、結果を通知する。
-
----
-
-## 4. 年次更新と閾値超過通知
-
-### 4.1 年次更新
-
-救済期間は1会計年度であるため、継続利用には年次更新申告が必要となる。
-
-**更新申告のタイミング：**
-
-- 救済期間満了日の **60日前** に、ライセンサーから更新案内メールを送付
-- 申告者は、満了日の **30日前** までに更新申告を完了
-- 期限を過ぎると、救済期間満了とともに License A の適用が終了する
-
-**更新時の確認事項：**
-
-- 直近会計年度の売上高（閾値内であることの再確認）
-- 企業グループ構成の変更の有無
-- 使用目的の変更の有無
-- 会社情報の変更の有無
-
-### 4.2 閾値超過時の通知義務
-
-救済期間中に年間総売上高が **所在地に応じて 1,000万円（日本企業）または 50,000米ドル（日本以外の企業）** を超過することが確定した場合（決算確定時等）、申告者は **30日以内** に書面（電子メール可）でライセンサーに通知する義務を負う。
-
-**通知時に記載する情報：**
-
-- 申告番号
-- 超過が確定した日付（決算確定日等）
-- 超過後の売上高
-- 超過の原因（一時的・構造的、M&A 等の特殊要因の有無）
-- 本ソフトウェアの今後の利用方針（License B への移行／License C への移行／使用停止）
-
-通知を怠った場合、セクション5（虚偽申告の取扱い）の対象となり得る。
-
-### 4.3 閾値超過後の移行期間
-
-閾値超過の通知を受けたライセンサーは、申告者に対し **30日間**（または申告者との協議により延長可能）の移行期間を設ける。移行期間中、申告者は以下のいずれかを選択し、移行を完了する必要がある。
-
-(a) License B へ移行し、移行日以降の商用利用に関して成果物の公開義務を負う
-
-(b) License C のサブスクリプション契約を締結する
-
-(c) 本ソフトウェアの使用を停止する
-
-### 4.4 その他の変更通知義務
-
-以下の場合も、30日以内の通知義務がある。
-
-- **法人の合併・分割・M&A**：ライセンシー主体の変更
-- **企業グループへの新規参加**：従前は単独法人だったが、親会社等が発生した場合
-- **使用目的の重大な変更**：申告時と大きく異なる用途に使用する場合
-- **会社情報の変更**：名称、所在地、代表者、連絡担当者
+Declarants may appeal a rejection decision in writing. Appeals must be submitted to contact@aquaxis.com within 14 days of receiving the rejection notice. The Licensor will re-review the appeal within 15 business days of receipt and notify the declarant of the result.
 
 ---
 
-## 5. 虚偽申告の取扱いと遡及失効
+## 4. Annual Renewal and Threshold Excess Notification
 
-### 5.1 虚偽申告の定義
+### 4.1 Annual Renewal
 
-以下のいずれかに該当する場合、「虚偽申告」とみなされる。
+Since the relief period is one fiscal year, annual renewal declarations are required for continued use.
 
-(a) 売上高、企業グループ情報等の客観的事実について、意図的に事実と異なる記載をした場合
+**Renewal Declaration Timing:**
 
-(b) 申告時点で判明していた重要な事実（売上見通し、M&A 予定等）を意図的に省略した場合
+- A renewal reminder email is sent **60 days before** the relief period expiration date
+- Declarants must complete the renewal declaration **30 days before** the expiration date
+- If the deadline passes, License A coverage ends upon relief period expiration
 
-(c) 閾値超過の通知義務を意図的に怠った場合
+**Items to Confirm at Renewal:**
 
-(d) 企業グループの範囲を不当に縮小して解釈し、意図的に一部を除外した場合
+- Most recent fiscal year revenue (re-confirmation that it is within the threshold)
+- Any changes in corporate group structure
+- Any changes in intended use
+- Any changes in company information
 
-(e) その他、申告者に有利となる情報の意図的な歪曲があった場合
+### 4.2 Threshold Excess Notification Obligation
 
-### 5.2 虚偽申告の発覚経路
+If it becomes certain during the relief period that annual gross revenue will exceed **10,000,000 JPY (for Japan-based entities) or 50,000 USD (for entities outside Japan)** based on location (e.g., upon finalization of financial statements), the declarant must notify the Licensor in writing (email acceptable) **within 30 days**.
 
-虚偽申告は、以下のような経路で発覚することがある。
+**Information to Include in the Notification:**
 
-- 監査時の裏付け資料との齟齬
-- 公開情報（決算公告、上場企業情報、報道等）との整合性確認
-- 第三者からの通報
-- 申告者自身からの事後的な申告訂正
-- ライセンシーの商用利用の実態（例：大型SaaS提供等）との乖離
+- Declaration number
+- Date the excess became certain (e.g., financial statement finalization date)
+- Revenue after the excess
+- Cause of the excess (temporary, structural, presence of special factors such as M&A)
+- Future plans for using this Software (transition to License B / transition to License C / cessation of use)
 
-### 5.3 虚偽申告確認時の措置
+Failure to notify may result in the application of Section 5 (Handling of False Declarations).
 
-ライセンサーは、虚偽申告の疑いを持った時点で、以下の順で対応する。
+### 4.3 Transition Period After Threshold Excess
 
-**ステップ1：照会**
+Upon receiving notification of a threshold excess, the Licensor will grant the declarant a **30-day** transition period (which may be extended by mutual agreement). During the transition period, the declarant must choose one of the following and complete the transition:
 
-- 書面（電子メール）で申告者に疑義内容を通知
-- 14日以内に回答を求める
+(a) Transition to License B, with output publication obligations for commercial use after the transition date
 
-**ステップ2：協議**
+(b) Enter into a License C subscription agreement
 
-- 申告者の回答に基づき、疑義が解消されない場合は対面または会議での協議
-- 是正の可能性、経緯の確認、今後の対応方針を議論
+(c) Stop using this Software
 
-**ステップ3：認定**
+### 4.4 Other Change Notification Obligations
 
-- 協議を経て虚偽申告が認定された場合、以下の措置を取る
+The following changes also require notification within 30 days:
 
-### 5.4 遡及失効の効果
-
-虚偽申告が認定された場合、以下の措置が取られる。
-
-(a) **遡及的なライセンス失効**：虚偽申告があった時点から、License A の適用が遡及的に失効する。この時点以降の利用は、License B または License C の条件に従う必要がある。
-
-(b) **License B の遡及適用**：申告者が License B を選択した場合、遡及期間中に生成された成果物は公開義務の対象となる。
-
-(c) **License C 相当の料金請求**：申告者が License C を選択した場合、遡及期間に相当するサブスクリプション料金を、遡及適用開始日から起算して請求する。
-
-(d) **再申告の制限**：虚偽申告者は、今後 **3年間** 本制度への申告ができないものとする。
-
-(e) **差止め**：ライセンサーは、必要に応じて利用差止請求・損害賠償請求を行う権利を留保する。
-
-### 5.5 過失による誤りと虚偽申告の区分
-
-意図のない軽微な誤り（計算違い、数値の入力誤り等）は、虚偽申告とは区別される。申告者が誤りに気づいた時点で速やかに自発的に通知した場合、以下のとおり処理される。
-
-- **自発的訂正**：訂正申告により是正し、ペナルティは課されない
-- **遡及失効なし**：訂正が合理的期間内である限り、過去のライセンス有効性は維持される
-
-ただし、「過失による誤り」を装った意図的な虚偽申告は、厳しく取り扱われる。
+- **Corporate merger, division, or M&A**: Change in the licensee entity
+- **Joining a corporate group**: Where a previously independent entity now has a parent company
+- **Material change in intended use**: When using the software for purposes significantly different from the declaration
+- **Change in company information**: Name, location, representative, contact person
 
 ---
 
-## 6. 監査権
+## 5. Handling of False Declarations and Retroactive Invalidity
 
-### 6.1 監査権の根拠
+### 5.1 Definition of False Declaration
 
-`LICENSE.md` 第0章0.2(d) の自己申告条件の一部として、ライセンサーは申告内容の妥当性を確認するため、合理的な範囲で監査を行う権利を有する。
+A "false declaration" is found when any of the following apply:
 
-### 6.2 監査の対象
+(a) Intentionally stating facts that differ from the truth regarding objective facts such as revenue or corporate group information
 
-監査は、以下の観点で実施される。
+(b) Intentionally omitting material facts known at the time of declaration (revenue projections, planned M&A, etc.)
 
-- 売上高の妥当性（決算書、売上台帳との整合）
-- 企業グループ構成の妥当性（登記情報、組織図との整合）
-- 使用目的の妥当性（実際の利用実態との整合）
-- 通知義務の履行状況（閾値超過通知、変更通知）
+(c) Intentionally failing to fulfill the notification obligation upon exceeding the threshold
 
-### 6.3 監査の頻度と方法
+(d) Unreasonably narrowing the scope of the corporate group and intentionally excluding certain entities
 
-**定期監査：**
+(e) Any other intentional distortion of information to the declarant's advantage
 
-- 対象：無作為抽出された申告者（年間申告数の 5% 以下）
-- 頻度：年1回程度
-- 方法：書面での資料提出依頼
+### 5.2 How False Declarations Are Discovered
 
-**個別監査：**
+False declarations may be discovered through:
 
-- 対象：虚偽申告の疑いが生じた申告者
-- 頻度：随時
-- 方法：書面調査、必要に応じて対面インタビュー
+- Discrepancies between supporting documents and declared information during audits
+- Cross-referencing with public information (financial announcements, listed company information, news reports, etc.)
+- Reports from third parties
+- Post-hoc correction declarations from the declarant themselves
+- Discrepancy between the licensee's actual commercial use (e.g., large-scale SaaS offering) and their declaration
 
-### 6.4 監査への協力義務
+### 5.3 Measures Upon Confirmation of False Declaration
 
-申告者は、ライセンサーからの合理的な監査要請に対し、以下の資料を提供する義務を負う。
+When the Licensor has reason to suspect a false declaration, the following steps are taken in order:
 
-(a) 直近会計年度および監査対象期間の決算書（損益計算書、貸借対照表の該当部分）
+**Step 1: Inquiry**
 
-(b) 企業グループ構成を証する書類（グループ企業一覧、資本関係図）
+- Notify the declarant in writing (email) of the concerns
+- Request a response within 14 days
 
-(c) 本ソフトウェアの利用実態を示す資料（使用ログ、設計書の該当部分）
+**Step 2: Consultation**
 
-(d) 商業登記簿謄本または同等の公的書類（最新版）
+- If concerns are not resolved based on the declarant's response, conduct a meeting or conference
+- Discuss the possibility of correction, the circumstances, and future action plans
 
-監査協力は、通知受領から **30日以内** に対応することを原則とする。
+**Step 3: Determination**
 
-### 6.5 機密保持
+- If a false declaration is confirmed after consultation, the following measures are taken
 
-ライセンサーは、監査の過程で取得した申告者の機密情報を、監査の目的以外に使用しない。ライセンサーは、監査情報を取り扱う従業員に対し、機密保持義務を課す。
+### 5.4 Effects of Retroactive Invalidity
 
-### 6.6 監査費用の負担
+When a false declaration is confirmed, the following measures are taken:
 
-- **監査要件に適合していた場合**：監査費用はライセンサーが負担する
-- **虚偽申告が認定された場合**：監査に要した合理的費用を、申告者が負担する
+(a) **Retroactive License Invalidation**: License A coverage is retroactively invalidated from the date of the false declaration. Use from that point onward must comply with License B or License C conditions.
 
----
+(b) **Retroactive Application of License B**: If the declarant selects License B, outputs generated during the retroactive period are subject to publication obligations.
 
-## 7. 個人情報・データ保護
+(c) **License C Equivalent Fee Claim**: If the declarant selects License C, subscription fees for the retroactive period, calculated from the retroactive application start date, will be charged.
 
-### 7.1 取得する個人情報
+(d) **Restriction on Re-Declaration**: The false declarant is prohibited from making declarations under this system for **3 years**.
 
-本制度の運用において、以下の個人情報を取得する。
+(e) **Injunctive Relief**: The Licensor reserves the right to seek injunctive relief and damages as necessary.
 
-- 代表者氏名、役職
-- 連絡担当者氏名、電子メールアドレス
-- 申告者（電子署名者）の氏名、役職
-- 会社情報（法人情報に個人情報が含まれる場合）
+### 5.5 Distinction Between Negligent Errors and False Declarations
 
-### 7.2 利用目的
+Unintentional minor errors (calculation mistakes, data entry errors, etc.) are distinguished from false declarations. If the declarant promptly notifies upon discovering the error, the following applies:
 
-取得した個人情報は、以下の目的に限り利用する。
+- **Voluntary correction**: Corrected through a correction declaration, with no penalty
+- **No retroactive invalidity**: As long as the correction is made within a reasonable period, past license validity is maintained
 
-- 申告内容の審査および承認
-- 審査結果の通知
-- 年次更新の案内
-- 閾値超過・変更の通知対応
-- 監査の実施
-- 法令に基づく開示義務への対応
-
-### 7.3 第三者提供
-
-取得した個人情報は、以下の場合を除き、第三者に提供しない。
-
-- 申告者の同意がある場合
-- 法令に基づき開示を求められた場合
-- 監査の補助として、秘密保持契約を締結した専門家（弁護士、会計士等）に開示する場合
-
-### 7.4 保管期間
-
-- **承認済み申告情報**：救済期間終了から **5年間**
-- **却下された申告情報**：却下通知から **3年間**
-- **虚偽申告関連情報**：認定から **7年間**（訴訟対応のため）
-
-保管期間経過後、個人情報は速やかに削除する。
-
-### 7.5 開示・訂正・削除請求
-
-申告者は、自己の個人情報について、開示、訂正、削除を請求することができる。ただし、以下の制約がある。
-
-- 監査・訴訟対応のため保管が必要な期間は、削除請求に応じない場合がある
-- 申告番号・申告内容の削除は、救済期間中は認められない
-
-請求は、privacy@aquaxis.com まで連絡する。
-
-### 7.6 GDPR 等の海外法令
-
-海外（EU・英国・米国カリフォルニア州等）から申告を受けた場合、以下の対応が必要となる。
-
-- GDPR：DPO（データ保護責任者）への通知、個人情報の域外移転についての適法化
-- CCPA：個人情報の販売停止、削除請求への対応
-
-海外からの申告は現時点で主要な想定ユースケースではないため、運用で必要に応じて個別対応する方針とする。
+However, intentional false declarations disguised as "negligent errors" will be treated strictly.
 
 ---
 
-## 8. 社内運用マニュアル
+## 6. Audit Rights
 
-**※このセクションは、ライセンサー社内担当者向けの運用手順である。**
+### 6.1 Basis for Audit Rights
 
-### 8.1 役割分担
+As part of the self-declaration conditions in `LICENSE.md` Chapter 0, Section 0.2(d), the Licensor has the right to conduct audits within a reasonable scope to verify the validity of declared information.
 
-| 役割 | 担当 | 主な責務 |
+### 6.2 Audit Scope
+
+Audits are conducted from the following perspectives:
+
+- Revenue validity (consistency with financial statements and sales ledgers)
+- Corporate group structure validity (consistency with registry information and organizational charts)
+- Intended use validity (consistency with actual usage)
+- Notification obligation fulfillment (threshold excess notifications, change notifications)
+
+### 6.3 Audit Frequency and Method
+
+**Regular Audits:**
+
+- Target: Randomly selected declarants (5% or fewer of annual declarations)
+- Frequency: Approximately once per year
+- Method: Written request for document submission
+
+**Specific Audits:**
+
+- Target: Declarants for whom suspicion of false declaration has arisen
+- Frequency: As needed
+- Method: Written investigation, on-site interviews if necessary
+
+### 6.4 Audit Cooperation Obligation
+
+Declarants are obligated to provide the following documents in response to reasonable audit requests from the Licensor:
+
+(a) Financial statements (income statement and relevant portions of the balance sheet) for the most recent fiscal year and the audit period
+
+(b) Documents demonstrating corporate group structure (list of group companies, capital relationship diagrams)
+
+(c) Documents demonstrating actual use of this Software (usage logs, relevant portions of design documents)
+
+(d) Commercial registry certificate or equivalent public document (latest version)
+
+Audit cooperation shall in principle be provided within **30 days** of receiving notification.
+
+### 6.5 Confidentiality
+
+The Licensor shall not use the declarant's confidential information obtained during audits for any purpose other than the audit. The Licensor shall impose confidentiality obligations on employees who handle audit information.
+
+### 6.6 Audit Cost Allocation
+
+- **When audit requirements are met**: The Licensor bears the audit costs
+- **When a false declaration is confirmed**: The declarant bears the reasonable costs incurred by the audit
+
+---
+
+## 7. Personal Information and Data Protection
+
+### 7.1 Personal Information Collected
+
+The following personal information is collected in the operation of this system:
+
+- Representative name and title
+- Contact person name and email address
+- Declarant (electronic signatory) name and title
+- Company information (when personal information is included in corporate information)
+
+### 7.2 Purpose of Use
+
+Collected personal information is used only for the following purposes:
+
+- Review and approval of declarations
+- Notification of review results
+- Annual renewal reminders
+- Threshold excess and change notification responses
+- Conducting audits
+- Compliance with legal disclosure obligations
+
+### 7.3 Third-Party Disclosure
+
+Collected personal information is not disclosed to third parties except in the following cases:
+
+- When the declarant has given consent
+- When disclosure is legally required
+- When disclosed to professionals (attorneys, accountants, etc.) who have signed non-disclosure agreements for audit assistance
+
+### 7.4 Retention Period
+
+- **Approved declaration information**: **5 years** from the end of the relief period
+- **Rejected declaration information**: **3 years** from the rejection notice
+- **False declaration-related information**: **7 years** from determination (for litigation purposes)
+
+After the retention period expires, personal information shall be promptly deleted.
+
+### 7.5 Disclosure, Correction, and Deletion Requests
+
+Declarants may request disclosure, correction, or deletion of their personal information. However, the following restrictions apply:
+
+- During the retention period necessary for audits or litigation, deletion requests may not be accommodated
+- Deletion of declaration numbers and declaration content is not permitted during the relief period
+
+Requests should be sent to privacy@aquaxis.com.
+
+### 7.6 GDPR and Other Foreign Laws
+
+When receiving declarations from outside Japan (EU, UK, US state of California, etc.), the following measures may be required:
+
+- GDPR: Notification to the DPO (Data Protection Officer), legalization of personal data transfers outside the EU
+- CCPA: Prohibition of personal information sales, response to deletion requests
+
+Since declarations from outside Japan are not currently a primary anticipated use case, the policy is to respond individually as needed in operations.
+
+---
+
+## 8. Internal Operations Manual
+
+**Note: This section is an operations guide for internal Licensor personnel only.**
+
+### 8.1 Role Assignments
+
+| Role | Responsible | Key Duties |
 |---|---|---|
-| 申告受付担当 | [部署名] | 申告の一次受付、形式審査、不備の指摘 |
-| 審査担当 | [部署名] | 実体審査、公的情報との突合、承認判断 |
-| 通知担当 | [部署名] | 承認・却下・追加確認の通知、年次更新案内 |
-| 監査担当 | [部署名／外部委託] | 監査の計画・実施、虚偽申告の調査 |
-| 法務担当 | [部署名／顧問弁護士] | 虚偽申告認定時の法的対応、不服申立ての対応 |
+| Declaration Reception | [Department] | Initial reception, formal review, pointing out deficiencies |
+| Review | [Department] | Substantive review, cross-reference with public information, approval decisions |
+| Notification | [Department] | Approval/rejection/additional confirmation notifications, annual renewal reminders |
+| Audit | [Department/Outsourced] | Audit planning and execution, false declaration investigation |
+| Legal | [Department/External Counsel] | Legal response upon false declaration determination, appeal handling |
 
-### 8.2 受付から通知までのチェックリスト
+### 8.2 Checklist from Reception to Notification
 
-**受付（目標：即日）**
-- [ ] フォーム送信の確認
-- [ ] 必須項目の記入確認
-- [ ] 自動受領確認メールの送信確認
+**Reception (Target: Same Day)**
+- [ ] Confirm form submission
+- [ ] Confirm required fields are filled
+- [ ] Confirm automatic receipt confirmation email was sent
 
-**形式審査（目標：3営業日以内）**
-- [ ] 記入漏れ・矛盾の有無
-- [ ] 明らかな虚偽の有無（フォーマット違反、異常値）
-- [ ] 過去申告履歴の確認
+**Formal Review (Target: Within 3 Business Days)**
+- [ ] Check for missing fields or inconsistencies
+- [ ] Check for obvious falsifications (format violations, anomalous values)
+- [ ] Check past declaration history
 
-**実体審査（目標：5営業日以内）**
-- [ ] 売上高が閾値以内であることの確認
-- [ ] 企業グループ構成の公開情報との突合
-- [ ] 使用目的の妥当性確認
-- [ ] 過去の虚偽申告履歴の有無
+**Substantive Review (Target: Within 5 Business Days)**
+- [ ] Confirm revenue is within threshold
+- [ ] Cross-reference corporate group structure with public information
+- [ ] Confirm validity of intended use
+- [ ] Check for past false declaration history
 
-**承認処理（目標：5営業日以内）**
-- [ ] 申告番号の発行
-- [ ] 救済期間の設定（通常、申告者の会計年度末まで）
-- [ ] 承認通知メールの送付
-- [ ] 社内データベースへの登録
+**Approval Processing (Target: Within 5 Business Days)**
+- [ ] Issue declaration number
+- [ ] Set relief period (typically until the end of the declarant's fiscal year)
+- [ ] Send approval notification email
+- [ ] Register in internal database
 
-### 8.3 データ管理
+### 8.3 Data Management
 
-申告情報は、以下の構成で社内データベースに登録する。
+Declaration information is registered in the internal database with the following structure:
 
-**必須フィールド：**
-- 申告番号（主キー）
-- 法人名／組織名
-- 代表者名、連絡担当者名、連絡先
-- 直近会計年度、年間総売上高
-- 企業グループ情報
-- 申告日、承認日、救済期間満了日
-- 次回更新予定日
-- ステータス（承認／条件付／却下／失効）
+**Required Fields:**
+- Declaration number (primary key)
+- Organization name
+- Representative name, contact person name, contact information
+- Most recent fiscal year, annual gross revenue
+- Corporate group information
+- Declaration date, approval date, relief period expiration date
+- Next renewal date
+- Status (approved / conditional / rejected / invalidated)
 
-**アクセス制御：**
-- 読み取り：申告受付担当、審査担当、通知担当、監査担当
-- 更新：審査担当、通知担当、監査担当
-- 削除：管理者権限のみ
+**Access Control:**
+- Read: Declaration reception, review, notification, and audit staff
+- Update: Review, notification, and audit staff
+- Delete: Admin privileges only
 
-### 8.4 定期レビュー
+### 8.4 Periodic Reviews
 
-以下の定期レビューを実施する。
+The following periodic reviews shall be conducted:
 
-- **月次**：前月の申告件数、承認率、却下理由の傾向分析
-- **四半期**：制度運用状況のレビュー、改善提案
-- **年次**：制度そのものの見直し（閾値、救済期間、手続き等）
+- **Monthly**: Number of declarations, approval rate, and trend analysis of rejection reasons from the previous month
+- **Quarterly**: Review of system operations and improvement proposals
+- **Annually**: Review of the system itself (thresholds, relief periods, procedures)
 
-### 8.5 異常検知の観点
+### 8.5 Anomaly Detection Indicators
 
-以下の異常を検知した場合、個別調査の対象とする。
+The following anomalies, if detected, should trigger individual investigation:
 
-- 同一IPアドレスからの複数申告
-- 同一連絡先（メール、電話）での複数法人の申告
-- 売上高の不自然な減少（過去申告との比較）
-- 企業グループ情報の不自然な変更
-- 連絡先と会社所在地が不整合
+- Multiple declarations from the same IP address
+- Multiple organizations declaring from the same contact information (email, phone)
+- Unnatural decrease in revenue (compared to past declarations)
+- Unnatural changes in corporate group information
+- Inconsistency between contact information and company location
 
-### 8.6 自動化の推奨範囲
+### 8.6 Recommended Automation Scope
 
-効率的な運用のため、以下の自動化を推奨する。
+For efficient operations, the following automation is recommended:
 
-| 項目 | 自動化の可否 |
+| Item | Automation Feasibility |
 |---|---|
-| フォーム受信・一次受領確認メール | **自動化推奨** |
-| 形式審査（必須項目チェック） | **自動化推奨** |
-| 公的情報との突合（国税庁法人番号公表サイト等） | 半自動化可能 |
-| 実体審査（決算書確認等） | 手動 |
-| 承認通知・申告番号発行 | **自動化推奨**（承認後） |
-| 年次更新案内の送付 | **自動化必須**（リマインダー） |
-| 監査対象の無作為抽出 | **自動化推奨** |
+| Form receipt and initial receipt confirmation email | **Recommended for automation** |
+| Formal review (required field check) | **Recommended for automation** |
+| Cross-reference with public information (National Tax Agency corporate number publication site, etc.) | Semi-automatable |
+| Substantive review (financial statement verification, etc.) | Manual |
+| Approval notification and declaration number issuance | **Recommended for automation** (after approval) |
+| Annual renewal reminder sending | **Must be automated** (reminder) |
+| Random selection of audit targets | **Recommended for automation** |
 
 ---
 
-## 9. 通知・連絡テンプレート
+## 9. Notification and Communication Templates
 
-### 9.1 受領確認メール（自動）
+### 9.1 Receipt Confirmation Email (Automatic)
 
 ```
-件名：【HESTIA】小規模事業者救済 自己申告を受け付けました
+Subject: [HESTIA] Small Business Relief Self-Declaration Received
 
-[申告者名] 様
+Dear [Declarant Name],
 
-HESTIA の小規模事業者救済 自己申告をお送りいただき、ありがとうございます。
-以下の通り、申告を受け付けました。
+Thank you for submitting your small business relief self-declaration for HESTIA.
+We have received your declaration as follows:
 
-■ 受付日時：YYYY-MM-DD HH:MM JST
-■ 申告者：[法人名／氏名]
-■ 連絡担当者：[連絡担当者名]
+- Receipt Date and Time: YYYY-MM-DD HH:MM JST
+- Declarant: [Organization Name / Individual Name]
+- Contact Person: [Contact Person Name]
 
-今後、内容確認を行い、通常5営業日以内に審査結果をご連絡いたします。
-審査期間中に追加で情報の提供をお願いすることがあります。
+We will review the content and notify you of the result within 5 business days.
+We may request additional information during the review period.
 
-─────────────────────────────────────
+─────────────────────────────────────────────
 AQUAXIS TECHNOLOGY
 contact@aquaxis.com
 ```
 
-### 9.2 承認通知メール
+### 9.2 Approval Notification Email
 
 ```
-件名：【HESTIA】小規模事業者救済 申告承認のご案内
+Subject: [HESTIA] Small Business Relief Declaration Approved
 
-[連絡担当者名] 様
+Dear [Contact Person Name],
 
-このたびは、HESTIA の小規模事業者救済 自己申告をお送りいただき、
-ありがとうございました。
+Thank you for submitting your small business relief self-declaration for HESTIA.
 
-申告内容を確認し、以下のとおり承認いたしました。
+We have reviewed your declaration and are pleased to inform you that it has been approved.
 
-■ 申告番号：SBD-YYYY-NNNNN
-■ 承認日：YYYY-MM-DD
-■ 救済期間：YYYY-MM-DD ～ YYYY-MM-DD
-■ 適用ライセンス：License A（AGPL-3.0）
+- Declaration Number: SBD-YYYY-NNNNN
+- Approval Date: YYYY-MM-DD
+- Relief Period: YYYY-MM-DD to YYYY-MM-DD
+- Applicable License: License A (AGPL-3.0)
 
-救済期間中、本ソフトウェアを License A（AGPL-3.0）の条件に従ってご利用
-いただけます。なお、AGPL-3.0 自体の義務（改変部分の公開、ネットワーク
-提供時のソース公開等）は引き続き適用されます。
+During the relief period, you may use this Software under the terms of License A (AGPL-3.0).
+Please note that AGPL-3.0's own obligations (publication of modifications, source code
+publication upon network interaction, etc.) continue to apply.
 
-■ 今後ご注意いただきたい点：
-・救済期間中に年間総売上高が閾値を超過した場合、30日以内に通知いただく
-  必要があります
-・救済期間満了の60日前に、年次更新のご案内をお送りします
-・申告番号は今後のお問い合わせや更新時に必要ですので大切に保管ください
+Important reminders:
+- If your annual gross revenue exceeds the threshold during the relief period, you must
+  notify us within 30 days
+- We will send an annual renewal reminder 60 days before the relief period expiration date
+- Please keep your declaration number safe, as you will need it for future inquiries
+  and renewals
 
-─────────────────────────────────────
+─────────────────────────────────────────────
 AQUAXIS TECHNOLOGY
 contact@aquaxis.com
 ```
 
-### 9.3 追加情報依頼メール
+### 9.3 Additional Information Request Email
 
 ```
-件名：【HESTIA】小規模事業者救済 申告内容の確認
+Subject: [HESTIA] Small Business Relief Declaration Content Confirmation
 
-[連絡担当者名] 様
+Dear [Contact Person Name],
 
-ご提出いただきました小規模事業者救済 自己申告について、以下の点に
-ついて追加で情報をご提供いただきたくお願いいたします。
+Regarding the small business relief self-declaration you submitted, we would like
+to request additional information on the following points.
 
-■ 申告番号：SBD-YYYY-NNNNN
-■ 確認事項：
-  1. [具体的な確認事項]
-  2. [具体的な確認事項]
+- Declaration Number: SBD-YYYY-NNNNN
+- Items to Confirm:
+  1. [Specific item to confirm]
+  2. [Specific item to confirm]
 
-■ 回答期限：YYYY-MM-DD（2週間以内）
+- Response Deadline: YYYY-MM-DD (within 2 weeks)
 
-お手数をおかけしますが、上記期限までに http://aquaxis.com/contact または本メールへの
-ご返信にてご回答ください。期限内にご回答がない場合、申告は保留となり
-ます。
+We apologize for the inconvenience and ask that you respond by the above deadline
+at http://aquaxis.com/contact or by replying to this email. If we do not receive
+a response by the deadline, your declaration will be placed on hold.
 
-─────────────────────────────────────
+─────────────────────────────────────────────
 AQUAXIS TECHNOLOGY
 contact@aquaxis.com
 ```
 
-### 9.4 却下通知メール
+### 9.4 Rejection Notification Email
 
 ```
-件名：【HESTIA】小規模事業者救済 申告結果のご案内
+Subject: [HESTIA] Small Business Relief Declaration Result
 
-[連絡担当者名] 様
+Dear [Contact Person Name],
 
-ご提出いただきました小規模事業者救済 自己申告について、慎重に
-審査を行いましたが、以下の理由により本制度の適用をお見送り
-させていただく結果となりました。
+We have carefully reviewed the small business relief self-declaration you submitted.
+However, we regret to inform you that we are unable to approve the application of
+this system for the following reason(s).
 
-■ 申告番号（仮）：SBD-YYYY-NNNNN
-■ 却下理由：[具体的な却下理由]
+- Declaration Number (provisional): SBD-YYYY-NNNNN
+- Reason for Rejection: [Specific reason for rejection]
 
-本ソフトウェアを商用利用される場合、以下のいずれかをご選択ください：
+If you wish to use this Software commercially, please select one of the following:
 
-(1) License B（相互主義、無償）
-    成果物の公開義務あり。詳細は LICENSE.md 第2章をご参照ください。
+(1) License B (Reciprocal, Free)
+    Output publication obligation applies. For details, see LICENSE.md Chapter 2.
 
-(2) License C（商用サブスクリプション）
-    有償。成果物の公開義務なし、優先サポート付。
-    詳細は http://aquaxis.com/sales までお問い合わせください。
+(2) License C (Commercial Subscription)
+    Paid. No output publication obligation, with priority support.
+    For details, contact http://aquaxis.com/sales.
 
-本結果に対してご不明な点がある場合、受領から14日以内に contact@aquaxis.com
-までご連絡ください。不服申立ての手続きについてご案内いたします。
+If you have any questions about this result, please contact contact@aquaxis.com
+within 14 days of receiving this notice. We will guide you through the appeal process.
 
-─────────────────────────────────────
+─────────────────────────────────────────────
 AQUAXIS TECHNOLOGY
 contact@aquaxis.com
 ```
 
-### 9.5 年次更新案内メール（自動）
+### 9.5 Annual Renewal Reminder Email (Automatic)
 
 ```
-件名：【HESTIA】小規模事業者救済 救済期間満了のご案内
+Subject: [HESTIA] Small Business Relief Period Expiration Notice
 
-[連絡担当者名] 様
+Dear [Contact Person Name],
 
-平素より HESTIA をご利用いただき、ありがとうございます。
+Thank you for your continued use of HESTIA.
 
-ご登録いただいております小規模事業者救済の救済期間満了日が近づきましたので、
-ご案内申し上げます。
+The expiration date of your registered small business relief period is approaching.
 
-■ 申告番号：SBD-YYYY-NNNNN
-■ 救済期間満了日：YYYY-MM-DD
+- Declaration Number: SBD-YYYY-NNNNN
+- Relief Period Expiration Date: YYYY-MM-DD
 
-救済期間の継続をご希望の場合、満了日の30日前までに年次更新申告を
-完了してください。
+If you wish to continue the relief period, please complete the annual renewal
+declaration by 30 days before the expiration date.
 
-■ 更新申告URL：http://aquaxis.com/declaration/renewal
+- Renewal Declaration URL: http://aquaxis.com/declaration/renewal
 
-更新申告を行わない場合、満了日をもって License A の適用が終了します。
-その後の利用形態は、以下のいずれかをお選びいただく必要があります：
+If you do not submit a renewal declaration, License A coverage will expire on
+the expiration date. You will then need to choose one of the following:
 
-(1) License B（相互主義、無償・成果物公開）
-(2) License C（商用サブスクリプション、有償）
-(3) 本ソフトウェアの使用停止
+(1) License B (Reciprocal, Free, Output Publication)
+(2) License C (Commercial Subscription, Paid)
+(3) Stop using this Software
 
-ご不明な点がございましたら、contact@aquaxis.com までお問い合わせください。
+If you have any questions, please contact contact@aquaxis.com.
 
-─────────────────────────────────────
+─────────────────────────────────────────────
 AQUAXIS TECHNOLOGY
 contact@aquaxis.com
 ```
 
-### 9.6 閾値超過確認メール（ライセンサー → 申告者）
+### 9.6 Threshold Excess Confirmation Email (Licensor to Declarant)
 
 ```
-件名：【HESTIA】閾値超過に関する確認のお願い
+Subject: [HESTIA] Threshold Excess Confirmation Request
 
-[連絡担当者名] 様
+Dear [Contact Person Name],
 
-HESTIA 小規模事業者救済（申告番号：SBD-YYYY-NNNNN）の対象として
-ご登録いただいておりますが、ライセンサー側の調査により、[根拠情報]
-に基づき、貴社の年間総売上高が閾値（所在地に応じて 1,000万円（日本企業）または 50,000米ドル（日本以外の企業））を超過している
-可能性があることを把握しました。
+You are registered under the HESTIA small business relief (Declaration Number:
+SBD-YYYY-NNNNN). Based on [source information], we have determined that your
+annual gross revenue may exceed the threshold (10,000,000 JPY for Japan-based
+entities or 50,000 USD for entities outside Japan).
 
-本件について、以下の点についてご確認とご回答をお願いいたします。
+We would like to confirm the following:
 
-1. 直近会計年度の年間総売上高の正確な金額
-2. 超過がある場合、超過が確定した日付
-3. 今後の本ソフトウェアの利用方針
+1. The accurate amount of your annual gross revenue for the most recent fiscal year
+2. The date the excess became certain, if applicable
+3. Your future plans for using this Software
 
-ご回答は受領から14日以内に contact@aquaxis.com までお願いいたします。
-ご回答がない場合、または虚偽申告と認定される場合、本救済の適用が
-遡及的に失効する可能性がありますので、誠実なご対応をお願いします。
+Please respond within 14 days of receiving this email to contact@aquaxis.com.
+If we do not receive a response, or if a false declaration is confirmed, the
+relief may be retroactively invalidated. We appreciate your honest cooperation.
 
-─────────────────────────────────────
+─────────────────────────────────────────────
 AQUAXIS TECHNOLOGY
 contact@aquaxis.com
 ```

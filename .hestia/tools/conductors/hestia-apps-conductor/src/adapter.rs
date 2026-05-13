@@ -5,7 +5,7 @@ use adapter_core::{ToolAdapter, capability::CapabilitySet};
 use crate::target::TargetConfig;
 use crate::fsm_states::AppsBuildState;
 
-/// Apps ドメイン ToolAdapter トレイト
+/// Apps domain ToolAdapter trait
 #[async_trait]
 pub trait AppsToolAdapter: ToolAdapter {
     /// Target architecture (e.g., ARM Cortex-M, RISC-V)
@@ -30,7 +30,7 @@ pub trait AppsToolAdapter: ToolAdapter {
     async fn size_report(&self, ctx: &AppsBuildContext) -> Result<AppsSizeReport, adapter_core::error::AdapterError>;
 }
 
-/// Apps ビルドコンテキスト
+/// Apps build context
 #[derive(Debug, Clone)]
 pub struct AppsBuildContext {
     pub project_dir: std::path::PathBuf,
@@ -41,7 +41,7 @@ pub struct AppsBuildContext {
     pub env_vars: std::collections::HashMap<String, String>,
 }
 
-/// Apps ステップ実行結果
+/// Apps step execution result
 #[derive(Debug, Clone)]
 pub struct AppsStepResult {
     pub success: bool,

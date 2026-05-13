@@ -1,67 +1,67 @@
-# asic-conductor 設定スキーマ
+# asic-conductor Configuration Schema
 
-**対象 Conductor**: asic-conductor
-**ソース**: 設計仕様書 §6.9（1930-1958行目付近）
+**Target Conductor**: asic-conductor
+**Source**: Design specification §6.9 (around lines 1930-1958)
 
-## asic.toml — 統一プロジェクトフォーマット
+## asic.toml — Unified Project Format
 
-ASIC プロジェクトの設定・PDK 指定・合成設定・配置配線設定を宣言的に定義するファイル。
+A file that declaratively defines the configuration, PDK specification, synthesis settings, and placement and routing settings for an ASIC project.
 
-### セクション一覧
+### Sections
 
-| セクション | 必須 | 説明 |
-|-----------|------|------|
-| `[project]` | 必須 | プロジェクト基本設定 |
-| `[target]` | 必須 | PDK・クロック周期の指定 |
-| `[synthesis]` | 任意 | 論理合成設定 |
-| `[placement]` | 任意 | 配置設定 |
-| `[cts]` | 任意 | クロックツリー合成設定 |
-| `[routing]` | 任意 | 配線設定 |
+| Section | Required | Description |
+|-----------|----------|------------|
+| `[project]` | Required | Project basic configuration |
+| `[target]` | Required | PDK and clock period specification |
+| `[synthesis]` | Optional | Logic synthesis settings |
+| `[placement]` | Optional | Placement settings |
+| `[cts]` | Optional | Clock tree synthesis settings |
+| `[routing]` | Optional | Routing settings |
 
-### `[project]` セクション
+### `[project]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `name` | string | プロジェクト名 |
-| `version` | string | バージョン |
-| `rtl_files` | string[] | RTL ソースファイル（glob 対応） |
-| `top` | string | トップモジュール名 |
+| Field | Type | Description |
+|-----------|---|------------|
+| `name` | string | Project name |
+| `version` | string | Version |
+| `rtl_files` | string[] | RTL source files (glob supported) |
+| `top` | string | Top module name |
 
-### `[target]` セクション
+### `[target]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `pdk` | string | PDK 名（例: `sky130_fd_sc_hd` / `gf180mcu_fd_sc_mcu7t5v0` / `ihp_sg13g2`） |
-| `clock_period_ns` | float | クロック周期（ナノ秒） |
+| Field | Type | Description |
+|-----------|---|------------|
+| `pdk` | string | PDK name (e.g., `sky130_fd_sc_hd` / `gf180mcu_fd_sc_mcu7t5v0` / `ihp_sg13g2`) |
+| `clock_period_ns` | float | Clock period (nanoseconds) |
 
-### `[synthesis]` セクション
+### `[synthesis]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `flatten` | boolean | フラット化有効化 |
-| `abc_script` | string | ABC テクノロジマッピングスクリプト（例: `resyn2`） |
-| `strategy` | string | 合成戦略（`area` / `speed` / `balanced`） |
+| Field | Type | Description |
+|-----------|---|------------|
+| `flatten` | boolean | Enable flattening |
+| `abc_script` | string | ABC technology mapping script (e.g., `resyn2`) |
+| `strategy` | string | Synthesis strategy (`area` / `speed` / `balanced`) |
 
-### `[placement]` セクション
+### `[placement]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `target_density` | float | ターゲット配置密度（0.0〜1.0） |
+| Field | Type | Description |
+|-----------|---|------------|
+| `target_density` | float | Target placement density (0.0 to 1.0) |
 
-### `[cts]` セクション
+### `[cts]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `max_skew_ns` | float | 最大クロックスキュー（ナノ秒） |
+| Field | Type | Description |
+|-----------|---|------------|
+| `max_skew_ns` | float | Maximum clock skew (nanoseconds) |
 
-### `[routing]` セクション
+### `[routing]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `min_layer` | string | 最小配線層（例: `met1`） |
-| `max_layer` | string | 最大配線層（例: `met5`） |
+| Field | Type | Description |
+|-----------|---|------------|
+| `min_layer` | string | Minimum routing layer (e.g., `met1`) |
+| `max_layer` | string | Maximum routing layer (e.g., `met5`) |
 
-### 設定例
+### Configuration Example
 
 ```toml
 [project]
@@ -90,17 +90,17 @@ min_layer = "met1"
 max_layer = "met5"
 ```
 
-## サポート PDK
+## Supported PDKs
 
-| PDK | プロセス | 提供元 | 用途 |
-|-----|---------|--------|------|
-| Sky130 | 130nm CMOS | SkyWater Technology | デジタル・混合信号、最も安定 |
-| GF180MCU | 180nm CMOS | GlobalFoundries | MCU 向け、高信頼性 |
-| IHP SG13G2 | 130nm BiCMOS | IHP | 高速アナログ・高周波設計 |
+| PDK | Process | Provider | Use Case |
+|-----|---------|----------|----------|
+| Sky130 | 130nm CMOS | SkyWater Technology | Digital and mixed-signal, most stable |
+| GF180MCU | 180nm CMOS | GlobalFoundries | MCU-oriented, high reliability |
+| IHP SG13G2 | 130nm BiCMOS | IHP | High-speed analog and RF design |
 
-## 関連ドキュメント
+## Related Documentation
 
-- [asic/binary_spec.md](binary_spec.md) — hestia-asic-cli バイナリ仕様
-- [asic/state_machines.md](state_machines.md) — ASIC ビルドステートマシン
-- [asic/tool_adapter.md](tool_adapter.md) — AsicToolAdapter トレイト
-- [../rtl/config_schema.md](../rtl/config_schema.md) — rtl.toml スキーマ
+- [asic/binary_spec.md](binary_spec.md) — hestia-asic-cli binary specification
+- [asic/state_machines.md](state_machines.md) — ASIC build state machine
+- [asic/tool_adapter.md](tool_adapter.md) — AsicToolAdapter trait
+- [../rtl/config_schema.md](../rtl/config_schema.md) — rtl.toml schema

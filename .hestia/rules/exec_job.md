@@ -1,119 +1,118 @@
 ---
 name: Hestia Agent Execution Guidelines
-description: hestia agent が exec_job サイクルで従う実行規約。`.aiprj/rules/exec_job.md` を agent 文脈に解釈変更したもの（Phase 81 P-3）。
+description: Execution rules that hestia agents follow during the exec_job cycle. Adapted from `.aiprj/rules/exec_job.md` for the agent context (Phase 81 P-3).
 ---
 
 # Hestia Agent Execution Guidelines (Phase 81)
 
-このファイルは hestia agent が **exec_job サイクル**（上位からの実行依頼 prompt 受信時）で参照する規約です。プロジェクト管理 AI 用の `.aiprj/rules/exec_job.md` とは独立した hestia 文脈の実体です。
+This file defines the rules that hestia agents reference during the **exec_job cycle** (when receiving an execution request prompt from a superior). It is an independent entity in the hestia context, separate from `.aiprj/rules/exec_job.md` which is intended for project management AI.
 
 ---
 
-## Article 1: 作業の根拠
+## Article 1: Basis of Work
 
-agent は次の優先順で作業の根拠を取得します:
+Agents obtain their work basis in the following priority order:
 
-1. **ペルソナ責務**: `.hestia/personas/<self>.md` の `name` / `description` フィールドが示す責務範囲
-2. **workspace 状態**: `<workspace>/{requirements,design,tasks}.md`（自己実行サイクルで生成済の 3 文書）および `<workspace>/agent.log`（過去の対話履歴）
-3. **上位 prompt**: 直近に受信した `agent-cli send` の text フィールド（上位指示はすべて本経路に統合、Phase 89 用語統一）
+1. **Persona responsibilities**: The `name` / `description` fields in `.hestia/personas/<self>.md` indicating the scope of responsibilities
+2. **Workspace state**: `<workspace>/{requirements,design,tasks}.md` (the three documents generated in the self-execution cycle) and `<workspace>/agent.log` (past interaction history)
+3. **Superior prompt**: The `text` field of the most recently received `agent-cli send` message (all superior instructions are consolidated through this channel, Phase 89 terminology unification)
 
-`.aiprj/AI_PRJ_REQUIREMENTS.md` 等のプロジェクト管理 AI 用文書は **参照しません**（Phase 22 P-1 / Phase 81 P-3 規約）。
-
----
-
-## Article 2: 3 文書 + 成果物の二段整合（Phase 91 強化）
-
-agent は workspace 内 3 文書および project root 配下の成果物の **二段整合** を維持します:
-
-**第一段（3 文書整合）**:
-- `<workspace>/requirements.md`（受信指示の要件）
-- `<workspace>/design.md`（責務範囲の設計判断）
-- `<workspace>/tasks.md`（実施項目と進捗）
-
-3 文書間で内容が矛盾しないことを確認します。例: `requirements.md` で「UART loopback」と記載しているなら `design.md` で UART RX/TX FSM の設計、`tasks.md` でその実装タスクが対応していること。
-
-**第二段（成果物整合）**:
-- `hal/register_map.json` のレジスタ定義と `rtl/<top>.sv` のポート信号が整合すること
-- `fpga/constraints/<top>.xdc` のピン制約と `rtl/<top>.sv` のトップレベル I/O が整合すること
-- `sim/lint_report.json` の lint 結果に基づき `rtl/` 側の品質ゲートを判定すること
-
-不整合を検出した場合、agent は **上位に halt 理由付きで報告** し、独自判断で修正を試みません（責務境界 / Phase 53 ai persona 是正）。3 文書 skip も不整合と扱います（Phase 91 遵守必須化）。
+Project management AI documents such as `.aiprj/AI_PRJ_REQUIREMENTS.md` are **not referenced** (Phase 22 P-1 / Phase 81 P-3 rule).
 
 ---
 
+## Article 2: Two-Tier Consistency of 3 Documents + Artifacts (Phase 81 Enhancement)
 
-**Phase 92 明確化**: 第一段の 3 文書 (`requirements.md` / `design.md` / `tasks.md`) は **各エージェント専用** であり、`.hestia/workspaces/<peer>/` 配下に各々独立して存在します。他エージェントの 3 文書との共用 / 参照共有は禁止です（per-agent 仕様書）。
+Agents maintain **two-tier consistency** between the 3 workspace documents and project artifacts under the project root:
 
----
+**First tier (3-document consistency)**:
+- `<workspace>/requirements.md` (requirements from received instructions)
+- `<workspace>/design.md` (design decisions within the scope of responsibilities)
+- `<workspace>/tasks.md` (implementation items and progress)
 
-## Article 3: 進捗の記録
+Agents verify that the content across these 3 documents is not contradictory. For example: if `requirements.md` mentions "UART loopback", then `design.md` should have the UART RX/TX FSM design, and `tasks.md` should have the corresponding implementation task.
 
-agent は明示的な fs_write による進捗記録を行いません。代わりに:
+**Second tier (artifact consistency)**:
+- Register definitions in `hal/register_map.json` must be consistent with port signals in `rtl/<top>.sv`
+- Pin constraints in `fpga/constraints/<top>.xdc` must be consistent with top-level I/O in `rtl/<top>.sv`
+- Lint results in `sim/lint_report.json` must be used to judge quality gates on the `rtl/` side
 
-- agent-cli の構造化 JSONL ログ（`~/.local/share/agent-cli/logs/<peer>/*.jsonl`）に thinking / tool_call / tool_result が自動記録される
-- `hestia mirror <peer>` 経路（Phase 49）で `<workspace>/agent.log` に要約行が real-time mirror される
-- aggregate JSON (`<root>/.hestia/run_log/<run-id>.json`) は ai-conductor が一括出力する
-
-ユーザーが進捗を見たい場合は `cat <workspace>/agent.log` または `hestia tail <peer>` で観測可能です。
-
----
-
-## Article 4: ノンストップ実行 (Phase 50 / autonomous_work feedback 継承)
-
-agent は exec_job サイクル中、user の許可確認を介在せず連続実行します。途中で停止する条件は次のみ:
-
-1. ペルソナ責務範囲を超える作業要求を受信
-2. 必要な入力 (params.* / 既存ファイル) が欠落（→ `input_required` 返却）
-3. 必要な実ツール (verilator / Vivado / yosys 等) が不在（→ `tool_unavailable` 返却）
-4. 上位から明示的な停止指示を受信
-
-それ以外の状況（warning 検出 / iteration 進行中 / 部分成果のみ生成）では halt せず、各 status を honest 返却して上位の判断に委ねます。
+If inconsistency is detected, agents **report to the superior with a halt reason** and do not attempt to fix it on their own (responsibility boundary / Phase 53 AI persona correction). Skipping the 3 documents is also treated as inconsistency (Phase 91 mandatory compliance).
 
 ---
 
-## Article 5: 失敗時の透明な報告 (Phase 50 継承)
-
-handler が以下のいずれかを返す場合、agent は **理由・次アクション候補・関連ログ抜粋** を 3 点セットで上位に報告します:
-
-| status | 意味 | 報告必須項目 |
-|--------|-----|-----------|
-| `input_required` | 必要入力欠落 | 欠落 input 名 / 提供方法 |
-| `tool_unavailable` | 実ツール不在 | tool 名 / インストール方法 / 代替手段 |
-| `skipped` | 既存成果物再利用 | 既存ファイルパス / 再生成方法 |
-| `*_failed` (lint_failed / build_failed 等) | 実ツール起動失敗 | 失敗 step / `error_log_excerpt` (50-200 行) |
-| `sim_warnings` | warnings 検出 (Phase 50) | warning count / 内訳 / 抑制方法 |
-
-「実行が止まった」だけの報告は禁止です。
+**Phase 92 Clarification**: The first-tier 3 documents (`requirements.md` / `design.md` / `tasks.md`) are **per-agent exclusive** and exist independently under `.hestia/workspaces/<peer>/`. Sharing or cross-referencing other agents' 3 documents is prohibited (per-agent specification).
 
 ---
 
-## Article 6: フラグ位置規約 (Phase 17 継承)
+## Article 3: Progress Recording
 
-agent が CLI を shell 経由で起動する場合、`--output json` 等の `CommonOpts` フラグは subcommand の **前** に置きます:
+Agents do not explicitly record progress via fs_write. Instead:
+
+- agent-cli's structured JSONL logs (`~/.local/share/agent-cli/logs/<peer>/*.jsonl`) automatically record thinking / tool_call / tool_result
+- `hestia mirror <peer>` path (Phase 49) mirrors summary lines to `<workspace>/agent.log` in real time
+- Aggregate JSON (`<root>/.hestia/run_log/<run-id>.json`) is output in bulk by ai-conductor
+
+Users can view progress via `cat <workspace>/agent.log` or `hestia tail <peer>`.
+
+---
+
+## Article 4: Non-Stop Execution (Phase 50 / autonomous_work feedback inheritance)
+
+Agents execute continuously during the exec_job cycle without requesting user permission. The only conditions for stopping are:
+
+1. Receiving a work request that exceeds the persona's scope of responsibilities
+2. Missing required inputs (params.* / existing files) (return `input_required`)
+3. Missing required physical tools (verilator / Vivado / yosys etc.) (return `tool_unavailable`)
+4. Receiving an explicit stop instruction from a superior
+
+In all other situations (warning detection / iteration in progress / partial artifact generation), agents do not halt, and instead return each status honestly and delegate the decision to the superior.
+
+---
+
+## Article 5: Transparent Failure Reporting (Phase 50 inheritance)
+
+When a handler returns any of the following, the agent reports to the superior with a **three-point set of reason / next action candidates / relevant log excerpt**:
+
+| status | meaning | required reporting items |
+|--------|---------|--------------------------|
+| `input_required` | Required input missing | Missing input name / how to provide it |
+| `tool_unavailable` | Physical tool unavailable | Tool name / installation method / alternatives |
+| `skipped` | Reusing existing artifact | Existing file path / how to regenerate |
+| `*_failed` (lint_failed / build_failed etc.) | Physical tool launch failure | Failed step / `error_log_excerpt` (50-200 lines) |
+| `sim_warnings` | Warnings detected (Phase 50) | Warning count / breakdown / suppression method |
+
+Reporting only "execution stopped" is prohibited.
+
+---
+
+## Article 6: Flag Position Convention (Phase 81 inheritance)
+
+When agents invoke CLI commands via shell, `CommonOpts` flags such as `--output json` are placed **before** the subcommand:
 
 ```bash
-# 正
+# Correct
 hestia-rtl-cli --output json lint --project ./
-# 誤（clap flatten が拒否）
+# Wrong (clap flatten rejects this)
 hestia-rtl-cli lint --project ./ --output json
 ```
 
-`CommonOpts` 全フラグは `global = true` 設定済 (Phase 17) のため、技術的には後置でも動作しますが、persona 規約として前置を統一します。
+All `CommonOpts` flags have `global = true` set (Phase 17), so technically they work in either position, but the persona convention standardizes placing them before the subcommand.
 
 ---
 
-## Article 7: shell 経由 in-process 実行 (Phase 16 / 方針 X)
+## Article 7: Shell-Based In-Process Execution (Phase 16 / Policy X)
 
-ai-conductor LLM がオーケストレーターとして各 `hestia-{domain}-cli` を shell 経由で in-process Handler 呼び出しする設計です（agent-cli IPC 経路ではなく Rust 関数呼び出し）。これにより:
+The ai-conductor LLM, as the orchestrator, invokes each `hestia-{domain}-cli` via shell for in-process Handler calls (not agent-cli IPC, but Rust function calls). This design:
 
-- shell ツール (LLM が `tool_call: shell`) で domain CLI を順次起動
-- 各 CLI は自プロセスで domain handler を直接 invoke、構造化 JSON を stdout に返却
-- 結果は `<root>/.hestia/run_log/<run-id>.json` に集約
+- Sequentially invokes domain CLIs via the shell tool (LLM `tool_call: shell`)
+- Each CLI directly invokes its domain handler within its own process, returning structured JSON to stdout
+- Results are aggregated to `<root>/.hestia/run_log/<run-id>.json`
 
-これは Phase 16「方針 X 採択」の中核設計であり、agent はこの経路を変更してはいけません。
+This is the core design of Phase 16 "Policy X Adoption", and agents must not change this path.
 
 ---
 
-## Article 8: `.aiprj/` 直接参照の禁止 (Phase 81 新規)
+## Article 8: Prohibition of Direct `.aiprj/` Reference (Phase 81 new)
 
-hestia agent は `.aiprj/` ディレクトリへの直接参照を行いません。実行規約は `.hestia/rules/exec_job.md`（本ファイル）を参照対象とします。
+Hestia agents do not directly reference the `.aiprj/` directory. Execution rules reference `.hestia/rules/exec_job.md` (this file) instead.

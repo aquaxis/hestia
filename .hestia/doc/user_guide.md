@@ -1,44 +1,44 @@
-# ユーザーガイド（User Guide）
+# User Guide
 
-**対象領域**: Hestia 全体
-**ソース**: 設計仕様書 §15（CLI 実行機能）, §16（フロントエンド）
-
----
-
-## 1. はじめに
-
-Hestia は統合ハードウェア開発環境であり、9つの Conductor（ai / rtl / fpga / asic / pcb / hal / apps / debug / rag）が連携して FPGA・ASIC・PCB 設計フローを統括します。本ガイドでは CLI・VSCode 拡張・Tauri IDE の使用方法を説明します。
+**Scope**: Hestia overall
+**Source**: Design specification §15 (CLI execution functions), §16 (Frontend)
 
 ---
 
-## 2. インストール
+## 1. Introduction
 
-### 2.1 ビルド手順
+Hestia is an integrated hardware development environment where 9 Conductors (ai / rtl / fpga / asic / pcb / hal / apps / debug / rag) coordinate to orchestrate FPGA, ASIC, and PCB design flows. This guide explains how to use the CLI, VSCode Extension, and Tauri IDE.
+
+---
+
+## 2. Installation
+
+### 2.1 Build Instructions
 
 ```bash
-# ワークスペース（.hestia/tools/Cargo.toml、resolver = "2"）
+# Workspace (.hestia/tools/Cargo.toml, resolver = "2")
 cd .hestia/tools
 
-# 全バイナリ（9 conductor + 10 CLI）
+# All binaries (9 conductors + 10 CLIs)
 cargo build --release
 
-# 特定の conductor のみビルド
+# Build specific conductor only
 cargo build --release -p hestia-fpga-conductor
 
-# テスト実行
-cargo test                          # 全テスト
-cargo test -p hestia-fpga-conductor # 特定 conductor
+# Run tests
+cargo test                          # All tests
+cargo test -p hestia-fpga-conductor # Specific conductor
 ```
 
-### 2.2 デーモン起動順序
+### 2.2 Daemon Startup Sequence
 
 ```bash
-# Group 0（直列・最高優先度）
+# Group 0 (serial, highest priority)
 hestia-ai-conductor &
-# system.health.v1 が status="online" を返すまで待機
+# Wait until system.health.v1 returns status="online"
 hestia status --conductor ai
 
-# Group 1（8 並列）
+# Group 1 (8 in parallel)
 hestia-rtl-conductor &
 hestia-fpga-conductor &
 hestia-asic-conductor &
@@ -48,113 +48,111 @@ hestia-apps-conductor &
 hestia-debug-conductor &
 hestia-rag-conductor &
 
-# 推奨: systemd ユーザーユニット経由
+# Recommended: via systemd user units
 systemctl --user start hestia-ai hestia-rtl hestia-fpga hestia-asic \
   hestia-pcb hestia-hal hestia-apps hestia-debug hestia-rag
 ```
 
 ---
 
-## 3. CLI 使用方法
+## 3. CLI Usage
 
-### 3.1 統合ランナー（hestia）
+### 3.1 Unified Runner (hestia)
 
 ```bash
-hestia init                     # .hestia/ 構築
-hestia start                    # 全 9 conductor 起動
-hestia start fpga               # 指定 conductor のみ
-hestia status                   # 全 conductor 状態
-hestia kill                     # 全 conductor を停止し、agent-cli/claude-cli-shim
-                                # の registry から残留 peer を cleanup（Phase 123）
-hestia upgrade                  # ソースから cargo build --release → ~/.local/bin
-                                # に再 install（Phase 124）
-hestia upgrade --no-pull        # git pull をスキップして現在の作業ツリーから再ビルド
-hestia --version                # build.rs による git describe ベースの version 表示
-                                # 例: "hestia 0.1.5-17-gaf88400"（Phase 127）
+hestia init                     # Build .hestia/ structure
+hestia start                    # Start all 9 conductors
+hestia start fpga               # Start specified conductor only
+hestia status                   # Show all conductor status
+hestia kill                     # Stop all conductors and cleanup residual peers from
+                                # agent-cli/claude-cli-shim registry (Phase 123)
+hestia upgrade                  # cargo build --release from source → reinstall to ~/.local/bin
+                                # (Phase 124)
+hestia upgrade --no-pull        # Skip git pull and rebuild from current working tree
+hestia --version                # Version display based on git describe via build.rs
+                                # Example: "hestia 0.1.5-17-gaf88400" (Phase 127)
 ```
 
-#### `hestia upgrade` の動作（Phase 124 / 130）
+#### `hestia upgrade` Behavior (Phase 124 / 130)
 
-1. `git pull --ff-only` でリモートの変更を取り込む（`--no-pull` で skip 可）
-2. `.hestia/tools/` で `cargo build --release` を実行（**Phase 130 で全 binary build に拡張**）
-3. ビルドされた **20 binary すべて**（`hestia` / 9 conductor / 10 cli / `claude-cli-shim`）を `~/.local/bin/` にコピー
-4. インストール後の `hestia --version` で新 version を表示
+1. Pull remote changes with `git pull --ff-only` (skippable with `--no-pull`)
+2. Run `cargo build --release` in `.hestia/tools/` (**expanded to build all 20 binaries in Phase 130**)
+3. Copy all **20 built binaries** (`hestia` / 9 conductors / 10 CLIs / `claude-cli-shim`) to `~/.local/bin/`
+4. Display the new version with `hestia --version` after installation
 
-Phase 130 以前は `hestia` バイナリ単体のみだったため、conductor / library 側の修正が反映されないバグがありました。Phase 130 で全 binary install に変更され、`hestia upgrade` 一発で system 全体が同期されます。
+Before Phase 130, only the `hestia` binary was installed, which meant fixes to conductors and libraries were not reflected. Phase 130 changed this to install all binaries, so `hestia upgrade` now synchronizes the entire system in one command.
 
-#### `hestia --version` の version 同期（Phase 127）
+#### `hestia --version` Version Synchronization (Phase 127)
 
-`clis/hestia/build.rs` がビルド時に `git describe --tags --always --dirty=-dirty` を実行し、
-`HESTIA_BUILD_VERSION` env として埋め込みます。`main.rs` は以下の fallback chain で表示:
+`clis/hestia/build.rs` runs `git describe --tags --always --dirty=-dirty` at build time and injects it as the `HESTIA_BUILD_VERSION` env variable. `main.rs` displays it using the following fallback chain:
 
-- `option_env!("HESTIA_BUILD_VERSION")` — git 利用可能ならば `git describe` 出力
-- `env!("CARGO_PKG_VERSION")` — git 不在環境（`cargo install` 配布等）では `[workspace.package] version`
+- `option_env!("HESTIA_BUILD_VERSION")` — `git describe` output when git is available
+- `env!("CARGO_PKG_VERSION")` — `[workspace.package] version` when git is unavailable (e.g., `cargo install` distribution)
 
-これにより GitHub TAG と version 表示が自動同期します。リリース時は `scripts/release.sh <X.Y.Z>` で
-Cargo.toml 書換 + commit + tag を原子的に実施できます。
+This ensures GitHub TAG and version display are automatically synchronized. At release time, `scripts/release.sh <X.Y.Z>` atomically performs Cargo.toml rewrite + commit + tag.
 
-### 3.2 RTL 設計フロー
+### 3.2 RTL Design Flow
 
 ```bash
-hestia rtl init                                             # rtl.toml テンプレート
-hestia rtl lint                                             # Verilator/Verible で Lint
+hestia rtl init                                             # rtl.toml template
+hestia rtl lint                                             # Lint with Verilator/Verible
 hestia rtl simulate --tb tb_alu --simulator verilator
 hestia rtl formal --properties properties.sv               # SymbiYosys
-hestia rtl handoff --target fpga                           # 下流へハンドオフ
+hestia rtl handoff --target fpga                           # Handoff to downstream
 ```
 
-### 3.3 FPGA 設計フロー
+### 3.3 FPGA Design Flow
 
 ```bash
-hestia fpga init                                            # fpga.toml テンプレート
-hestia fpga build artix7                                   # ビルド開始
+hestia fpga init                                            # fpga.toml template
+hestia fpga build artix7                                   # Start build
 hestia fpga status --job-id 1
 hestia fpga report timing
 hestia fpga simulate --tb tb_top --simulator iverilog
 ```
 
-### 3.4 ASIC 設計フロー
+### 3.4 ASIC Design Flow
 
 ```bash
 hestia asic init
 hestia asic pdk install sky130A
 hestia asic build --pdk sky130A
-hestia asic advance --job-id 1                              # 13 ステップを 1 段ずつ進行
+hestia asic advance --job-id 1                              # Advance 13 steps one at a time
 ```
 
-### 3.5 PCB 設計フロー
+### 3.5 PCB Design Flow
 
 ```bash
 hestia pcb init
-hestia pcb build --board-name "センサーボード"               # AI 回路図合成
+hestia pcb build --board-name "sensor-board"                # AI schematic synthesis
 hestia pcb output kicad --output-dir ./out
 hestia pcb output gerber --output-dir ./gb
 ```
 
-### 3.6 HAL 生成フロー
+### 3.6 HAL Generation Flow
 
 ```bash
-hestia hal init                                             # hal.toml テンプレート
-hestia hal parse regs/soc.rdl                               # SystemRDL レジスタマップ解析
-hestia hal validate                                         # アドレス重複・型整合性チェック
-hestia hal generate c --output-dir build/hal/inc           # C ヘッダ生成
-hestia hal generate rust --output-dir build/hal/rust       # Rust crate 生成
+hestia hal init                                             # hal.toml template
+hestia hal parse regs/soc.rdl                               # SystemRDL register map parsing
+hestia hal validate                                         # Address overlap and type consistency check
+hestia hal generate c --output-dir build/hal/inc           # C header generation
+hestia hal generate rust --output-dir build/hal/rust       # Rust crate generation
 hestia hal generate svd --output build/hal/svd/soc.svd    # CMSIS SVD
-hestia hal export-rtl --target rtl-conductor               # SystemRDL エクスポート
+hestia hal export-rtl --target rtl-conductor               # SystemRDL export
 ```
 
-### 3.7 アプリケーション開発フロー
+### 3.7 Application Development Flow
 
 ```bash
-hestia apps init                                            # apps.toml テンプレート
-hestia apps build --target thumbv7em-none-eabihf           # クロスコンパイル
-hestia apps test sil                                       # QEMU SIL テスト
-hestia apps test hil --probe stlink-v3                     # 実機 HIL テスト
-hestia apps size                                           # バイナリサイズ解析
-hestia apps flash --probe stlink-v3                        # フラッシュ書込
+hestia apps init                                            # apps.toml template
+hestia apps build --target thumbv7em-none-eabihf           # Cross-compilation
+hestia apps test sil                                       # QEMU SIL test
+hestia apps test hil --probe stlink-v3                     # Hardware HIL test
+hestia apps size                                           # Binary size analysis
+hestia apps flash --probe stlink-v3                        # Flash write
 ```
 
-### 3.8 デバッグフロー
+### 3.8 Debug Flow
 
 ```bash
 hestia debug create STM32F407 --interface-type swd
@@ -163,101 +161,99 @@ hestia debug capture start --session-id 1 --duration-ms 1000
 hestia debug program --board fpga_board --bitstream out.bit
 ```
 
-### 3.9 RAG（知識検索）
+### 3.9 RAG (Knowledge Search)
 
 ```bash
-hestia rag ingest --source-id stm32_datasheet                # PDF/Web のソース投入
-hestia rag search "STM32F103 SPI ピン配置" --top-k 5
-hestia rag cleanup                                            # quarantine / 古キャッシュ整理
+hestia rag ingest --source-id stm32_datasheet                # Ingest PDF/Web sources
+hestia rag search "STM32F103 SPI pin configuration" --top-k 5
+hestia rag cleanup                                            # Cleanup quarantine / old caches
 ```
 
-### 3.10 AI エージェント
+### 3.10 AI Agent
 
 ```bash
-hestia ai exec "Artix-7 で UART LED 制御回路を作って"        # 自然言語ジョブ
-hestia ai run --file .aiprj/instructions.md                  # 仕様書駆動実行
+hestia ai exec "Create a UART LED control circuit on Artix-7"  # Natural language job
+hestia ai run --file .aiprj/instructions.md                  # Spec-driven execution
 hestia ai container ls
 hestia ai container create --conductor fpga --tool vivado:2025.2
 hestia ai workflow run --workflow fpga-to-pcb-test-board
 hestia ai review start --project ./my-project --target artix7
 ```
 
-### 3.11 共通オプション
+### 3.11 Common Options
 
 `CommonOpts`: `--output (human|json)` / `--timeout` / `--registry` / `--config` / `--verbose`
 
-### 3.12 サブエージェント並列度の制御（Phase 126）
+### 3.12 Sub-agent Concurrency Control (Phase 126)
 
-`.hestia/config.toml` の `[concurrency]` セクションでサブエージェント spawn の上限を設定する。
-3 段階階層 Semaphore + acquire timeout でデッドロックを起こさず PC / LLM 過負荷を防ぐ。
+Configure sub-agent spawn limits in the `[concurrency]` section of `.hestia/config.toml`. A 3-tier hierarchical Semaphore + acquire timeout prevents deadlocks while avoiding PC / LLM overload.
 
 ```toml
 [concurrency]
-global_max = 8                       # ai-conductor が把握する全エージェント合計
-ai_conductor_dispatch_max = 2        # ai-conductor が同時 dispatch する domain conductor 数
-per_conductor_max = 4                # 各 conductor が同時 spawn できるサブエージェント数
-acquire_timeout_secs = 600           # slot 待機タイムアウト秒（デッドロック検知）
+global_max = 8                       # Total agents tracked by ai-conductor
+ai_conductor_dispatch_max = 2        # Number of domain conductors ai-conductor dispatches concurrently
+per_conductor_max = 4                # Maximum sub-agents each conductor can spawn concurrently
+acquire_timeout_secs = 600           # Slot wait timeout in seconds (deadlock detection)
 ```
 
-各設定は対応する環境変数で個別 override 可能（テスト / CI で一時的に下げる用途）:
+Each setting can be individually overridden via corresponding environment variables (for temporarily lowering values during testing / CI):
 
-| 環境変数 | 既定値 | 役割 |
+| Environment variable | Default | Role |
 |---------|------|------|
-| `HESTIA_GLOBAL_MAX_AGENTS` | 8 | ai-conductor の `AgentManager` cap（うち 1 を reviewer 予約 slot） |
-| `HESTIA_AI_DISPATCH_MAX` | 2 | ai-conductor の `dispatch_to_conductor` 同時実行上限 |
-| `HESTIA_PER_CONDUCTOR_MAX` | 4 | 各 conductor の `dispatch_coders.v1` 並列度上限 |
-| `HESTIA_ACQUIRE_TIMEOUT_SECS` | 600 | 全 limiter 共通の acquire タイムアウト |
+| `HESTIA_GLOBAL_MAX_AGENTS` | 8 | ai-conductor `AgentManager` cap (1 slot reserved for reviewer) |
+| `HESTIA_AI_DISPATCH_MAX` | 2 | ai-conductor `dispatch_to_conductor` concurrent execution limit |
+| `HESTIA_PER_CONDUCTOR_MAX` | 4 | Per-conductor `dispatch_coders.v1` parallelism limit |
+| `HESTIA_ACQUIRE_TIMEOUT_SECS` | 600 | Common acquire timeout for all limiters |
 
-**設定の優先順位（Phase 128 で配線追加）**:
+**Configuration priority (wiring added in Phase 128):**
 
-1. `hestia start` を実行した親プロセスの **環境変数**（最優先）
-2. `.hestia/config.toml` の **`[concurrency]` セクション**（`hestia start` が export）
-3. library 既定値（`ConductorLimiter::from_env` / `AgentManager::with_default_cap` の fallback）
+1. **Environment variables** of the parent process that ran `hestia start` (highest priority)
+2. **`[concurrency]` section** of `.hestia/config.toml` (exported by `hestia start`)
+3. Library defaults (`ConductorLimiter::from_env` / `AgentManager::with_default_cap` fallback)
 
-`config.toml` を書き換えた場合は **`hestia kill && hestia start` で再起動** が必要です（既存 conductor
-process は古い env で動作し続けるため）。
+If you modify `config.toml`, you must **restart with `hestia kill && hestia start`** (existing conductor processes continue running with old env values).
 
-> **Phase 131 alive cap セマンティクス（spawn 全経路で強制）**:
-> `per_conductor_max` は「現在 alive な対象 sub-agent 数の絶対上限」として、
-> `hestia spawn-subagent` の **全経路** で強制されます。
+> **Phase 131 alive cap semantics (enforced across all spawn paths)**:
+> `per_conductor_max` is enforced as the "absolute upper limit on the number of currently alive target sub-agents"
+> across **all paths** of `hestia spawn-subagent`.
 >
-> 強制ポイントは `spawn_agent_cli` (= `hestia spawn-subagent` の実装本体)。
-> peer 名が 3 segment 以上の `<conductor>-<role>-<module>` 形式の場合、
-> `<conductor>-<role>-` を cap prefix として engine registry の alive 数を取得し、
-> `alive >= cap` なら **`bail!` で spawn を refuse** します。これにより以下の
-> いずれの経路でも cap が効きます:
+> The enforcement point is `spawn_agent_cli` (the implementation body of `hestia spawn-subagent`).
+> If the peer name has 3 or more segments in the `<conductor>-<role>-<module>` format,
+> it uses `<conductor>-<role>-` as the cap prefix, queries the engine registry for the alive count,
+> and if `alive >= cap`, it **refuses the spawn with `bail!`**. This ensures the cap is effective
+> across all of the following paths:
 >
-> 1. `rtl.dispatch_coders.v1` / `apps.dispatch_coders.v1` RPC 経由
-> 2. persona LLM が `hestia spawn-subagent` を直接呼ぶ経路
-> 3. 手動 `hestia spawn-subagent --persona X --name Y` CLI 実行
+> 1. `rtl.dispatch_coders.v1` / `apps.dispatch_coders.v1` RPC path
+> 2. Path where persona LLM directly calls `hestia spawn-subagent`
+> 3. Manual `hestia spawn-subagent --persona X --name Y` CLI execution
 >
-> 並列 `hestia spawn-subagent` 呼出に対しては `~/.local/share/hestia/spawn.lock`
-> （`flock(2)` 経由）で直列化し TOCTOU race も防止します。
+> For concurrent `hestia spawn-subagent` calls, `~/.local/share/hestia/spawn.lock`
+> (via `flock(2)`) serializes them and prevents TOCTOU races.
 >
-> 2 segment 以下の peer 名（`pcb-layout`、`ai-reviewer` 等）は単一インスタンス想定で
-> cap 対象外。
+> Peer names with 2 or fewer segments (e.g., `pcb-layout`, `ai-reviewer`) are assumed to be
+> single-instance and are not subject to caps.
 >
-> Phase 進化履歴: Phase 126-128（単一呼出 cap）→ Phase 129（handler 内 alive cap）→
-> **Phase 131（spawn 全経路 alive cap、persona 経由 bypass を塞ぐ）**。
+> Phase evolution history: Phase 126-128 (single-call cap) → Phase 129 (handler-level alive cap) →
+> **Phase 131 (spawn all-paths alive cap, closing persona-based bypass)**.
 
-**デッドロック回避の仕組み**:
+**Deadlock Avoidance Mechanism:**
 
-- **取得順序固定 (L1 → L2 → L3)**: `AgentManager` global → ai-conductor dispatch → 各 conductor の per-conductor cap の順でのみ permit を取得し、circular wait を排除。
-- **acquire timeout**: timeout 経過で `dispatch_acquire_timeout` エラーを記録して次 step へ進み、hold-and-wait を打切る。
-- **reviewer 予約 slot**: `global_max` のうち 1 を `ai-reviewer` 用に reserve することで、Phase 77 の auto-spawn ai-reviewer が cap 限界下でも起動可能。
+- **Fixed acquisition order (L1 → L2 → L3)**: Permits are acquired only in the order `AgentManager` global → ai-conductor dispatch → per-conductor cap, eliminating circular wait.
+- **Acquire timeout**: On timeout expiration, record a `dispatch_acquire_timeout` error and proceed to the next step, aborting hold-and-wait.
+- **Reviewer reserved slot**: Reserve 1 slot out of `global_max` for `ai-reviewer`, preventing starvation of Phase 77's auto-spawned ai-reviewer under cap limits.
 
-**使用例** — 一時的に並列度を 1 に絞ってデバッグ:
+**Usage Example** — Temporarily reduce parallelism to 1 for debugging:
 
 ```bash
 HESTIA_PER_CONDUCTOR_MAX=1 HESTIA_AI_DISPATCH_MAX=1 \
-  hestia ai exec "RTL を 5 モジュール書いて"
+  hestia ai exec "Write 5 RTL modules"
 ```
 
-`pgrep -af 'agent-cli|claude-cli-shim' | wc -l` で同時起動数が cap 内であることを確認できる。
+You can verify that the concurrent process count is within the cap with `pgrep -af 'agent-cli|claude-cli-shim' | wc -l`.
 
-### 3.13 Exit Code
+### 3.13 Exit Codes
 
-| Exit Code | 意味 |
+| Exit Code | Meaning |
 |-----------|------|
 | 0 | SUCCESS |
 | 1 | GENERAL_ERROR |
@@ -271,99 +267,99 @@ HESTIA_PER_CONDUCTOR_MAX=1 HESTIA_AI_DISPATCH_MAX=1 \
 
 ---
 
-## 4. VSCode 拡張
+## 4. VSCode Extension
 
-### 4.1 インストール
+### 4.1 Installation
 
-VSIX パッケージ `hestia-vscode`（publisher: `aquaxis`、engines.vscode >= 1.85.0）をインストール。
+Install the VSIX package `hestia-vscode` (publisher: `aquaxis`, engines.vscode >= 1.85.0).
 
-### 4.2 アクティベーション
+### 4.2 Activation
 
-以下のイベントで自動アクティベーション:
-- `onCommand`: `hestia.start|stop|status|ai|spec|fpga|debug|rag` ほか 30+ コマンド
+Auto-activated on the following events:
+- `onCommand`: `hestia.start|stop|status|ai|spec|fpga|debug|rag` and 30+ other commands
 - `onView`: `hestia-conductor` / `agents` / `specs`
 - `onLanguage`: `verilog`, `vhdl`, `systemverilog`, `xdc`, `pcf`, `toml`
 
-### 4.3 ビュー
+### 4.3 Views
 
-| ビュー | 内容 |
+| View | Content |
 |-------|------|
-| ConductorStatusView | 9 conductor の状態表示 |
-| AgentListView | サブエージェント一覧 |
-| SpecViewer | 仕様書ビューア |
-| DesignFlowView | 設計フロー可視化 |
-| LogViewer | ログ表示 |
+| ConductorStatusView | Status display for 9 conductors |
+| AgentListView | Sub-agent list |
+| SpecViewer | Specification viewer |
+| DesignFlowView | Design flow visualization |
+| LogViewer | Log display |
 
-### 4.4 設定
+### 4.4 Configuration
 
-主な設定項目（`hestia.*`）:
+Key configuration items (`hestia.*`):
 
-| 設定キー | 型 | 既定値 | 内容 |
+| Configuration key | Type | Default | Content |
 |---------|-----|-------|------|
-| `agentCliRegistryDir` | string | `$XDG_RUNTIME_DIR/agent-cli/` | agent-cli レジストリ |
-| `autoConnect` | bool | `true` | 起動時自動接続 |
-| `reconnectInterval` | number | `3000` | 再接続間隔(ms) |
-| `requestTimeout` | number | `30000` | リクエストタイムアウト(ms) |
-| `ai.model` | string | `claude-sonnet-4-6` | LLM モデル選択 |
-| `ai.maxTokens` | number | `4096` | 最大トークン数 |
-| `ai.apiKeyEnv` | string | `ANTHROPIC_API_KEY` | API キー環境変数名 |
-| `ai.baseUrl` | string | `""` | API エンドポイント URL |
+| `agentCliRegistryDir` | string | `$XDG_RUNTIME_DIR/agent-cli/` | agent-cli registry |
+| `autoConnect` | bool | `true` | Auto-connect on startup |
+| `reconnectInterval` | number | `3000` | Reconnect interval (ms) |
+| `requestTimeout` | number | `30000` | Request timeout (ms) |
+| `ai.model` | string | `claude-sonnet-4-6` | LLM model selection |
+| `ai.maxTokens` | number | `4096` | Maximum tokens |
+| `ai.apiKeyEnv` | string | `ANTHROPIC_API_KEY` | API key environment variable name |
+| `ai.baseUrl` | string | `""` | API endpoint URL |
 
-### 4.5 エディタ機能
+### 4.5 Editor Features
 
-- Monaco Editor 統合: HDL ハイライト・補完・診断（HDL LSP Broker 経由）
-- 波形ビューア: WebView 内 WASM レンダリング
+- Monaco Editor integration: HDL highlighting, completion, diagnostics (via HDL LSP Broker)
+- Waveform viewer: WASM rendering in WebView
 
 ---
 
-## 5. Tauri デスクトップアプリ
+## 5. Tauri Desktop App
 
-### 5.1 設定
+### 5.1 Configuration
 
-- バージョン: `0.1.0`
-- 識別子: `dev.hestia.ide`
-- バンドルターゲット: `deb`, `rpm`, `appimage`
+- Version: `0.1.0`
+- Identifier: `dev.hestia.ide`
+- Bundle targets: `deb`, `rpm`, `appimage`
 
-### 5.2 ウィンドウ
+### 5.2 Windows
 
-| ウィンドウ | サイズ | 用途 |
+| Window | Size | Purpose |
 |-----------|-------|------|
-| main | 1440×900 | メイン IDE |
-| waveform | 1200×600 | 波形ビューア |
-| settings | 800×600 | 設定パネル |
+| main | 1440x900 | Main IDE |
+| waveform | 1200x600 | Waveform viewer |
+| settings | 800x600 | Settings panel |
 
-### 5.3 セキュリティ
+### 5.3 Security
 
 CSP: `connect-src 'self' ipc: ws://localhost:*`
 
-### 5.4 Shell プラグイン
+### 5.4 Shell Plugin
 
-`hestia` / `hestia-{ai,rtl,fpga,asic,pcb,hal,apps,debug,rag}-cli` の 10 コマンドが Tauri Shell 経由で実行可能。
+10 commands (`hestia` / `hestia-{ai,rtl,fpga,asic,pcb,hal,apps,debug,rag}-cli`) are executable via Tauri Shell.
 
 ---
 
-## 6. UI コンポーネント（hestia-ui）
+## 6. UI Components (hestia-ui)
 
-React + TypeScript 製コンポーネントライブラリ:
+React + TypeScript component library:
 
-| コンポーネント | 用途 |
+| Component | Purpose |
 |-------------|------|
-| ConductorStatusCard | conductor 状態表示 |
-| AgentList | サブエージェント一覧 |
-| SpecViewer | 仕様書表示 |
-| LogViewer | ログ表示 |
-| WaveformViewer | 波形表示 |
-| ConfigPanel | 設定パネル |
-| TaskProgress | タスク進捗 |
+| ConductorStatusCard | Conductor status display |
+| AgentList | Sub-agent list |
+| SpecViewer | Specification display |
+| LogViewer | Log display |
+| WaveformViewer | Waveform display |
+| ConfigPanel | Settings panel |
+| TaskProgress | Task progress |
 
-ブランド色: プライマリ akane `#e84d2c`、セカンダリ deep green `#2d8f5e`
+Brand colors: Primary akane `#e84d2c`, secondary deep green `#2d8f5e`
 
 ---
 
-## 関連ドキュメント
+## Related Documentation
 
-- [architecture_overview.md](architecture_overview.md) — アーキテクチャ概要
-- [agent_communication.md](agent_communication.md) — 通信仕様
-- [frontend/cli_clients.md](frontend/cli_clients.md) — CLI 詳細仕様
-- [frontend/vscode_extension.md](frontend/vscode_extension.md) — VSCode 拡張詳細
-- [frontend/tauri_ide.md](frontend/tauri_ide.md) — Tauri IDE 詳細
+- [architecture_overview.md](architecture_overview.md) — Architecture overview
+- [agent_communication.md](agent_communication.md) — Communication specification
+- [frontend/cli_clients.md](frontend/cli_clients.md) — CLI detailed specification
+- [frontend/vscode_extension.md](frontend/vscode_extension.md) — VSCode extension details
+- [frontend/tauri_ide.md](frontend/tauri_ide.md) — Tauri IDE details

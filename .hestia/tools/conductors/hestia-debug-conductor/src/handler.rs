@@ -1,10 +1,10 @@
-//! Debug Conductor メッセージハンドラ
+//! Debug Conductor message handler
 
 use conductor_sdk::message::{ErrorResultResponse, Request, Response, SuccessResponse};
 use conductor_sdk::server::MessageHandler;
 use conductor_sdk::error::ErrorResponse;
 
-/// Debug Conductor メッセージハンドラ
+/// Debug Conductor message handler
 pub struct DebugHandler;
 
 #[async_trait::async_trait]
@@ -82,13 +82,13 @@ impl DebugHandler {
         }))
     }
 
-    /// Phase 58 — `debug.design.v1`: デバッグ計画の設計依頼を debug-designer に dispatch。
+    /// Phase 58 — `debug.design.v1`: Dispatch debug plan design request to debug-designer.
     async fn handle_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let instruction = params.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
         let designer_peer = "debug-designer";
         let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
         let expected_artifacts = vec!["debug/plan.json", "debug/probes.json"];
-        // Phase 84f — strict mode: designer 不在時は fallback ではなく halt
+        // Phase 84f — strict mode: halt instead of fallback when designer is absent
         if !designer_alive && conductor_sdk::workspace::strict_subagent_enabled() {
             return Ok(serde_json::json!({
                 "status": "subagent_unavailable",
@@ -99,7 +99,7 @@ impl DebugHandler {
                 "halted_reason": "subagent_spawn_failure",
                 "expected_artifacts": expected_artifacts,
                 "instruction": instruction,
-                "note": "HESTIA_STRICT_SUBAGENT=1: debug-designer が registry 不在のため halt。`hestia start` ログ確認 + `agent-cli list` で resident sub-agent 登録状態を調査してください。",
+                "note": "HESTIA_STRICT_SUBAGENT=1: debug-designer is not in the registry, halting. Check `hestia start` logs and `agent-cli list` for resident sub-agent registration status.",
             }));
         }
         if designer_alive {
@@ -131,9 +131,9 @@ impl DebugHandler {
         }
     }
 
-    /// Phase 65 — `debug.dispatch_sessions.v1`: target ごとに debug-session-{target} を spawn。
-    /// 設計仕様書 §10.x の「target ごとに並列可」を実装。peer 名は `debug-session-{target}`、
-    /// ペルソナは `debug-session-manager.md`（Phase 56 §3.11 表 HD-039a）。
+    /// Phase 65 — `debug.dispatch_sessions.v1`: Spawn debug-session-{target} per target.
+    /// Implements design spec §10.x "parallel per-target". Peer name is `debug-session-{target}`,
+    /// persona is `debug-session-manager.md` (Phase 56 §3.11 table HD-039a).
     async fn handle_dispatch_sessions(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let targets: Vec<String> = params.get("targets")
             .and_then(|v| v.as_array())
@@ -152,7 +152,7 @@ impl DebugHandler {
         let mut dispatched_all = true;
         for t in &targets {
             let peer = format!("debug-session-{t}");
-            // ペルソナファイル名は debug-session-manager.md (Phase 56 §3.11)
+            // Persona filename is debug-session-manager.md (Phase 56 §3.11)
             let r = std::process::Command::new("hestia")
                 .args(["spawn-subagent", "--persona", "debug-session-manager", "--name", &peer])
                 .output();
@@ -165,7 +165,7 @@ impl DebugHandler {
                 dispatched_all = false;
             }
         }
-        // Phase 80: dispatch 完了後に ai-reviewer auto-spawn
+        // Phase 80: Auto-spawn ai-reviewer after dispatch completes
         let auto_review_dispatched = conductor_sdk::workspace::auto_review_after_dispatch(
             "debug", "debug.dispatch_sessions.v1", spawned.len(),
         );
@@ -394,7 +394,7 @@ impl DebugHandler {
         let device_present = std::path::Path::new(&device).exists();
 
         // Phase 26: align status names with the canonical Phase 25 vocabulary
-        // (see ai persona "handler の status 値とアグリゲート status の対応" table).
+        // (see ai persona "handler status value and aggregate status correspondence" table).
         // Device absence and stty/open failures are environment-side issues,
         // not Hestia errors → all map to `tool_unavailable` (exit 0).
         let (executed, write_ok, bytes_received, received_hex, status_str, error_msg) = if !execute {

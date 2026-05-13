@@ -1,29 +1,29 @@
-# Quartus コンテナ詳細
+# Quartus Container Details
 
-**対象領域**: container — FPGA ツールコンテナ
-**ソース**: 設計仕様書 §12.2
+**Domain**: container — FPGA Tool Container
+**Source**: Design Specification §12.2
 
-## 概要
+## Overview
 
-Intel/Altera Quartus Prime Pro 25.1 を実行するためのコンテナイメージ `fpga/quartus:25.1`。UBI 9 ベースで QSF/QIP プロジェクト形式による合成・配置配線を実行する。
+Container image `fpga/quartus:25.1` for running Intel/Altera Quartus Prime Pro 25.1. UBI 9 based, performing synthesis and place-and-route via QSF/QIP project format.
 
-## イメージ構成
+## Image Configuration
 
-| 項目 | 値 |
+| Item | Value |
 |------|-----|
-| イメージ名 | `fpga/quartus:25.1` |
-| ベースイメージ | `registry.access.redhat.com/ubi9/ubi:9.5` |
-| 主要ツール | Intel Quartus Prime Pro 25.1 |
-| ライセンス | FlexLM（QPF/QSF）|
-| ユーザー | `hestia` (UID 1000) |
+| Image name | `fpga/quartus:25.1` |
+| Base image | `registry.access.redhat.com/ubi9/ubi:9.5` |
+| Primary tool | Intel Quartus Prime Pro 25.1 |
+| License | FlexLM (QPF/QSF) |
+| User | `hestia` (UID 1000) |
 
-## 特記事項
+## Notable Points
 
-- Vivado コンテナパターンを踏襲（商用ライセンス扱い）
-- QSF / QIP プロジェクトファイルをマウントしてバッチ実行
-- FlexLM ライセンスサーバは実行時に `--env` で注入
+- Follows the Vivado container pattern (commercial license handling)
+- QSF / QIP project files are mounted for batch execution
+- FlexLM license server is injected at runtime via `--env`
 
-## 実行例
+## Execution Example
 
 ```bash
 podman run --rm \
@@ -36,8 +36,8 @@ podman run --rm \
   quartus_sh --flow compile top.qpf
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [container_manager.md](container_manager.md) — container-manager 全体
-- [vivado_container.md](vivado_container.md) — Vivado コンテナ
-- [security_hardening.md](security_hardening.md) — セキュリティ強化
+- [container_manager.md](container_manager.md) — container-manager overview
+- [vivado_container.md](vivado_container.md) — Vivado container
+- [security_hardening.md](security_hardening.md) — Security hardening

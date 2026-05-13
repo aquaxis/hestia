@@ -1,46 +1,46 @@
-# ai-conductor 全体概要 — メタオーケストレーター
+# ai-conductor Overview — Meta-Orchestrator
 
-**対象領域**: ai-conductor（メタオーケストレーター）
-**ソース**: 設計仕様書 §3（745-1240行目）
-
----
-
-## 概要
-
-ai-conductor は HESTIA の最上位 conductor であり、フロントエンド（VSCode / Tauri / CLI）からの唯一の入口として機能する。配下の8つの conductor（rtl / fpga / asic / pcb / hal / apps / debug / rag）を統括し、ハードウェア開発の全プロセスを AI によってオーケストレーションする。
-
-ai-conductor 自身は agent-cli プロセス（peer 名 `ai`）として起動され、下流 conductor との通信は全て agent-cli ネイティブ IPC で行われる。
+**Scope**: ai-conductor (meta-orchestrator)
+**Source**: Design specification §3 (lines 745-1240)
 
 ---
 
-## 中核機能
+## Overview
 
-ai-conductor は以下の4つの中核機能を提供する。
+ai-conductor is the top-level conductor in HESTIA, serving as the sole entry point from the frontend (VSCode / Tauri / CLI). It orchestrates the 8 subordinate conductors (rtl / fpga / asic / pcb / hal / apps / debug / rag) and uses AI to orchestrate the entire hardware development process.
 
-| 機能 | 役割 |
+ai-conductor itself is launched as an agent-cli process (peer name `ai`), and all communication with downstream conductors uses agent-cli native IPC.
+
+---
+
+## Core Functions
+
+ai-conductor provides the following four core functions.
+
+| Function | Role |
 |------|------|
-| **タスク分解・振り分け** | フロントエンドからの自然言語または構造化指示を理解し、タスクを分解して配下の適切な conductor に振り分ける（task-router） |
-| **ヘルスチェック** | 全 conductor を定期ポーリング（既定30秒間隔）し、Online / Offline / Degraded / Upgrading 状態を集約管理。異常時は自動再起動（max 3回）またはフロントエンドへエスカレーション |
-| **スキル管理** | SkillRegistry に専門スキル（HDL 生成、制約生成、テストベンチ生成等）をプラグイン登録し、配下 conductor の agent-cli persona に提供 |
-| **コンテナ管理** | `container.toml` 宣言に基づく Containerfile 自動生成・ビルド・差分更新・プロビジョニング・レジストリ管理（コンテナ実行を選択した場合のみ） |
+| **Task decomposition and routing** | Understands natural language or structured instructions from the frontend, decomposes tasks, and routes them to the appropriate subordinate conductor (task-router) |
+| **Health check** | Periodically polls all conductors (default 30-second interval), aggregating Online / Offline / Degraded / Upgrading states. Automatically restarts (max 3 times) or escalates to the frontend on failure |
+| **Skill management** | Registers specialized skills (HDL generation, constraint generation, testbench generation, etc.) as plugins in SkillRegistry and provides them to subordinate conductor agent-cli personas |
+| **Container management** | Automatic Containerfile generation, build, differential update, provisioning, and registry management based on `container.toml` declarations (only when container execution is selected) |
 
 ---
 
-## 補助機能
+## Auxiliary Functions
 
-| 機能 | 説明 |
+| Function | Description |
 |------|------|
-| 持続可能アップグレード | WatcherAgent → ProbeAgent → PatcherAgent → ValidatorAgent によるツールバージョンアップ自動化 |
-| DAG ベースワークフロー | トポロジカルソート（Kahn）によるクロス conductor パイプライン、sled で状態永続化 |
-| 仕様書駆動開発 | 自然言語仕様書（`REQ:`/`CON:`/`IF:` プレフィックス）から DesignSpec 生成 → 設計データ自動生成 |
-| LLM バックエンド切替 | Anthropic / Ollama / LM Studio / vLLM の切替対応 |
-| **サブエージェント並列度制御**（Phase 126） | 3 段階階層 Semaphore + acquire timeout で global / ai-dispatch / per-conductor の各段で並列度を cap。reviewer 用 reserved slot で auto-spawn ai-reviewer の starvation を防止。詳細は [`user_guide.md`](user_guide.md) §3.12 参照 |
+| Sustainable upgrade | Automated tool version upgrades via WatcherAgent → ProbeAgent → PatcherAgent → ValidatorAgent |
+| DAG-based workflow | Cross-conductor pipelines via topological sort (Kahn), with state persistence in sled |
+| Spec-driven development | Generates DesignSpec from natural language specifications (`REQ:`/`CON:`/`IF:` prefixes) → automated design data generation |
+| LLM backend switching | Supports switching between Anthropic / Ollama / LM Studio / vLLM |
+| **Sub-agent concurrency control** (Phase 126) | Caps concurrency at global / ai-dispatch / per-conductor levels via a 3-tier hierarchical Semaphore + acquire timeout. Reserved slot for reviewer prevents starvation of auto-spawned ai-reviewer. See [`user_guide.md`](user_guide.md) §3.12 for details |
 
 ---
 
 ## ConductorManager
 
-全 conductor のライフサイクルを管理する中核構造体。`ConductorId` 列挙型で8つの配下 conductor を識別し、`ConductorStatus` 列挙型（Online / Offline / Degraded / Upgrading）で状態を追跡する。
+The core structure that manages the lifecycle of all conductors. It identifies the 8 subordinate conductors with the `ConductorId` enum and tracks their state using the `ConductorStatus` enum (Online / Offline / Degraded / Upgrading).
 
 ```rust
 pub struct ConductorManager {
@@ -51,50 +51,44 @@ pub struct ConductorManager {
 
 ---
 
-## タスク振り分けフロー
+## Task Routing Flow
 
-1. **意図理解**: 自然言語 → 設計タスク種別判定 / 構造化 JSON → method 名前空間で直接判定
-2. **タスク分解**: 単一 conductor 完結 → そのまま dispatch / 複数 conductor 横断 → workflow-engine に委譲し DAG 化 / 仕様書ベース → spec-driven で DesignSpec 生成
-3. **振り分け**: conductor-router 経由で `agent-cli send <peer> <payload>` により適切な conductor へルーティング
+1. **Intent understanding**: Natural language → design task type classification / Structured JSON → direct classification via method namespace
+2. **Task decomposition**: Single conductor → dispatch directly / Cross-conductor → delegate to workflow-engine and DAG-ify / Specification-based → generate DesignSpec via spec-driven
+3. **Routing**: Route to the appropriate conductor via conductor-router using `agent-cli send <peer> <payload>`
 
-### dispatch 並列度（Phase 126）
+### Dispatch Concurrency (Phase 126)
 
-`AiHandler::handle_exec` 内の dispatch ループ各 step は L2 limiter
-(`HESTIA_AI_DISPATCH_MAX` 既定 2、`tokio::sync::Semaphore` ベース) から permit を取得してから
-`spawn_conductor_on_demand` + `dispatch_to_conductor` を実行します。`HESTIA_ACQUIRE_TIMEOUT_SECS`
-(既定 600) 経過で permit を取得できなければ当該 step を `dispatch_acquire_timeout` エラーで
-記録し次 step へ進みます（hold-and-wait を打切ってデッドロック検知）。
+Each step in the dispatch loop within `AiHandler::handle_exec` acquires a permit from the L2 limiter (`HESTIA_AI_DISPATCH_MAX`, default 2, `tokio::sync::Semaphore`-based) before executing `spawn_conductor_on_demand` + `dispatch_to_conductor`. If a permit cannot be acquired within `HESTIA_ACQUIRE_TIMEOUT_SECS` (default 600), the step is recorded with a `dispatch_acquire_timeout` error and the next step proceeds (aborting hold-and-wait to detect deadlocks).
 
-`AgentManager` (内部の `multi-agent` クレート) も Phase 126 で
-`conductor_sdk::concurrency::ConductorLimiter` ベースに置換され、`HESTIA_GLOBAL_MAX_AGENTS`
-(既定 8) でグローバル cap、うち 1 slot を `ai-reviewer` 用に reserve します。
+`AgentManager` (in the internal `multi-agent` crate) was also replaced in Phase 126 with a `conductor_sdk::concurrency::ConductorLimiter`-based implementation, capping globally at `HESTIA_GLOBAL_MAX_AGENTS` (default 8), with 1 slot reserved for `ai-reviewer`.
 
 ---
 
-## 起動順序
+## Startup Sequence
 
-- **Group 0**: ai-conductor（最高優先度、直列起動）
-- **Group 1**: rtl / fpga / asic / pcb / hal / apps / debug / rag（8並列、ai readiness 確認後）
+- **Group 0**: ai-conductor (highest priority, serial startup)
+- **Group 1**: rtl / fpga / asic / pcb / hal / apps / debug / rag (8 in parallel, after ai readiness confirmed)
 
 ---
 
-## サブエージェント
+## Sub-agents
 
-| サブエージェント | peer 名 | 役割 | 多重度 |
+| Sub-agent | Peer name | Role | Multiplicity |
 |----------------|---------|------|-------|
-| planner | ai-planner | タスク分解・実行プランニング（DAG 化、dispatch 戦略） | 1（高負荷時 N 並列可） |
-| designer | ai-designer | 全体仕様（DesignSpec、HW/SW 統合上位設計）作成 | 1 |
+| planner | ai-planner | Task decomposition and execution planning (DAG-ification, dispatch strategy) | 1 (N in parallel under high load) |
+| designer | ai-designer | Overall specification (DesignSpec, HW/SW integration high-level design) creation | 1 |
 
 ---
 
-## 関連ドキュメント
+## Related Documentation
 
-- [master_agent_design.md](master_agent_design.md) — ai-conductor 詳細設計（フル版）
-- [rtl_conductor.md](rtl_conductor.md) — RTL 設計フローオーケストレーター
-- [fpga_conductor.md](fpga_conductor.md) — FPGA 設計フローオーケストレーター
-- [asic_conductor.md](asic_conductor.md) — ASIC 設計フローオーケストレーター
-- [pcb_conductor.md](pcb_conductor.md) — PCB 設計フローオーケストレーター
-- [hal_conductor.md](hal_conductor.md) — HAL 生成オーケストレーター
-- [apps_conductor.md](apps_conductor.md) — アプリケーションソフトウェア開発オーケストレーター
-- [debug_conductor.md](debug_conductor.md) — デバッグ環境オーケストレーター
-- [rag_conductor.md](rag_conductor.md) — 知識基盤オーケストレーター
+- [master_agent_design.md](master_agent_design.md) — ai-conductor detailed design (full version)
+- [rtl_conductor.md](rtl_conductor.md) — RTL design flow orchestrator
+- [fpga_conductor.md](fpga_conductor.md) — FPGA design flow orchestrator
+- [asic_conductor.md](asic_conductor.md) — ASIC design flow orchestrator
+- [pcb_conductor.md](pcb_conductor.md) — PCB design flow orchestrator
+- [hal_conductor.md](hal_conductor.md) — HAL generation orchestrator
+- [apps_conductor.md](apps_conductor.md) — Application software development orchestrator
+- [debug_conductor.md](debug_conductor.md) — Debug environment orchestrator
+- [rag_conductor.md](rag_conductor.md) — Knowledge base orchestrator

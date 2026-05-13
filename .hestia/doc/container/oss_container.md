@@ -1,28 +1,28 @@
-# OSS FPGA コンテナ詳細
+# OSS FPGA Container Details
 
-**対象領域**: container — FPGA ツールコンテナ
-**ソース**: 設計仕様書 §12.2
+**Domain**: container — FPGA Tool Container
+**Source**: Design Specification §12.2
 
-## 概要
+## Overview
 
-Yosys + nextpnr + icestorm + Verilator による完全 OSS FPGA フローを実行するコンテナイメージ `fpga/oss:latest`。商用ライセンス不要で、教育・プロトタイピング・小規模 FPGA 開発に対応する。
+Container image `fpga/oss:latest` for running a complete OSS FPGA flow with Yosys + nextpnr + icestorm + Verilator. No commercial license required; suitable for education, prototyping, and small-scale FPGA development.
 
-## イメージ構成
+## Image Configuration
 
-| 項目 | 値 |
+| Item | Value |
 |------|-----|
-| イメージ名 | `fpga/oss:latest` |
-| ベースイメージ | `docker.io/library/ubuntu:24.04` |
-| 主要ツール | Yosys + nextpnr-ice40 + nextpnr-ecp5 + icestorm + Verilator |
-| ライセンス | 不要（OSS）|
-| ユーザー | `hestia` (UID 1000) |
+| Image name | `fpga/oss:latest` |
+| Base image | `docker.io/library/ubuntu:24.04` |
+| Primary tools | Yosys + nextpnr-ice40 + nextpnr-ecp5 + icestorm + Verilator |
+| License | Not required (OSS) |
+| User | `hestia` (UID 1000) |
 
-## Containerfile（自動生成）
+## Containerfile (Auto-Generated)
 
 ```dockerfile
 ARG BASE_IMAGE=docker.io/library/ubuntu:24.04
 
-# Stage 1: ビルドツール取得
+# Stage 1: Build tool acquisition
 FROM ${BASE_IMAGE} AS build
 ENV DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -35,7 +35,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       python3 python3-pip && \
     rm -rf /var/lib/apt/lists/*
 
-# Stage 2: ランタイム（軽量）
+# Stage 2: Runtime (lightweight)
 FROM ${BASE_IMAGE} AS runtime
 LABEL org.opencontainers.image.source="https://github.com/hestia/hestia" \
       org.opencontainers.image.title="Hestia FPGA OSS Toolchain" \
@@ -52,7 +52,7 @@ HEALTHCHECK --interval=60s --timeout=5s CMD yosys -V || exit 1
 CMD ["bash"]
 ```
 
-## 実行例
+## Execution Example
 
 ```bash
 podman run --rm \
@@ -64,16 +64,16 @@ podman run --rm \
   yosys -p "synth_ice40 -top top -json out.json" src/top.v
 ```
 
-## 対応デバイス
+## Supported Devices
 
-| デバイスファミリ | nextpnr ターゲット |
+| Device Family | nextpnr Target |
 |----------------|-------------------|
 | iCE40 (LP/HX) | nextpnr-ice40 |
 | ECP5 | nextpnr-ecp5 |
-| Gowin | nextpnr-gowin（別途インストール）|
+| Gowin | nextpnr-gowin (separate installation) |
 
-## 関連ドキュメント
+## Related Documentation
 
-- [container_manager.md](container_manager.md) — container-manager 全体
-- [vivado_container.md](vivado_container.md) — Vivado コンテナ
-- [efinity_container.md](efinity_container.md) — Efinity コンテナ
+- [container_manager.md](container_manager.md) — container-manager overview
+- [vivado_container.md](vivado_container.md) — Vivado container
+- [efinity_container.md](efinity_container.md) — Efinity container

@@ -1,4 +1,4 @@
-# HESTIA サポート規約
+# HESTIA Support Terms
 
 Version 1.0.0
 
@@ -6,341 +6,341 @@ Copyright (C) 2026 AQUAXIS TECHNOLOGY. All Rights Reserved.
 
 ---
 
-## 序文
+## Preamble
 
-本サポート規約（以下「本規約」）は、HESTIA のライセンス（`LICENSE.md` 第3章 License C に定める商用サブスクリプションライセンス、以下「サブスクライセンス」）を締結した契約者（以下「契約者」）に対して、AQUAXIS TECHNOLOGY（以下「当社」）が提供する技術サポートサービス（以下「本サービス」）の内容を定めるものである。
+These Support Terms (hereinafter "these Terms") define the technical support services (hereinafter "these Services") provided by AQUAXIS TECHNOLOGY (hereinafter "the Company") to a contractor (hereinafter "the Contractor") who has entered into a license for HESTIA (the commercial subscription license defined in `LICENSE.md` Chapter 3, License C, hereinafter the "Subscription License").
 
-本規約は、契約者が当社との間で個別に締結するサブスクリプション契約書（以下「個別契約」）の一部を構成する。本規約の内容と個別契約との間に不一致がある場合、個別契約が優先する。
-
----
-
-## 第1章 定義
-
-### 1.1 用語の定義
-
-本規約において、以下の用語は以下の意味を有する。
-
-(a) 「**本サービス**」とは、当社が本規約に基づき契約者に提供する技術サポートサービスをいう。
-
-(b) 「**営業日**」とは、土曜日、日曜日、日本の国民の祝日、および12月29日から翌年1月3日までを除く日をいう。
-
-(c) 「**営業時間**」とは、日本時間（JST、UTC+9）の午前9時00分から午後6時00分までをいう。
-
-(d) 「**初回応答**」とは、契約者からの問い合わせに対し、当社が受領確認および担当者のアサインを含む実質的な応答を行うことをいう。自動返信メールは初回応答に含まれない。
-
-(e) 「**回避策**（Workaround）」とは、根本解決には至らないものの、問題の影響を一時的に軽減する運用的または技術的な対処方法をいう。
-
-(f) 「**恒久対策**」とは、問題の根本原因を解決する修正（パッチ、バージョンアップ、設定変更等）をいう。
+These Terms constitute part of the individual subscription agreement (hereinafter the "Individual Agreement") entered into between the Contractor and the Company. In the event of any inconsistency between these Terms and the Individual Agreement, the Individual Agreement shall prevail.
 
 ---
 
-## 第2章 サポートの内容
+## Chapter 1: Definitions
 
-### 2.1 サポート概要
+### 1.1 Definition of Terms
 
-本サービスは、以下の単一プランで提供される。
+In these Terms, the following terms shall have the following meanings.
 
-| 項目 | 内容 |
+(a) "**These Services**" means the technical support services that the Company provides to the Contractor under these Terms.
+
+(b) "**Business Day**" means any day other than Saturdays, Sundays, Japanese national holidays, and the period from December 29 to January 3 of the following year.
+
+(c) "**Business Hours**" means the period from 9:00 AM to 6:00 PM Japan Standard Time (JST, UTC+9).
+
+(d) "**Initial Response**" means a substantive response by the Company to an inquiry from the Contractor that includes acknowledgment of receipt and assignment of a responsible person. Automatic reply emails are not included in the initial response.
+
+(e) "**Workaround**" means an operational or technical measure that temporarily mitigates the impact of a problem, even if it does not resolve it fundamentally.
+
+(f) "**Permanent Fix**" means a modification (patch, version upgrade, configuration change, etc.) that resolves the root cause of a problem.
+
+---
+
+## Chapter 2: Support Content
+
+### 2.1 Support Overview
+
+These Services are provided under the following single plan.
+
+| Item | Details |
 |---|---|
-| **対応時間帯** | 営業日の営業時間内（平日 9:00〜18:00 JST） |
-| **対応チャネル** | 電子メールのみ |
-| **初回応答時間** | 営業日ベースで **3営業日以内** |
-| **年間最大問い合わせ件数** | **4件／契約年度** |
-| **対応言語** | 日本語 |
+| **Support Hours** | Business days during business hours (weekday 9:00-18:00 JST) |
+| **Support Channel** | Email only |
+| **Initial Response Time** | Within **3 business days** on a business-day basis |
+| **Annual Maximum Inquiries** | **4 cases / contract year** |
+| **Support Language** | Japanese |
 
-年間最大問い合わせ件数を超過した場合は、別途有償のオプションサービス（追加サポート契約）へのお申込みが必要となる。詳細は第2.6項を参照。
+If the annual maximum inquiries are exceeded, enrollment in a separate paid option service (additional support contract) is required. See Section 2.6 for details.
 
-### 2.2 対応チャネル
+### 2.2 Support Channel
 
-本サービスは、電子メールを唯一の対応チャネルとする。
+These Services use email as the only support channel.
 
-- **宛先**：support@aquaxis.com
-- **件名書式**：`[契約者名] 問い合わせ内容の概要`（例：`[株式会社サンプル] API認証エラー`）
-- **受領確認**：当社システムから自動受領確認メールを即時送信（自動返信は初回応答に含まれない）
+- **Address**: support@aquaxis.com
+- **Subject format**: `[Contractor Name] Brief description of inquiry` (e.g., `[Sample Corporation] API authentication error`)
+- **Receipt confirmation**: An automatic receipt confirmation email is sent immediately by the Company's system (automatic replies are not included in the initial response)
 
-チャット、電話、ビデオ会議、オンサイト対応、Slack、Microsoft Teams、その他の対応チャネルは、本サービスには**含まれない**。
+Chat, phone, video conferencing, on-site support, Slack, Microsoft Teams, and other support channels are **not included** in these Services.
 
-### 2.3 対応時間帯の適用除外日
+### 2.3 Excluded Days from Support Hours
 
-以下の期間は対応時間帯の対象外とする。
+The following periods are excluded from support hours:
 
-- 土曜日、日曜日
-- 日本の国民の祝日
-- 12月29日から翌年1月3日まで（年末年始休業）
-- その他、当社が事前に通知する臨時休業日
+- Saturdays and Sundays
+- Japanese national holidays
+- December 29 to January 3 of the following year (year-end/new year closure)
+- Other temporary closure days notified by the Company in advance
 
-営業時間外に受信した問い合わせは、翌営業日の営業時間開始時点を起算点として初回応答時間を計算する。
+Inquiries received outside business hours shall have their initial response time calculated starting from the beginning of business hours on the next business day.
 
-### 2.4 初回応答時間の起算と計算
+### 2.4 Commencement and Calculation of Initial Response Time
 
-初回応答時間は、当社が契約者からの問い合わせを**受領した営業日時点を起算日**として、3営業日以内に応答するものとする。
+The initial response time shall be calculated from the **business day on which the Company receives the inquiry from the Contractor** as the starting date, and the Company shall respond within 3 business days.
 
-### 2.5 解決目標時間
+### 2.2 Resolution Target Time
 
-初回応答後の解決目標時間は設定しない。問題の性質、契約者の協力、第三者要因等により変動する。当社はベストエフォートでの解決を目指すが、解決時期の約束はしない。
+No resolution target time is set after the initial response. The time to resolution varies depending on the nature of the problem, the Contractor's cooperation, third-party factors, and other circumstances. The Company will use best efforts to resolve issues, but does not guarantee a resolution timeframe.
 
-### 2.6 年間問い合わせ件数
+### 2.6 Annual Inquiry Count
 
-**2.6.1 年間最大件数**
+**2.6.1 Annual Maximum**
 
-契約者は、**1契約年度あたり最大4件**まで本サービスを利用して問い合わせを行うことができる。年間最大件数は、サブスクライセンスの契約期間（通常1年間）ごとに設定される。
+The Contractor may submit up to **4 inquiries per contract year** through these Services. The annual maximum is set for each subscription license contract period (typically 1 year).
 
-**2.6.2 件数のカウント方法**
+**2.6.2 Inquiry Counting Method**
 
-1件の問い合わせは、以下のとおりカウントする。
+One inquiry is counted as follows:
 
-(a) **1つの質問内容・1つの事象 = 1件**。当該問い合わせに関連する電子メールの往復は、件数にかかわらず同一の1件として扱う
+(a) **1 question / 1 issue = 1 case**. Any email exchanges related to that inquiry are treated as the same single case regardless of the number of messages
 
-(b) 同一の問い合わせにおいて発生した派生質問・追加質問で、当初の問い合わせの延長線上にある事項は同一件として扱う
+(b) Follow-up questions and additional questions arising from the same inquiry that are along the same line as the original inquiry are treated as the same case
 
-(c) 当初の問い合わせと**異なる主題**の質問を追加した場合は、それぞれ別の件数としてカウントする
+(c) Questions on a **different topic** from the original inquiry are counted as separate cases
 
-(d) 本サービスの対象外（第3.2項）に該当すると判定された問い合わせは、件数にカウントしない
+(d) Inquiries determined to fall under the out-of-scope provisions (Section 3.2) are not counted
 
-(e) 当社側の都合によりクローズ後に再調査が必要となった問い合わせの再起票は、件数にカウントしない
+(e) Reopened cases where reinvestigation is needed after closure due to the Company's circumstances are not counted
 
-**2.6.3 件数の繰り越し**
+**2.6.3 Carryover of Cases**
 
-契約年度内に使用されなかった問い合わせ件数は、**翌契約年度に繰り越されない**。毎契約年度の更新時点で件数はリセットされる。
+Unused inquiry cases within a contract year are **not carried over to the next contract year**. Cases are reset at each contract year renewal.
 
-**2.6.4 残件数の通知**
+**2.6.4 Notification of Remaining Cases**
 
-当社は、契約者からの問い合わせ対応完了時に、残りの問い合わせ件数を通知する。また、契約者は support@aquaxis.com に照会することにより、残件数を確認することができる。
+The Company will notify the remaining inquiry count upon completion of each inquiry response. The Contractor may also check the remaining count by contacting support@aquaxis.com.
 
-**2.6.5 年間最大件数の超過**
+**2.6.5 Exceeding the Annual Maximum**
 
-契約者が年間最大件数（4件）を使い切った後に、さらなる問い合わせを希望する場合、以下のいずれかの選択肢がある。
+If the Contractor has used all annual maximum inquiries (4 cases) and wishes to make further inquiries, the following options are available:
 
-(a) **追加問い合わせ件数の個別購入**：別途有償のオプションサービスとして、追加の問い合わせ件数を購入することができる（料金・件数単位等は個別見積）
+(a) **Individual purchase of additional inquiry cases**: Additional inquiry cases may be purchased as a separate paid option service (pricing, unit quantities, etc. are individually quoted)
 
-(b) **次期契約年度まで待機**：緊急性がない場合、次期契約年度の更新タイミングでリセットされる件数を使用する
+(b) **Wait until the next contract year**: If not urgent, use the cases that reset at the next contract year renewal
 
-(c) **本ソフトウェアのドキュメント・コミュニティチャネル参照**：当社が提供する公開ドキュメント（http://aquaxis.com/faq、http://aquaxis.com/community）を参照する。ただし、これらのチャネルではライセンサーからの応答保証はない
+(c) **Refer to public documentation and community channels**: Refer to the Company's public documentation (http://aquaxis.com/faq, http://aquaxis.com/community). However, no response guarantee from the licensor is provided on these channels
 
-**2.6.6 追加サポートのお申込み**
+**2.6.6 Applying for Additional Support**
 
-追加の問い合わせ件数や別途の有償サポート（第3.3項）のお申込みは、support@aquaxis.com までご連絡いただく。受付後、当社から個別見積をお送りする。
-
----
-
-## 第3章 サポート対象
-
-### 3.1 サポート対象
-
-本サービスは、以下を対象とする。
-
-(a) 本ソフトウェアの**現行メジャーバージョン**の最新マイナーバージョン
-
-(b) 本ソフトウェアに関する技術的質問への回答
-
-(c) 本ソフトウェアの不具合報告の調査・回避策の提示・修正パッチの提供
-
-(d) 本ソフトウェアの設定・インストールに関する支援
-
-(e) 本ソフトウェアのリリースノートおよびドキュメントに関する質問
-
-### 3.2 サポート対象外
-
-以下は本サービスの対象外となる。
-
-(a) 本ソフトウェアのサポート対象バージョン以外（旧メジャーバージョン2つ以上前）の利用に関する問題
-
-(b) 契約者が本ソフトウェアを改変したことに起因する問題（ただし、当該改変部分を元に戻した場合の再現確認は対応する）
-
-(c) 契約者のアプリケーション・インフラ・ネットワーク・第三者ソフトウェアに起因する問題であって、本ソフトウェア自体に問題がないもの
-
-(d) サードパーティ製プラグイン・拡張機能の動作不具合
-
-(e) 契約者の運用体制・内部プロセスの設計
-
-(f) 契約者の従業員・業務委託先に対する操作トレーニング
-
-(g) 本ソフトウェアを他のソフトウェアと統合する際のカスタム開発
-
-(h) 本ソフトウェアとは無関係な一般的な技術相談
-
-(i) 日本語以外の言語でのサポート
-
-### 3.3 サポート対象の拡張
-
-契約者は、個別契約の変更または別途の有償サービス契約により、以下を追加できる場合がある。これらは本サービスの標準範囲には含まれない。
-
-- 旧バージョンの延長サポート（Extended Support）
-- 有償トレーニング
-- 有償コンサルティング
-- カスタム開発
+To apply for additional inquiry cases or other paid support (Section 3.3), contact support@aquaxis.com. After receipt, the Company will send an individual quote.
 
 ---
 
-## 第4章 サポートの利用フロー
+## Chapter 3: Support Scope
 
-### 4.1 問い合わせの受付
+### 3.1 In-Scope Support
 
-契約者は、以下の情報を添えて問い合わせを行う。
+These Services cover the following:
 
-(a) 契約者名および担当者名
+(a) The **current major version** and its latest minor version of this software
 
-(b) 環境情報（本ソフトウェアのバージョン、OS、実行環境、関連ソフトウェア）
+(b) Answers to technical questions about this software
 
-(c) 問題の詳細（再現手順、期待される動作、実際の動作、エラーメッセージ、ログ）
+(c) Investigation of bug reports, providing workarounds, and providing fix patches for this software
 
-(d) 既に試した対処法と結果
+(d) Assistance with configuration and installation of this software
 
-(e) 影響範囲（本番／テスト／開発、影響ユーザー数等）
+(e) Questions about release notes and documentation for this software
 
-### 4.2 初回応答
+### 3.2 Out-of-Scope Support
 
-当社は、第2.1項に定める初回応答時間内（3営業日以内）に、以下を行う。
+The following are out of scope for these Services:
 
-(a) 問い合わせの受領確認
+(a) Issues related to use of this software versions other than those in scope (two or more major versions prior)
 
-(b) 担当者のアサイン
+(b) Issues caused by modifications made by the Contractor to this software (however, the Company will confirm reproduction after reverting the modified portion)
 
-(c) 追加情報が必要な場合はその依頼
+(c) Issues attributable to the Contractor's applications, infrastructure, network, or third-party software, where there is no problem with this software itself
 
-### 4.3 調査・回答
+(d) Malfunctions of third-party plugins or extensions
 
-当社は、問い合わせの内容に応じて、以下のいずれかまたは複数を実施する。
+(e) Design of the Contractor's operational structure or internal processes
 
-(a) 質問への回答
+(f) Operational training for the Contractor's employees or subcontractors
 
-(b) 問題の原因調査
+(g) Custom development for integrating this software with other software
 
-(c) 回避策の提示
+(h) General technical consultations unrelated to this software
 
-(d) 恒久対策（パッチ、バージョンアップ）の提供
+(i) Support in languages other than Japanese
 
-(e) ドキュメント・ナレッジベースへの案内
+### 3.3 Support Scope Extension
 
-### 4.4 解決の確認
+The Contractor may add the following through changes to the Individual Agreement or a separate paid service agreement. These are not included in the standard scope of these Services.
 
-当社は、契約者から解決の確認を得るか、または契約者からの応答が**10営業日**以上ない場合、当該問い合わせをクローズすることができる。クローズ後に同一問題が再発した場合、契約者は新規問い合わせとして再起票する。
-
----
-
-## 第5章 契約期間・更新・終了
-
-### 5.1 本規約の適用期間
-
-本規約は、契約者のサブスクライセンスの契約期間中、有効に適用される。
-
-### 5.2 更新
-
-サブスクライセンスが更新される場合、本規約もあわせて更新される。更新時点の最新版が適用される。
-
-### 5.3 終了
-
-サブスクライセンスの終了と同時に、本規約に基づく本サービスの提供も終了する。
-
-### 5.4 終了後のデータ
-
-契約者から提供されたサポート関連データ（ログ、構成情報、メール履歴等）は、当社のデータ保持ポリシーに従い、契約終了後**3年間**保持した後、削除される。契約者が早期削除を希望する場合、書面で当社に請求する。
+- Extended Support for prior versions
+- Paid training
+- Paid consulting
+- Custom development
 
 ---
 
-## 第6章 契約者の協力義務
+## Chapter 4: Support Usage Flow
 
-### 6.1 情報提供義務
+### 4.1 Inquiry Submission
 
-契約者は、本サービスの提供に必要な情報（バージョン情報、ログ、再現手順、構成情報等）を、当社の合理的な要請に応じて遅滞なく提供する義務を負う。
+The Contractor shall submit inquiries with the following information:
 
-### 6.2 機密情報の取扱い
+(a) Contractor name and contact person name
 
-契約者が当社に提供する情報に営業秘密または個人情報が含まれる場合、契約者は事前に当社に通知し、必要に応じて秘密保持契約を別途締結するものとする。可能な限り、ログ・データは匿名化・マスキングしてから提供することを推奨する。
+(b) Environment information (this software version, OS, runtime environment, related software)
 
-### 6.3 協力不足による遅延の免責
+(c) Problem details (reproduction steps, expected behavior, actual behavior, error messages, logs)
 
-契約者が必要情報を提供しないことにより本サービスの提供が遅延した場合、当社は第2.1項の応答時間を超過することについて責任を負わない。
+(d) Remediation attempts and results already tried
 
----
+(e) Impact scope (production/staging/development, number of affected users, etc.)
 
-## 第7章 当社の義務と免責
+### 4.2 Initial Response
 
-### 7.1 当社の義務
+The Company shall, within the initial response time defined in Section 2.1 (within 3 business days):
 
-当社は、本規約に基づき、善良な管理者の注意をもって本サービスを提供する。
+(a) Acknowledge receipt of the inquiry
 
-### 7.2 免責事項
+(b) Assign a responsible person
 
-当社は、本サービスの提供にあたり、以下について責任を負わない。
+(c) Request additional information if needed
 
-(a) 契約者の事業活動の結果または事業継続
+### 4.3 Investigation and Response
 
-(b) 契約者のデータの損失・毀損（契約者によるバックアップが前提）
+Depending on the inquiry content, the Company shall perform one or more of the following:
 
-(c) 第三者製品の動作・相互運用
+(a) Answer questions
 
-(d) 不可抗力（大規模災害、戦争、パンデミック、政府規制、通信インフラ障害等）による遅延
+(b) Investigate the cause of the problem
 
-(e) 本サービスが契約者の特定の目的に適合することの保証
+(c) Provide workarounds
 
-### 7.3 責任の上限
+(d) Provide permanent fixes (patches, version upgrades)
 
-当社の本サービスに関する責任は、`LICENSE.md` 第4.2 項および個別契約に定めるとおり、故意または重過失による場合を除き、当該損害発生時から遡って過去12ヶ月間に契約者が当社に支払ったサブスクリプション料金の合計額を上限とする。
+(e) Direct to documentation and knowledge base
 
----
+### 4.4 Resolution Confirmation
 
-## 第8章 一般条項
-
-### 8.1 規約の変更
-
-当社は、本規約を変更することができる。変更は、契約者への電子メール通知後**30日**を経過した時点で発効する。契約者が変更に同意しない場合、契約期間満了時に契約を更新しない選択ができる。
-
-契約者に不利益となる重要な変更については、契約期間中は変更を適用せず、次期契約更新時から適用する。
-
-### 8.2 通知
-
-本規約に基づく通知は、以下の方法で行う。
-
-- 当社から契約者へ：契約者の登録メールアドレス
-- 契約者から当社へ：support@aquaxis.com
-
-### 8.3 準拠法・管轄
-
-本規約は、`LICENSE.md` 第4.7 項と同じく、日本国法を準拠法とし、東京地方裁判所 を第一審の専属的合意管轄裁判所とする。
-
-### 8.4 分離可能性
-
-本規約の一部が無効と判断された場合であっても、他の規定は引き続き有効とする。
-
-### 8.5 優先順位
-
-本規約に関連する文書の優先順位は、以下のとおりとする。
-
-1. 個別契約（サブスクリプション契約書）
-2. `LICENSE.md`（特に第3章 License C および第4章 共通条項）
-3. 本規約
-
-### 8.6 言語および正文
-
-本規約は、**日本語を正文**とする。本規約の翻訳版（英語版その他の言語版）が作成された場合であっても、翻訳版は参考のためのものであり、解釈上の相違または矛盾がある場合は、**日本語正文が優先して適用される**。本項は、契約者が日本国外に所在する場合、および本サービスが日本国外で提供される場合についても同様に適用される。
-
-この条項は、`LICENSE.md` 第4.12 項（言語および正文）と整合するものとする。
+The Company may close an inquiry when it receives confirmation of resolution from the Contractor, or when the Contractor has not responded for **10 business days** or more. If the same issue recurs after closure, the Contractor shall open a new inquiry.
 
 ---
 
-## 付録：問い合わせテンプレート
+## Chapter 5: Contract Period, Renewal, and Termination
+
+### 5.1 Application Period
+
+These Terms remain in effect during the Contractor's subscription license contract period.
+
+### 5.2 Renewal
+
+If the subscription license is renewed, these Terms are also renewed. The latest version at the time of renewal shall apply.
+
+### 5.3 Termination
+
+Upon termination of the subscription license, the provision of these Services under these Terms also terminates.
+
+### 5.4 Post-Termination Data
+
+Support-related data provided by the Contractor (logs, configuration information, email history, etc.) shall be retained for **3 years** after contract termination in accordance with the Company's data retention policy, and then deleted. If the Contractor wishes early deletion, the Contractor shall submit a written request to the Company.
+
+---
+
+## Chapter 6: Contractor's Cooperation Obligations
+
+### 6.1 Information Provision Obligation
+
+The Contractor shall, without delay and in response to the Company's reasonable requests, provide information necessary for the provision of these Services (version information, logs, reproduction steps, configuration information, etc.).
+
+### 6.2 Handling of Confidential Information
+
+If information provided by the Contractor to the Company contains trade secrets or personal information, the Contractor shall notify the Company in advance and, if necessary, enter into a separate non-disclosure agreement. It is recommended to anonymize or mask logs and data before providing them whenever possible.
+
+### 6.3 Disclaimer for Delays Due to Insufficient Cooperation
+
+If the provision of these Services is delayed because the Contractor has not provided necessary information, the Company shall not be responsible for exceeding the response time specified in Section 2.1.
+
+---
+
+## Chapter 7: Company's Obligations and Disclaimers
+
+### 7.1 Company's Obligations
+
+The Company shall provide these Services with the due care of a prudent manager in accordance with these Terms.
+
+### 7.2 Disclaimers
+
+The Company shall not be responsible for the following in providing these Services:
+
+(a) The results of the Contractor's business activities or business continuity
+
+(b) Loss or damage to the Contractor's data (backup by the Contractor is assumed)
+
+(c) Operation or interoperability of third-party products
+
+(d) Delays due to force majeure (large-scale disasters, war, pandemics, government regulations, communication infrastructure failures, etc.)
+
+(e) Guarantee that these Services are suitable for the Contractor's specific purposes
+
+### 7.3 Limitation of Liability
+
+The Company's liability for these Services shall be limited, as specified in `LICENSE.md` Section 4.2 and the Individual Agreement, to the total amount of subscription fees paid by the Contractor to the Company during the 12 months preceding the occurrence of the damage, except in cases of willful misconduct or gross negligence.
+
+---
+
+## Chapter 8: General Provisions
+
+### 8.1 Changes to Terms
+
+The Company may change these Terms. Changes shall take effect **30 days** after email notification to the Contractor. If the Contractor does not agree to the changes, the Contractor may choose not to renew at the end of the contract period.
+
+Material changes that are disadvantageous to the Contractor shall not be applied during the current contract period and shall take effect from the next contract renewal.
+
+### 8.2 Notices
+
+Notices under these Terms shall be given as follows:
+
+- From the Company to the Contractor: Contractor's registered email address
+- From the Contractor to the Company: support@aquaxis.com
+
+### 8.3 Governing Law and Jurisdiction
+
+These Terms, like `LICENSE.md` Section 4.7, shall be governed by Japanese law, and the Tokyo District Court shall be the exclusive agreed jurisdiction court of first instance.
+
+### 8.4 Severability
+
+If any provision of these Terms is held invalid, the remaining provisions shall continue in effect.
+
+### 8.5 Order of Precedence
+
+The order of precedence for documents related to these Terms shall be as follows:
+
+1. Individual Agreement (subscription agreement)
+2. `LICENSE.md` (especially Chapter 3 License C and Chapter 4 Common Provisions)
+3. These Terms
+
+### 8.6 Language and Authoritative Text
+
+These Terms are **written in Japanese as the authoritative text**. Even if a translated version (English or other languages) of these Terms is produced, the translation is provided for reference only, and in the event of any interpretive differences or contradictions, **the Japanese authoritative text shall prevail**. This section applies equally when the Contractor is located outside Japan and when these Services are provided outside Japan.
+
+This provision is intended to be consistent with `LICENSE.md` Section 4.12 (Language and Authoritative Text).
+
+---
+
+## Appendix: Inquiry Template
 
 ```
-件名: [契約者名] 問い合わせ内容の概要
+Subject: [Contractor Name] Brief description of inquiry
 
-【基本情報】
-- 契約者名       : 
-- 担当者氏名     : 
-- HESTIA のバージョン : 
-- 環境           : 本番／ステージング／開発／テスト
+[Basic Information]
+- Contractor Name       :
+- Contact Person Name  :
+- HESTIA Version       :
+- Environment          : Production / Staging / Development / Test
 
-【問題・質問の詳細】
-- 内容           : 
-- 期待する動作   : 
-- 実際の動作     : 
-- 再現手順       : 
+[Problem/Question Details]
+- Description          :
+- Expected Behavior    :
+- Actual Behavior      :
+- Reproduction Steps   :
 
-【添付資料】
-- ログ：（可能な限り添付）
-- 構成ファイル：（該当する場合）
-- スクリーンショット：（該当する場合）
+[Attachments]
+- Logs: (attach if possible)
+- Configuration files: (if applicable)
+- Screenshots: (if applicable)
 
-【希望するサポート】
-- 
+[Desired Support]
+-
 ```

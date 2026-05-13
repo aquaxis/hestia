@@ -1,8 +1,8 @@
-//! CapabilitySet — アダプター機能セット
+//! CapabilitySet — Adapter capability set
 
 use serde::{Deserialize, Serialize};
 
-/// FPGA アダプター機能セット
+/// FPGA adapter capability set
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilitySet {
     pub synthesis: bool,

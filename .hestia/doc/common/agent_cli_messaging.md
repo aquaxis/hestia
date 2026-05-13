@@ -1,62 +1,62 @@
-# agent-cli 完全メッセージング仕様
+# agent-cli Complete Messaging Specification
 
-**対象領域**: common — 通信基盤
-**ソース**: 設計仕様書 §14, §2.3, §20 / Phase 113
+**Domain**: common — Communication Infrastructure
+**Source**: Design Specification §14, §2.3, §20 / Phase 113
 
-## 概要
+## Overview
 
-HESTIA の全通信は agent-cli 互換 IPC に統一されている。本ドキュメントはトランスポート、フレーム、ペイロード形式、判定ロジックの完全な仕様を定義する。
+All HESTIA communications are unified under agent-cli compatible IPC. This document defines the complete specification for transport, framing, payload format, and dispatch logic.
 
-**Phase 113 — Engine 切替の影響**: `.hestia/config.toml` の `[engine] type = "claude_cli_shim"` を選択した場合、peer 駆動バイナリは `claude-cli-shim` に切り替わるが、subcommand (`run` / `list` / `send` / `providers` / `doctor`) と option は agent-cli と完全互換。本仕様書のメッセージング規約 / JSONL log schema (`kind: thinking|tool_call|tool_result|user|assistant`) はそのまま適用される。詳細は [backend_switching.md](backend_switching.md) §「Engine（Phase 113）」参照。
+**Phase 113 — Engine Switching Impact**: When `.hestia/config.toml` has `[engine] type = "claude_cli_shim"` selected, the peer-driven binary switches to `claude-cli-shim`, but subcommands (`run` / `list` / `send` / `providers` / `doctor`) and options remain fully compatible with agent-cli. The messaging conventions and JSONL log schema (`kind: thinking|tool_call|tool_result|user|assistant`) defined in this specification apply unchanged. For details, see [backend_switching.md](backend_switching.md) §"Engine (Phase 113)".
 
-## トランスポート
+## Transport
 
-- **基盤**: agent-cli ネイティブ IPC
-- **ソケット**: `$XDG_RUNTIME_DIR/agent-cli/` 配下の Unix Domain Socket（agent-cli が自動管理）
-- **権限**: レジストリディレクトリ `0700`、各 peer ソケット `0600`
-- **プロトコル**: length-delimited フレーミング、本体最大 16 MiB
+- **Infrastructure**: agent-cli native IPC
+- **Socket**: Unix Domain Socket under `$XDG_RUNTIME_DIR/agent-cli/` (managed automatically by agent-cli)
+- **Permissions**: Registry directory `0700`, each peer socket `0600`
+- **Protocol**: Length-delimited framing, body max 16 MiB
 
-## Peer モデル
+## Peer Model
 
-### Conductor Peer
+### Conductor Peers
 
-| Peer 名 | Conductor | 役割 |
+| Peer Name | Conductor | Role |
 |---------|-----------|------|
-| `ai` | ai-conductor | メタオーケストレーター |
-| `rtl` | rtl-conductor | RTL 設計フロー |
-| `fpga` | fpga-conductor | FPGA 設計フロー |
-| `asic` | asic-conductor | ASIC 設計フロー |
-| `pcb` | pcb-conductor | PCB 設計フロー |
-| `hal` | hal-conductor | HAL 生成 |
-| `apps` | apps-conductor | アプリ FW |
-| `debug` | debug-conductor | デバッグ |
-| `rag` | rag-conductor | 知識基盤 |
+| `ai` | ai-conductor | Meta-orchestrator |
+| `rtl` | rtl-conductor | RTL design flow |
+| `fpga` | fpga-conductor | FPGA design flow |
+| `asic` | asic-conductor | ASIC design flow |
+| `pcb` | pcb-conductor | PCB design flow |
+| `hal` | hal-conductor | HAL generation |
+| `apps` | apps-conductor | Application firmware |
+| `debug` | debug-conductor | Debugging |
+| `rag` | rag-conductor | Knowledge base |
 
-### 共有サービス Peer
+### Shared Service Peers
 
-| Peer 名 | サービス |
+| Peer Name | Service |
 |---------|---------|
 | `lsp` | HDL LSP Broker |
 | `constraint-bridge` | Constraint Bridge |
 | `ip-manager` | IP Manager |
 | `cicd` | CI/CD API |
 | `observability` | Observability |
-| `waveform` | WASM 波形ビューア |
-| `mcp` | MCP サーバー |
+| `waveform` | WASM Waveform Viewer |
+| `mcp` | MCP Server |
 
-### フロントエンド Peer
+### Frontend Peers
 
-| Peer 名 | クライアント |
+| Peer Name | Client |
 |---------|------------|
-| `vscode` | VSCode 拡張 |
-| `tauri` | Tauri デスクトップアプリ |
-| `cli` | CLI クライアント（任意）|
+| `vscode` | VSCode extension |
+| `tauri` | Tauri desktop application |
+| `cli` | CLI client (optional)|
 
-## ペイロード形式
+## Payload Format
 
-### 構造化 JSON ペイロード
+### Structured JSON Payload
 
-先頭が `{` の場合、構造化 JSON として解釈:
+If the payload starts with `{`, it is interpreted as structured JSON:
 
 ```json
 {
@@ -67,62 +67,62 @@ HESTIA の全通信は agent-cli 互換 IPC に統一されている。本ドキ
 }
 ```
 
-### 自然言語ペイロード
+### Natural Language Payload
 
-先頭が `{` 以外の場合、自然言語テキストとして解釈:
-
-```
-Vivado で build を開始してください、target=artix7
-```
-
-### 判定ロジック
+If the payload does not start with `{`, it is interpreted as natural language text:
 
 ```
-受信ペイロード
-  │
-  ├── 先頭が '{' → 構造化 JSON として tool 呼出に変換
-  │                  method 名前空間規約（§14.2）に従い dispatch
-  │
-  └── それ以外   → 自然言語テキストとして agent-cli の LLM に直接渡す
+Please start a build with Vivado, target=artix7
 ```
 
-## 操作 API
+### Dispatch Logic
 
-| API | 説明 |
+```
+Received payload
+  |
+  +-- Starts with '{' -> Interpret as structured JSON, convert to tool call
+  |                      Dispatch according to method namespace convention (§14.2)
+  |
+  +-- Otherwise       -> Interpret as natural language text, pass directly to agent-cli's LLM
+```
+
+## Operation API
+
+| API | Description |
 |-----|------|
-| `agent-cli list` | 稼働中の peer 一覧取得 |
-| `agent-cli send <peer> <payload>` | 指定 peer へペイロード送信 |
-| REPL: `/send <peer> <payload>` | REPL 内からの送信 |
+| `agent-cli list` | List active peers |
+| `agent-cli send <peer> <payload>` | Send payload to specified peer |
+| REPL: `/send <peer> <payload>` | Send from within REPL |
 
-## ConductorRpc 共通 API
+## ConductorRpc Common API
 
-全 conductor が実装する共通 RPC トレイト:
+Common RPC trait implemented by all conductors:
 
-| メソッド群 | メソッド例 |
+| Method Group | Example Methods |
 |----------|----------|
-| プロジェクト管理 | `project_open` / `project_targets` / `project_files` |
-| ビルド | `build_start` / `build_cancel` / `build_status` |
-| レポート | `report_timing` / `report_resource` / `report_messages` |
-| プログラミング | `program_targets` / `program_flash` |
-| ツールチェーン | `toolchain_list` / `toolchain_install` / `toolchain_select` |
-| エージェント | `agent_status` / `agent_patch_list` / `agent_apply_patch` |
-| コンテナ | `container_list` / `container_start` / `container_stop` / `container_update` |
-| システム | `system_readiness` / `system_health` |
+| Project management | `project_open` / `project_targets` / `project_files` |
+| Build | `build_start` / `build_cancel` / `build_status` |
+| Reports | `report_timing` / `report_resource` / `report_messages` |
+| Programming | `program_targets` / `program_flash` |
+| Toolchain | `toolchain_list` / `toolchain_install` / `toolchain_select` |
+| Agent | `agent_status` / `agent_patch_list` / `agent_apply_patch` |
+| Container | `container_list` / `container_start` / `container_stop` / `container_update` |
+| System | `system_readiness` / `system_health` |
 
-## ペイロード選択指針
+## Payload Selection Guidelines
 
-| 通信種別 | 推奨ペイロード | 理由 |
+| Communication Type | Recommended Payload | Reason |
 |---------|-------------|------|
-| 構造化操作（build / test / status） | 構造化 JSON | 型安全、SDK 互換 |
-| conductor 間の構造化ツール呼出 | 構造化 JSON | 再現性、トレース ID 連鎖 |
-| conductor 間の自然言語協調 | 自然言語テキスト | 自由形式、CoT 文脈共有 |
-| 進捗・CoT・思考過程の共有 | 自然言語テキスト | 軽量伝搬 |
-| イベント通知 | 構造化 JSON（id なし） | 購読 / フィルタ可能 |
-| エラーエスカレーション | 自然言語で ai-conductor に集約 → 構造化通知で UI へ | 文脈詳細集約 → 即時反映 |
+| Structured operations (build / test / status) | Structured JSON | Type-safe, SDK-compatible |
+| Inter-conductor structured tool calls | Structured JSON | Reproducibility, trace ID chaining |
+| Inter-conductor natural language collaboration | Natural language text | Free-form, CoT context sharing |
+| Progress / CoT / thought process sharing | Natural language text | Lightweight propagation |
+| Event notifications | Structured JSON (no id) | Subscribable / filterable |
+| Error escalation | Natural language to ai-conductor -> Structured notification to UI | Context detail aggregation -> immediate reflection |
 
-## 関連ドキュメント
+## Related Documents
 
-- [agent_message.md](agent_message.md) — ペイロード形式詳細
-- [api_versioning.md](api_versioning.md) — メソッド名前空間・バージョニング
-- [error_registry.md](error_registry.md) — エラーコード規約
-- [backend_switching.md](backend_switching.md) — LLM バックエンド切替
+- [agent_message.md](agent_message.md) — Payload format details
+- [api_versioning.md](api_versioning.md) — Method namespace and versioning
+- [error_registry.md](error_registry.md) — Error code conventions
+- [backend_switching.md](backend_switching.md) — LLM backend switching

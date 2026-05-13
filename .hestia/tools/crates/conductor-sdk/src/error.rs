@@ -1,9 +1,9 @@
-//! Hestia エラー型・エラーコード規約
+//! Hestia error types and error code conventions
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// Hestia SDK エラー型
+/// Hestia SDK error type
 #[derive(Debug, Error)]
 pub enum HestiaError {
     #[error("Invalid conductor ID: {0}")]
@@ -40,7 +40,7 @@ pub enum HestiaError {
     Io(#[from] std::io::Error),
 }
 
-/// 構造化エラー応答の data フィールド
+/// Structured error response data field
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorData {
     pub tool: String,
@@ -51,7 +51,7 @@ pub struct ErrorData {
     pub suggested_action: String,
 }
 
-/// 構造化エラー応答
+/// Structured error response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub code: i32,
@@ -107,16 +107,16 @@ impl From<HestiaError> for ErrorResponse {
     }
 }
 
-/// エラーコード定数（HESTIA 共通）
+/// Error code constants (HESTIA common)
 pub mod error_code {
-    // 標準エラー（JSON-RPC 2.0 流用）
+    // Standard errors (borrowed from JSON-RPC 2.0)
     pub const PARSE_ERROR: i32 = -32700;
     pub const INVALID_REQUEST: i32 = -32600;
     pub const METHOD_NOT_FOUND: i32 = -32601;
     pub const INVALID_PARAMS: i32 = -32602;
     pub const INTERNAL_ERROR: i32 = -32603;
 
-    // HESTIA 共通（-32000 ~ -32099）
+    // HESTIA common (-32000 ~ -32099)
     pub const INTERNAL: i32 = -32000;
     pub const TIMEOUT: i32 = -32001;
     pub const NOT_FOUND: i32 = -32002;
@@ -125,14 +125,14 @@ pub mod error_code {
     pub const INVALID_STATE: i32 = -32005;
     pub const SERVICE_UNAVAILABLE: i32 = -32006;
 
-    // ai-conductor（-32100 ~ -32199）
+    // ai-conductor (-32100 ~ -32199)
     pub const AI_ORCHESTRATION_START: i32 = -32100;
     pub const AI_AGENT_MANAGEMENT_START: i32 = -32120;
     pub const AI_SPEC_DRIVEN_START: i32 = -32140;
     pub const AI_VERSION_TRACKING_START: i32 = -32160;
     pub const AI_LLM_START: i32 = -32180;
 
-    // fpga-conductor（-32200 ~ -32299）
+    // fpga-conductor (-32200 ~ -32299)
     pub const FPGA_SYNTHESIS_START: i32 = -32200;
     pub const FPGA_IMPLEMENTATION_START: i32 = -32210;
     pub const FPGA_BITSTREAM_START: i32 = -32220;
@@ -144,15 +144,15 @@ pub mod error_code {
     pub const FPGA_CONSTRAINT_START: i32 = -32280;
     pub const FPGA_ADAPTER_START: i32 = -32290;
 
-    // asic-conductor（-32300 ~ -32399）
+    // asic-conductor (-32300 ~ -32399)
     pub const ASIC_START: i32 = -32300;
 
-    // pcb-conductor（-32400 ~ -32499）
+    // pcb-conductor (-32400 ~ -32499)
     pub const PCB_START: i32 = -32400;
 
-    // debug-conductor（-32500 ~ -32599）
+    // debug-conductor (-32500 ~ -32599)
     pub const DEBUG_START: i32 = -32500;
 
-    // rag-conductor（-32600 ~ -32699）
+    // rag-conductor (-32600 ~ -32699)
     pub const RAG_START: i32 = -32600;
 }

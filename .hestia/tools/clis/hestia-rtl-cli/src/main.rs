@@ -1,8 +1,8 @@
 //! hestia-rtl-cli -- RTL conductor CLI client (in-process Handler invocation)
 //!
-//! Phase 16 改修: AgentCliClient 経由 IPC ではなく、`hestia-rtl-conductor` の
-//! `RtlHandler` を in-process で呼び出して構造化 JSON を stdout に返す。
-//! AI conductor LLM が shell ツール経由でこの CLI を起動して結果を集約する。
+//! Phase 16 revision: Instead of IPC via AgentCliClient, calls the `RtlHandler`
+//! from `hestia-rtl-conductor` in-process and returns structured JSON to stdout.
+//! The AI conductor LLM invokes this CLI via shell tools to aggregate results.
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -25,7 +25,7 @@ struct Cli {
 enum Commands {
     /// Initialize RTL project workspace
     Init,
-    /// Request RTL design (Phase 54 — delegates to rtl-designer in Phase 55)
+    /// Request RTL design (Phase 54 -- delegates to rtl-designer in Phase 55)
     Design {
         /// Optional natural-language instruction for the designer
         #[arg(long)]

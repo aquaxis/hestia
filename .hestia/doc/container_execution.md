@@ -1,29 +1,29 @@
-# コンテナ実行戦略
+# Container Execution Strategy
 
-**対象領域**: コンテナ実行・管理
-**ソース**: 設計仕様書 §11（2551-2641行目付近）, §12（2644-3185行目付近）
-
----
-
-## 1. Podman コンテナ戦略（§11）
-
-> **コンテナは必須ではない**。ローカルに直接インストールされたツール（Vivado / Quartus / KiCad 等）も使用可能であり、本章はコンテナ実行を選択した場合の戦略を記述する。ローカル実行とコンテナ実行はツールごと・ビルドごとに混在可能であり、いずれを選択しても fpga.lock / asic.lock による再現性を保証する。
-
-本章は **Linux ホスト OS 前提**（TC-10）。Podman rootless が依存する user namespace / cgroup / SELinux は Linux カーネル機能であり、本章の設計はすべて Linux 環境上での動作を想定する（ローカル実行のみを選択する場合、本章の Podman 関連設定は適用対象外となる）。
-
-### 1.1 設計方針
-
-- **デーモンレス**: システムサービス不要（Docker の dockerd に依存しない）
-- **UID 一致**: `--userns=keep-id` でファイル権限問題を回避
-- **SELinux 対応**: `--security-opt=label=type:container_runtime_t`
-- **権限昇格防止**: `--security-opt=no-new-privileges`
-- **ライセンス保護**: ベンダーライセンスファイルの読み取り専用マウント
-- **ネットワーク隔離**: ビルドコンテナは `--network=none` で外部通信を遮断
-- **知的財産保護**: HDL ソース、ビットストリームのコンテナ外流出防止
+**Domain**: Container Execution and Management
+**Source**: Design Specification §11 (around lines 2551-2641), §12 (around lines 2644-3185)
 
 ---
 
-## 2. podman-runtime クレート（§11.2）
+## 1. Podman Container Strategy (§11)
+
+> **Containers are not mandatory.** Locally installed tools (Vivado / Quartus / KiCad, etc.) can also be used, and this chapter describes the strategy when container execution is selected. Local execution and container execution can be mixed per tool and per build, and whichever is chosen, reproducibility via fpga.lock / asic.lock is guaranteed.
+
+This chapter assumes a **Linux host OS** (TC-10). The user namespace / cgroup / SELinux that Podman rootless depends on are Linux kernel features, and all designs in this chapter assume operation on a Linux environment. (If only local execution is selected, the Podman-related settings in this chapter do not apply.)
+
+### 1.1 Design Principles
+
+- **Daemonless**: No system service required (does not depend on Docker's dockerd)
+- **UID matching**: Avoid file permission issues with `--userns=keep-id`
+- **SELinux support**: `--security-opt=label=type:container_runtime_t`
+- **Privilege escalation prevention**: `--security-opt=no-new-privileges`
+- **License protection**: Read-only mount of vendor license files
+- **Network isolation**: Build containers block external communication with `--network=none`
+- **Intellectual property protection**: Prevent HDL source and bitstream leakage outside containers
+
+---
+
+## 2. podman-runtime Crate (§11.2)
 
 ```rust
 pub struct PodmanRuntime {
@@ -31,7 +31,7 @@ pub struct PodmanRuntime {
 }
 
 impl PodmanRuntime {
-    /// バッチビルド用コンテナ起動
+    /// Launch container for batch build
     pub async fn run_build(
         &self, image: &str, project_dir: &Path, cmd: &[&str],
     ) -> Result<ExitStatus, RuntimeError> {
@@ -51,7 +51,7 @@ impl PodmanRuntime {
         Command::new("podman").args(args).status().await
     }
 
-    /// GUI 起動 (X11/Wayland フォワード)
+    /// GUI launch (X11/Wayland forwarding)
     pub async fn run_gui(&self, image: &str) -> Result<Child, RuntimeError> {
         let display = std::env::var("DISPLAY").unwrap_or(":0".into());
         let xauth = std::env::var("XAUTHORITY")
@@ -72,203 +72,203 @@ impl PodmanRuntime {
 
 ---
 
-## 3. コンテナ運用パターン（§11.3）
+## 3. Container Operation Patterns (§11.3)
 
-**表 HD-008: コンテナ運用パターン**
+**Table HD-008: Container Operation Patterns**
 
-| パターン | 用途 | 設定 |
+| Pattern | Use Case | Configuration |
 |---------|------|------|
-| バッチビルド | 合成・配置配線 | `--rm`, `--network=none`, プロジェクトディレクトリマウント |
-| GUI 起動 | Vivado GUI 等 | X11/Wayland フォワード、DISPLAY 環境変数 |
-| systemd サービス | 常時起動コンテナ | Podman Quad 定義（.container ファイル） |
-| デバイスアクセス | JTAG プログラミング | `--device /dev/bus/usb` |
+| Batch build | Synthesis, place-and-route | `--rm`, `--network=none`, project directory mount |
+| GUI launch | Vivado GUI, etc. | X11/Wayland forwarding, DISPLAY environment variable |
+| systemd service | Always-on containers | Podman Quad definition (.container file) |
+| Device access | JTAG programming | `--device /dev/bus/usb` |
 
 ---
 
-## 4. 対応コンテナイメージ（§11.4）
+## 4. Supported Container Images (§11.4)
 
-対応する 8 種類のコンテナイメージの一覧を以下に示す。ベース OS 別の構成、主要ツール、ライセンス取扱、Containerfile サンプルなどの**詳細は §12.2「Containerfile 自動生成」の表 HD-021 を参照**。
+The list of 8 supported container images is shown below. For details such as base OS configuration, primary tools, license handling, and Containerfile samples, **refer to Table HD-021 in §12.2 "Containerfile Auto-Generation"**.
 
-**表 HD-009: 対応コンテナイメージ一覧（要約、詳細は §12.2 表 HD-021 参照）**
+**Table HD-009: Supported Container Images (summary; for details see §12.2 Table HD-021)**
 
-| イメージ | 主な用途 |
+| Image | Primary Use |
 |---------|--------|
-| fpga/vivado:2025.2 | AMD/Xilinx FPGA の合成・配置配線（Vivado 2025.2）|
-| fpga/quartus:25.1 | Intel/Altera FPGA の合成・配置配線（Quartus Prime Pro 25.1）|
-| fpga/efinity:2025.2 | Efinix Trion/Titanium FPGA（Efinity 2025.2）|
-| fpga/radiant:2024.2 | Lattice LIFCL/LFD2NX/iCE40 FPGA（Radiant 2024.2）|
-| fpga/oss:latest | OSS FPGA フロー（Yosys + nextpnr + icestorm + Verilator）|
-| asic/openlane:latest | RTL-to-GDSII 自動化（OpenLane 2 + OpenROAD + Magic + Netgen）|
-| pcb/kicad:latest | PCB 設計（KiCad + SKiDL + Freerouting）|
-| debug/tools:latest | デバッグ・ロジック解析（OpenOCD + sigrok + PulseView + pyOCD）|
+| fpga/vivado:2025.2 | AMD/Xilinx FPGA synthesis and place-and-route (Vivado 2025.2) |
+| fpga/quartus:25.1 | Intel/Altera FPGA synthesis and place-and-route (Quartus Prime Pro 25.1) |
+| fpga/efinity:2025.2 | Efinix Trion/Titanium FPGA (Efinity 2025.2) |
+| fpga/radiant:2024.2 | Lattice LIFCL/LFD2NX/iCE40 FPGA (Radiant 2024.2) |
+| fpga/oss:latest | OSS FPGA flow (Yosys + nextpnr + icestorm + Verilator) |
+| asic/openlane:latest | RTL-to-GDSII automation (OpenLane 2 + OpenROAD + Magic + Netgen) |
+| pcb/kicad:latest | PCB design (KiCad + SKiDL + Freerouting) |
+| debug/tools:latest | Debug and logic analysis (OpenOCD + sigrok + PulseView + pyOCD) |
 
 ---
 
-## 5. container-manager（§12）
+## 5. container-manager (§12)
 
-> **container-manager はコンテナ実行を選択した場合のみ使用される**。ローカルにインストールされたツールを使用する場合、本章の機能は適用されず、adapter 経由でローカル実行パスを直接呼び出す。コンテナ実行とローカル実行はツールごとに混在可能（例: Vivado はコンテナ、KiCad はローカル）。
+> **container-manager is used only when container execution is selected.** When using locally installed tools, the features in this chapter do not apply; local execution paths are called directly via adapters. Container execution and local execution can be mixed per tool (e.g., Vivado in a container, KiCad locally).
 
-### 5.1 モジュール構成（§12.1）
+### 5.1 Module Structure (§12.1)
 
-**表 HD-010: container-manager モジュール構成**
+**Table HD-010: container-manager Module Structure**
 
-| モジュール | 役割 |
+| Module | Role |
 |-----------|------|
-| builder | Containerfile 自動生成・ビルド（ツール定義ファイルに基づく） |
-| registry | コンテナイメージのレジストリ管理（ローカル/リモート） |
-| updater | イメージの差分更新・バージョン管理・自動リビルド |
-| provisioner | ツール定義ファイルに基づくプロビジョニング（パッケージインストール） |
-| tool_updater | ツールバージョン検出・互換性チェック・段階的更新 |
+| builder | Containerfile auto-generation and build (based on tool definition files) |
+| registry | Container image registry management (local/remote) |
+| updater | Image differential update, version management, and automatic rebuild |
+| provisioner | Provisioning based on tool definition files (package installation) |
+| tool_updater | Tool version detection, compatibility checking, and staged updates |
 
-### 5.2 Containerfile 自動生成（§12.2, FR-CTN-11）
+### 5.2 Containerfile Auto-Generation (§12.2, FR-CTN-11)
 
-`container.toml`（§3.8 リファレンス）を入力として、minijinja テンプレートエンジンで Containerfile（Dockerfile 互換の Podman ビルド仕様）を自動生成する。
+Takes `container.toml` (§3.8 reference) as input and auto-generates a Containerfile (Podman build specification compatible with Dockerfile) using the minijinja template engine.
 
-**生成フロー**:
+**Generation flow**:
 
 ```
-container.toml ──▶ builder::parse ──▶ Container Spec (Rust 構造体)
+container.toml ──▶ builder::parse ──▶ Container Spec (Rust struct)
                                         │
                                         ▼
-                                   Containerfile テンプレート（minijinja）
+                                   Containerfile template (minijinja)
                                         │
                                         ▼
-                                   Containerfile （テキスト）
+                                   Containerfile (text)
                                         │
                                         ▼
-                                   podman build（§12.3）
+                                   podman build (§12.3)
 ```
 
-**表 HD-021: 8 イメージ × 主要ビルドパラメータ**
+**Table HD-021: 8 Images × Primary Build Parameters**
 
-| イメージ | ベース | 主要ツール | ライセンス取扱 |
+| Image | Base | Primary Tools | License Handling |
 |---------|-------|----------|--------------|
-| `fpga/vivado:2025.2` | `registry.access.redhat.com/ubi9/ubi:9.5` | AMD Vivado 2025.2 | FlexLM ライセンスサーバ参照（`LM_LICENSE_FILE`）|
-| `fpga/quartus:25.1` | `registry.access.redhat.com/ubi9/ubi:9.5` | Intel Quartus Prime Pro 25.1 | QPF/QSF、FlexLM |
-| `fpga/efinity:2025.2` | `docker.io/library/ubuntu:24.04` | Efinix Efinity 2025.2 | Efinity 同梱 Python |
+| `fpga/vivado:2025.2` | `registry.access.redhat.com/ubi9/ubi:9.5` | AMD Vivado 2025.2 | FlexLM license server reference (`LM_LICENSE_FILE`) |
+| `fpga/quartus:25.1` | `registry.access.redhat.com/ubi9/ubi:9.5` | Intel Quartus Prime Pro 25.1 | QPF/QSF, FlexLM |
+| `fpga/efinity:2025.2` | `docker.io/library/ubuntu:24.04` | Efinix Efinity 2025.2 | Efinity bundled Python |
 | `fpga/radiant:2024.2` | `registry.access.redhat.com/ubi9/ubi:9.5` | Lattice Radiant 2024.2 | FlexLM |
-| `fpga/oss:latest` | `docker.io/library/ubuntu:24.04` | Yosys + nextpnr + icestorm + Verilator | 不要（OSS） |
-| `asic/openlane:latest` | `docker.io/library/ubuntu:24.04` | OpenLane 2 + Yosys + OpenROAD + Magic + Netgen | 不要（OSS） |
-| `pcb/kicad:latest` | `docker.io/library/ubuntu:24.04` | KiCad + SKiDL + Freerouting | 不要（OSS） |
-| `debug/tools:latest` | `docker.io/library/ubuntu:24.04` | OpenOCD + sigrok + PulseView + pyOCD | 不要（OSS）|
+| `fpga/oss:latest` | `docker.io/library/ubuntu:24.04` | Yosys + nextpnr + icestorm + Verilator | Not required (OSS) |
+| `asic/openlane:latest` | `docker.io/library/ubuntu:24.04` | OpenLane 2 + Yosys + OpenROAD + Magic + Netgen | Not required (OSS) |
+| `pcb/kicad:latest` | `docker.io/library/ubuntu:24.04` | KiCad + SKiDL + Freerouting | Not required (OSS) |
+| `debug/tools:latest` | `docker.io/library/ubuntu:24.04` | OpenOCD + sigrok + PulseView + pyOCD | Not required (OSS) |
 
-### 5.3 プロビジョニング（§12.4, FR-CTN-13）
+### 5.3 Provisioning (§12.4, FR-CTN-13)
 
-`container.toml` の `[tools.*]` 宣言から自動的にパッケージマネージャのコマンドに翻訳する。
+Automatically translates `[tools.*]` declarations from `container.toml` into package manager commands.
 
-**翻訳マトリクス**:
+**Translation Matrix**:
 
-| ツール定義 | apt（Debian / Ubuntu）| dnf / yum（RHEL / UBI）| その他 |
+| Tool Definition | apt (Debian / Ubuntu) | dnf / yum (RHEL / UBI) | Other |
 |----------|---------------------|---------------------|------|
-| `install_method = "apt"` | `apt-get install -y ${package}` | 変換時にエラー | — |
-| `install_method = "dnf"` | 変換時にエラー | `dnf install -y ${package}` | — |
-| `install_method = "tarball"` | `wget -O - ${url} \| tar -xz -C ${prefix}` | 同左 | — |
-| `install_method = "install_script"` | `bash -c "${install_script}"` | 同左 | ベンダー独自インストーラ |
-| `install_method = "pip"` | `pip install --no-cache-dir ${package}` | 同左 | Python パッケージ |
-| `install_method = "cargo"` | `cargo install ${package}` | 同左 | Rust パッケージ |
+| `install_method = "apt"` | `apt-get install -y ${package}` | Error at conversion time | — |
+| `install_method = "dnf"` | Error at conversion time | `dnf install -y ${package}` | — |
+| `install_method = "tarball"` | `wget -O - ${url} \| tar -xz -C ${prefix}` | Same as left | — |
+| `install_method = "install_script"` | `bash -c "${install_script}"` | Same as left | Vendor-specific installer |
+| `install_method = "pip"` | `pip install --no-cache-dir ${package}` | Same as left | Python packages |
+| `install_method = "cargo"` | `cargo install ${package}` | Same as left | Rust packages |
 
-**ベンダーライセンス保護**:
+**Vendor License Protection**:
 
-- インストーラ・ライセンスファイルはイメージに焼き込まない（`--secret` でマウントのみ）
-- 実行時ライセンス（FlexLM 等）は `podman run -e LM_LICENSE_FILE=...` or マウントで注入
-- `.hestia/secure/` ディレクトリはモード 0700、`.gitignore` で Git 管理外
+- Installer and license files are not baked into the image (mounted only via `--secret`)
+- Runtime licenses (FlexLM, etc.) are injected via `podman run -e LM_LICENSE_FILE=...` or mount
+- `.hestia/secure/` directory has mode 0700, excluded from Git via `.gitignore`
 
-**プロビジョニング検証**:
+**Provisioning Verification**:
 
-1. インストール完了後、各ツールの `version_cmd` を実行
-2. `HEALTHCHECK` 命令で定期検証（`interval=60s`）
-3. 失敗時は `action-log` に `prov.failed` を記録、リトライ（最大 3 回、指数バックオフ）
+1. After installation completes, execute each tool's `version_cmd`
+2. Periodic verification via `HEALTHCHECK` instruction (`interval=60s`)
+3. On failure, log `prov.failed` to `action-log`, retry (up to 3 times, exponential backoff)
 
-### 5.4 成果物署名・SBOM（§12.5, FR-CTN-14）
+### 5.4 Artifact Signing & SBOM (§12.5, FR-CTN-14)
 
-**ビルド後の処理パイプライン**:
+**Post-build processing pipeline**:
 
 ```
-podman build → イメージ生成 → syft で SBOM 生成 → grype で脆弱性スキャン
+podman build → Image generation → SBOM generation via syft → Vulnerability scan via grype
                                   │                   │
                                   ▼                   ▼
                                 sbom.spdx.json       vuln.json
                                   │                   │
-                                  └──▶ 評価ゲート ◀───┘
+                                  └──▶ Evaluation gate ◀───┘
                                         │
                                         ▼
-                                   cosign sign（keyless）
+                                   cosign sign (keyless)
                                         │
                                         ▼
-                                   podman push（§12.6）
+                                   podman push (§12.6)
 ```
 
-**syft による SBOM 生成**: SPDX 形式および CycloneDX 形式の両方に対応。
+**SBOM generation via syft**: Supports both SPDX and CycloneDX formats.
 
-**grype による脆弱性スキャン**: `--fail-on high --only-fixed` で Critical/High の修正可能脆弱性が存在する場合はビルド失敗とする。
+**Vulnerability scanning via grype**: Fails the build when fixable Critical/High vulnerabilities are present, using `--fail-on high --only-fixed`.
 
-**cosign によるイメージ署名（keyless OIDC）**: GitHub Actions 上でキーレス署名を実行し、SBOM attachment を添付する。
+**Image signing via cosign (keyless OIDC)**: Executes keyless signing on GitHub Actions and attaches the SBOM attachment.
 
-**署名なしイメージの拒否ポリシー**: `podman-runtime::run_build()` の前に `cosign verify` を実行、検証失敗時は `SignatureVerificationError` で起動拒否。開発環境のみ `HESTIA_ALLOW_UNSIGNED=1` で回避可。
+**Unsigned image rejection policy**: `cosign verify` is executed before `podman-runtime::run_build()`. On verification failure, container launch is refused with `SignatureVerificationError`. Development environments can bypass this with `HESTIA_ALLOW_UNSIGNED=1`.
 
-### 5.5 レジストリ管理（§12.6, FR-CTN-15）
+### 5.5 Registry Management (§12.6, FR-CTN-15)
 
-**表 HD-022: 対応レジストリと用途**
+**Table HD-022: Supported Registries and Use Cases**
 
-| レジストリ | 用途 | 認証 |
+| Registry | Use Case | Authentication |
 |-----------|-----|------|
-| `localhost:5000` | ローカル開発 | なし |
-| `ghcr.io/hestia/*` | 公式公開（OSS イメージのみ）| GitHub OIDC |
-| `quay.io/hestia/*` | ミラー（OSS イメージのみ）| Robot account |
-| プライベート Harbor | 商用ツール入りイメージ | mTLS + Robot account |
+| `localhost:5000` | Local development | None |
+| `ghcr.io/hestia/*` | Official publishing (OSS images only) | GitHub OIDC |
+| `quay.io/hestia/*` | Mirror (OSS images only) | Robot account |
+| Private Harbor | Images containing commercial tools | mTLS + Robot account |
 
-**タグ規約**:
+**Tag Convention**:
 
 ```
 <registry>/<org>/<conductor>/<tool>:<version>
-<registry>/<org>/<conductor>/<tool>:<YYYYMMDD>   # 日付タグ
-<registry>/<org>/<conductor>/<tool>:cache        # ビルドキャッシュ専用
+<registry>/<org>/<conductor>/<tool>:<YYYYMMDD>   # Date tag
+<registry>/<org>/<conductor>/<tool>:cache        # Build cache only
 ```
 
-**Retention ポリシー**:
+**Retention Policy**:
 
-- `latest` / `<version>` タグ: 永続
-- 日付タグ（`YYYYMMDD`）: 直近 30 日分のみ保持、以降は `skopeo delete` で削除
-- `cache` タグ: 最新のみ保持
-- 自動削除: `skopeo` + cron / GitHub Actions Schedule
+- `latest` / `<version>` tags: Permanent
+- Date tags (`YYYYMMDD`): Keep only the most recent 30 days; delete older ones via `skopeo delete`
+- `cache` tags: Keep only the latest
+- Automatic deletion: `skopeo` + cron / GitHub Actions Schedule
 
-**レート制限対策**: Docker Hub のプル制限（匿名 100 pulls/6h）を回避するためプライベートミラー（Harbor）をプルスルーキャッシュとして使用。GitHub Actions では GHCR をプル元にして制限回避。
+**Rate Limit Mitigation**: Use a private mirror (Harbor) as a pull-through cache to avoid Docker Hub pull limits (100 pulls/6h anonymous). On GitHub Actions, use GHCR as the pull source to avoid limits.
 
-### 5.6 CI/CD 統合・監視（§12.7, FR-CTN-12 / FR-CTN-14 の延長）
+### 5.6 CI/CD Integration & Monitoring (§12.7, extension of FR-CTN-12 / FR-CTN-14)
 
-GitHub Actions ワークフロー例（`.github/workflows/container-build.yaml`）:
+GitHub Actions workflow example (`.github/workflows/container-build.yaml`):
 
-- **トリガ**: `.hestia/containers/**` / `.hestia/container-manager/**` の push、および毎週月曜 02:00 UTC のスケジュール
-- **マトリクス**: fpga/oss / asic/openlane / pcb/kicad / debug/tools の 4 イメージ
-- **パーミッション**: `contents: read`, `packages: write`, `id-token: write`（cosign keyless）
-- **ステップ**: Install → Build → SBOM → Vulnerability scan → Login to GHCR → Push → Sign
+- **Trigger**: Push to `.hestia/containers/**` / `.hestia/container-manager/**`, and scheduled every Monday at 02:00 UTC
+- **Matrix**: fpga/oss / asic/openlane / pcb/kicad / debug/tools — 4 images
+- **Permissions**: `contents: read`, `packages: write`, `id-token: write` (cosign keyless)
+- **Steps**: Install → Build → SBOM → Vulnerability scan → Login to GHCR → Push → Sign
 
-**ObservabilityLayer 連携**（§19.8 / §13.4）:
+**ObservabilityLayer Integration** (§19.8 / §13.4):
 
-| メトリクス | 型 | 意味 |
+| Metric | Type | Meaning |
 |----------|----|-----|
-| `hestia_container_build_total{image,status}` | Counter | ビルド回数（成功 / 失敗）|
-| `hestia_container_build_duration_seconds{image,stage}` | Histogram | ステージ別所要時間 |
-| `hestia_container_image_size_bytes{image,tag}` | Gauge | イメージサイズ |
-| `hestia_container_vuln_total{image,severity}` | Gauge | 脆弱性件数 |
-| `hestia_container_signature_verified{image}` | Gauge | 署名検証成功（1/0）|
+| `hestia_container_build_total{image,status}` | Counter | Build count (success / failure) |
+| `hestia_container_build_duration_seconds{image,stage}` | Histogram | Duration per stage |
+| `hestia_container_image_size_bytes{image,tag}` | Gauge | Image size |
+| `hestia_container_vuln_total{image,severity}` | Gauge | Vulnerability count |
+| `hestia_container_signature_verified{image}` | Gauge | Signature verification success (1/0) |
 
-### 5.7 運用ルール（§12.8）
+### 5.7 Operational Rules (§12.8)
 
-1. **週次ビルド**: `cron: '0 2 * * 1'`（毎週月曜 02:00 UTC）でベースイメージ + 依存更新を取り込み再ビルド
-2. **パッチバージョン**: 自動ビルド + 自動 push
-3. **マイナーバージョン**: 自動ビルド後に Review Agent 経由で 1 人承認必須
-4. **メジャーバージョン**: 手動トリガ、UpgradeManager の Canary 戦略で段階的展開
-5. **失敗時**: `action-log` に `container.build.failed` を記録、PatcherAgent に通知
-6. **イメージサイズ上限**: OSS 5GB、商用 20GB
-7. **BuildKit secret 管理**: `.hestia/secure/` は read-only、`0700` 権限、Git 管理外
-8. **CVE 通知**: `grype` 週次スキャン結果の変化を検知、Critical 発生時は即座にセキュリティチームへエスカレーション
+1. **Weekly build**: `cron: '0 2 * * 1'` (every Monday 02:00 UTC) to incorporate base image + dependency updates and rebuild
+2. **Patch version**: Automatic build + automatic push
+3. **Minor version**: After automatic build, 1 approval required via Review Agent
+4. **Major version**: Manual trigger, staged deployment via UpgradeManager Canary strategy
+5. **On failure**: Log `container.build.failed` to `action-log`, notify PatcherAgent
+6. **Image size limits**: OSS 5GB, commercial 20GB
+7. **BuildKit secret management**: `.hestia/secure/` is read-only, `0700` permissions, excluded from Git
+8. **CVE notification**: Detect changes in `grype` weekly scan results; escalate to security team immediately on Critical occurrence
 
 ---
 
-## 6. 実装クレート構成（§12.9 要約）
+## 6. Implementation Crate Structure (§12.9 Summary)
 
-container-manager は `ai-conductor/crates/container-manager/` に配置:
+container-manager is located at `ai-conductor/crates/container-manager/`:
 
 ```
 container-manager/
@@ -276,41 +276,41 @@ container-manager/
 └── src/
     ├── lib.rs
     ├── builder/
-    │   ├── mod.rs            # Containerfile 生成 + podman build 呼び出し
-    │   ├── templates/*.j2    # minijinja テンプレート
+    │   ├── mod.rs            # Containerfile generation + podman build invocation
+    │   ├── templates/*.j2    # minijinja templates
     │   └── parser.rs         # container.toml → ContainerSpec
     ├── registry/
-    │   └── mod.rs            # push/pull/retention（skopeo ラッパー）
+    │   └── mod.rs            # push/pull/retention (skopeo wrapper)
     ├── updater/
-    │   └── mod.rs            # 差分更新 / 自動リビルド
+    │   └── mod.rs            # Differential update / automatic rebuild
     ├── provisioner/
-    │   └── mod.rs            # [tools.*] → インストールコマンド翻訳
+    │   └── mod.rs            # [tools.*] → install command translation
     ├── tool_updater/
-    │   └── mod.rs            # バージョン検出・semver マッチ
+    │   └── mod.rs            # Version detection / semver matching
     ├── signer/
-    │   └── mod.rs            # cosign ラッパー
+    │   └── mod.rs            # cosign wrapper
     ├── sbom/
-    │   └── mod.rs            # syft / grype ラッパー
-    └── observability.rs      # メトリクス送信
+    │   └── mod.rs            # syft / grype wrapper
+    └── observability.rs      # Metrics dispatch
 ```
 
 ---
 
-## 7. ローカル実行との混在可能性
+## 7. Mixed Local and Container Execution
 
-コンテナ実行とローカル実行はツールごとに混在可能である（例: Vivado はコンテナ、KiCad はローカル）。ローカルに直接インストールされたツールは adapter 経由でローカル実行パスを直接呼び出す。いずれを選択しても fpga.lock / asic.lock による再現性を保証する。
+Container execution and local execution can be mixed per tool (e.g., Vivado in a container, KiCad locally). Locally installed tools are called directly via adapters through local execution paths. Whichever is chosen, reproducibility via fpga.lock / asic.lock is guaranteed.
 
 ---
 
-## 関連ドキュメント
+## Related Documentation
 
-- [セキュリティ](security.md) — コンテナセキュリティ（rootless / ネットワーク隔離 / 権限昇格防止 / 成果物署名 / API キー保護）
-- [アーキテクチャ概要](architecture_overview.md) — 全体アーキテクチャにおけるコンテナ層の位置づけ
-- [共有サービス](shared_services.md) — Observability によるメトリクス監視
-- `.hestia/doc/container/container_manager.md` — container-manager 詳細仕様
-- `.hestia/doc/container/security_hardening.md` — コンテナセキュリティ強化の詳細
-- `.hestia/doc/container/vivado_container.md` — Vivado コンテナ詳細
-- `.hestia/doc/container/quartus_container.md` — Quartus コンテナ詳細
-- `.hestia/doc/container/efinity_container.md` — Efinity コンテナ詳細
-- `.hestia/doc/container/radiant_container.md` — Radiant コンテナ詳細
-- `.hestia/doc/container/oss_container.md` — OSS コンテナ詳細
+- [Security](security.md) — Container security (rootless / network isolation / privilege escalation prevention / artifact signing / API key protection)
+- [Architecture Overview](architecture_overview.md) — Position of the container layer in the overall architecture
+- [Shared Services](shared_services.md) — Observability-based metric monitoring
+- `.hestia/doc/container/container_manager.md` — container-manager detailed specification
+- `.hestia/doc/container/security_hardening.md` — Container security hardening details
+- `.hestia/doc/container/vivado_container.md` — Vivado container details
+- `.hestia/doc/container/quartus_container.md` — Quartus container details
+- `.hestia/doc/container/efinity_container.md` — Efinity container details
+- `.hestia/doc/container/radiant_container.md` — Radiant container details
+- `.hestia/doc/container/oss_container.md` — OSS container details

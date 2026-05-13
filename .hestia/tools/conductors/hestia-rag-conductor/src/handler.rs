@@ -1,10 +1,10 @@
-//! RAG Conductor メッセージハンドラ
+//! RAG Conductor message handler
 
 use conductor_sdk::message::{ErrorResultResponse, Request, Response, SuccessResponse};
 use conductor_sdk::server::MessageHandler;
 use conductor_sdk::error::ErrorResponse;
 
-/// RAG Conductor メッセージハンドラ
+/// RAG Conductor message handler
 pub struct RagHandler;
 
 #[async_trait::async_trait]
@@ -74,13 +74,13 @@ impl RagHandler {
         }))
     }
 
-    /// Phase 58 — `rag.design.v1`: ナレッジベース構造設計依頼を rag-designer に dispatch。
+    /// Phase 58 — `rag.design.v1`: Dispatch knowledge base structure design request to rag-designer.
     async fn handle_design(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let instruction = params.get("instruction").and_then(|v| v.as_str()).unwrap_or("");
         let designer_peer = "rag-designer";
         let designer_alive = conductor_sdk::workspace::agent_cli_peer_alive(designer_peer);
         let expected_artifacts = vec!["rag/index_schema.json", "rag/ingest_plan.json"];
-        // Phase 84f — strict mode: designer 不在時は fallback ではなく halt
+        // Phase 84f — strict mode: halt instead of fallback when designer is absent
         if !designer_alive && conductor_sdk::workspace::strict_subagent_enabled() {
             return Ok(serde_json::json!({
                 "status": "subagent_unavailable",
@@ -91,7 +91,7 @@ impl RagHandler {
                 "halted_reason": "subagent_spawn_failure",
                 "expected_artifacts": expected_artifacts,
                 "instruction": instruction,
-                "note": "HESTIA_STRICT_SUBAGENT=1: rag-designer が registry 不在のため halt。`hestia start` ログ確認 + `agent-cli list` で resident sub-agent 登録状態を調査してください。",
+                "note": "HESTIA_STRICT_SUBAGENT=1: rag-designer is not in the registry, halting. Check `hestia start` logs and `agent-cli list` for resident sub-agent registration status.",
             }));
         }
         if designer_alive {
@@ -123,7 +123,7 @@ impl RagHandler {
         }
     }
 
-    /// Phase 60b — `rag.dispatch_ingest.v1`: rag-ingest-{source} 動的並列起動。
+    /// Phase 60b — `rag.dispatch_ingest.v1`: Dynamic parallel spawn of rag-ingest-{source}.
     async fn handle_dispatch_ingest(params: serde_json::Value) -> Result<serde_json::Value, String> {
         let sources: Vec<String> = params.get("sources")
             .and_then(|v| v.as_array())
@@ -156,7 +156,7 @@ impl RagHandler {
                 dispatched_all = false;
             }
         }
-        // Phase 80: dispatch 完了後に ai-reviewer auto-spawn
+        // Phase 80: Auto-spawn ai-reviewer after dispatch completes
         let auto_review_dispatched = conductor_sdk::workspace::auto_review_after_dispatch(
             "rag", "rag.dispatch_ingest.v1", spawned.len(),
         );

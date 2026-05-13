@@ -1,40 +1,40 @@
-# pcb-conductor CLI バイナリ仕様
+# pcb-conductor CLI Binary Specification
 
-**対象 Conductor**: pcb-conductor
-**ソース**: 設計仕様書 §15（3631-3730行目付近）, §7（1982-2174行目付近）
+**Target Conductor**: pcb-conductor
+**Source**: Design specification §15 (around lines 3631-3730), §7 (around lines 1982-2174)
 
-## バイナリ名
+## Binary Name
 
 `hestia-pcb-cli`
 
-## サブコマンド一覧
+## Subcommand List
 
-| サブコマンド | 説明 |
-|-------------|------|
-| `init` | pcb.toml テンプレート生成 |
-| `build` | PCB ビルドフロー全体実行（要件パース→BOM→回路図合成→検証→配置→配線→出力） |
-| `ai-synthesize` | AI 駆動回路図合成実行（LLM コア） |
-| `output kicad` | KiCad 形式出力 |
-| `output gerber` | ガーバーファイル出力 |
-| `output bom` | BOM（部品表）出力 |
-| `drc` | DRC（デザインルールチェック）実行 |
-| `erc` | ERC（電気ルールチェック）実行 |
-| `status` | ビルド状態・ジョブ状況表示 |
+| Subcommand | Description |
+|------------|-------------|
+| `init` | Generate pcb.toml template |
+| `build` | Execute full PCB build flow (requirements parse → BOM → schematic synthesis → verification → placement → routing → output) |
+| `ai-synthesize` | Execute AI-driven schematic synthesis (LLM core) |
+| `output kicad` | Output in KiCad format |
+| `output gerber` | Output Gerber files |
+| `output bom` | Output BOM (bill of materials) |
+| `drc` | Run DRC (design rule check) |
+| `erc` | Run ERC (electrical rule check) |
+| `status` | Show build status and job progress |
 
-## 共通オプション（CommonOpts）
+## Common Options (CommonOpts)
 
-| オプション | 値 | 説明 |
-|-----------|---|------|
-| `--output` | `human` \| `json` | 出力フォーマット（既定: human） |
-| `--timeout` | `<秒>` | RPC タイムアウト |
-| `--registry` | `<path>` | agent-cli レジストリパス |
-| `--config` | `<path>` | 設定ファイルパス |
-| `--verbose` | — | 詳細ログ出力 |
+| Option | Value | Description |
+|--------|-------|-------------|
+| `--output` | `human` \| `json` | Output format (default: human) |
+| `--timeout` | `<seconds>` | RPC timeout |
+| `--registry` | `<path>` | agent-cli registry path |
+| `--config` | `<path>` | Configuration file path |
+| `--verbose` | — | Enable verbose logging |
 
-## Exit Code
+## Exit Codes
 
-| Exit Code | 意味 |
-|-----------|------|
+| Exit Code | Meaning |
+|-----------|---------|
 | 0 | SUCCESS |
 | 1 | GENERAL_ERROR |
 | 2 | RPC_ERROR |
@@ -45,30 +45,30 @@
 | 7 | SOCKET_NOT_FOUND |
 | 8 | PERMISSION_DENIED |
 
-## CLI 使用例
+## CLI Usage Examples
 
 ```bash
-# 初期化
+# Initialize
 hestia pcb init
 
-# AI 駆動回路図合成
-hestia pcb ai-synthesize --spec "STM32F103 + BME280 温湿度センサボード"
+# AI-driven schematic synthesis
+hestia pcb ai-synthesize --spec "STM32F103 + BME280 temperature/humidity sensor board"
 
-# DRC / ERC 実行
+# Run DRC / ERC
 hestia pcb drc
 hestia pcb erc
 
-# ガーバー出力
+# Gerber output
 hestia pcb output gerber
 ```
 
-## CLI アーキテクチャ
+## CLI Architecture
 
-Rust 製クライアントバイナリ（`tokio` + `serde` + `clap`）。pcb-conductor の agent-cli peer（peer 名 `pcb`）に対して agent-cli ネイティブ IPC で接続する。
+Rust-based client binary (`tokio` + `serde` + `clap`). Connects to the pcb-conductor agent-cli peer (peer name `pcb`) via agent-cli native IPC.
 
-## 関連ドキュメント
+## Related Documentation
 
-- [pcb/config_schema.md](config_schema.md) — pcb.toml 設定スキーマ
-- [pcb/message_methods.md](message_methods.md) — pcb.* メソッド一覧
-- [pcb/state_machines.md](state_machines.md) — PCB ビルドステップ
-- [pcb/tool_adapter.md](tool_adapter.md) — AI 駆動回路図設計 / KiCad アダプター
+- [pcb/config_schema.md](config_schema.md) — pcb.toml configuration schema
+- [pcb/message_methods.md](message_methods.md) — pcb.* method list
+- [pcb/state_machines.md](state_machines.md) — PCB build steps
+- [pcb/tool_adapter.md](tool_adapter.md) — AI-driven schematic design / KiCad adapter

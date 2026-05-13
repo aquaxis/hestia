@@ -1,65 +1,65 @@
-# 設定ファイル管理
+# Configuration File Management
 
-**対象領域**: common — 設定管理
-**ソース**: 設計仕様書 §18.9, §13.7.6, §19.3.5
+**Domain**: common — Configuration Management
+**Source**: Design Specification §18.9, §13.7.6, §19.3.5
 
-## 概要
+## Overview
 
-HESTIA では各種設定ファイル（`config.toml` / `fpga.toml` / `container.toml` / `sources.toml` 等）を `inotify` で監視し、変更検知時にホットリロードを行う。これにより、conductor の再起動なしで設定変更を反映できる。
+HESTIA monitors various configuration files (`config.toml` / `fpga.toml` / `container.toml` / `sources.toml`, etc.) using `inotify` and performs hot reload upon change detection. This allows configuration changes to be reflected without restarting conductors.
 
-## inotify 変更検知
+## inotify Change Detection
 
-### 監視対象
+### Monitored Paths
 
-| パス | 監視内容 |
+| Path | Monitored Content |
 |------|---------|
-| `.hestia/config.toml` | グローバル設定（agent_cli / health 等）|
-| `.hestia/<conductor>/*.toml` | conductor 固有設定 |
-| `.hestia/rag/sources.toml` | RAG ソース宣言 |
-| `.hestia/rag/sources/` | RAG ソースファイル（PDF / Web）|
+| `.hestia/config.toml` | Global settings (agent_cli / health, etc.)|
+| `.hestia/<conductor>/*.toml` | Conductor-specific settings |
+| `.hestia/rag/sources.toml` | RAG source declarations |
+| `.hestia/rag/sources/` | RAG source files (PDF / Web)|
 
-### 検知フロー
+### Detection Flow
 
 ```
-[inotify watch] → ファイル変更検知 → SHA-256 ハッシュ比較 → 差分あり →
-  ├── 設定再読込（HestiaConfig::from_toml_file）
-  ├── 変更差分を構造化ログに記録
-  └── 影響を受ける conductor への設定反映通知
+[inotify watch] -> File change detected -> SHA-256 hash comparison -> Diff exists ->
+  +-- Configuration reload (HestiaConfig::from_toml_file)
+  +-- Change diff recorded in structured log
+  +-- Configuration update notification to affected conductors
 ```
 
-## ホットリロード
+## Hot Reload
 
-### リロード可能な設定項目
+### Reloadable Configuration Items
 
-| 項目 | リロード可否 | 備考 |
+| Item | Reloadable | Notes |
 |------|------------|------|
-| `[health] interval_secs` | 可能 | 次回ヘルスチェック周期から反映 |
-| `[rag] top_k / chunk_size` | 可能 | 次回インジェストから反映 |
-| `[agent_cli] model / max_tokens` | 可能 | 次回 agent-cli 子プロセス起動から反映 |
-| `[agent_cli] backend` | 要再起動 | バックエンド切替はプロセス再起動が必要 |
-| `[build]` ターゲット変更 | 可能 | 実行中ジョブには影響なし |
+| `[health] interval_secs` | Yes | Reflected from next health check cycle |
+| `[rag] top_k / chunk_size` | Yes | Reflected from next ingest |
+| `[agent_cli] model / max_tokens` | Yes | Reflected from next agent-cli subprocess startup |
+| `[agent_cli] backend` | Requires restart | Backend switching requires process restart |
+| `[build]` target changes | Yes | No impact on running jobs |
 
-### リロード不可の設定項目
+### Non-reloadable Configuration Items
 
-- `[agent_cli] backend` — プロセス再起動が必要
-- `[container]` — コンテナイメージの再ビルドが必要
-- ポート番号・ソケットパス — プロセス再起動が必要
+- `[agent_cli] backend` — Process restart required
+- `[container]` — Container image rebuild required
+- Port numbers / socket paths — Process restart required
 
-## cron / inotify スケジューリング
+## cron / inotify Scheduling
 
-RAG ソースの自動更新は以下のトリガで発火:
+RAG source auto-updates trigger on:
 
-1. **cron**: `0 3 * * *`（毎日 03:00 UTC、既定）
-2. **ファイル変更**: `.hestia/rag/sources/` の `inotify` / `fswatch` 監視
-3. **手動**: `hestia rag ingest --source-id <id>`
+1. **cron**: `0 3 * * *` (daily at 03:00 UTC, default)
+2. **File change**: `inotify` / `fswatch` monitoring of `.hestia/rag/sources/`
+3. **Manual**: `hestia rag ingest --source-id <id>`
 
-## 実装クレート
+## Implementation Crates
 
-- `configuration_management` — inotify ラッパー（`inotify` クレート、LGPL）
-- `project-model` — TOML パーサー・設定モデル（`serde` + `toml`）
+- `configuration_management` — inotify wrapper (`inotify` crate, LGPL)
+- `project-model` — TOML parser and configuration model (`serde` + `toml`)
 
-## 関連ドキュメント
+## Related Documents
 
-- [config_common.md](config_common.md) — 共通設定セクション
-- [backend_switching.md](backend_switching.md) — LLM バックエンド切替
-- [observability.md](observability.md) — 監視・ログ
+- [config_common.md](config_common.md) — Common configuration sections
+- [backend_switching.md](backend_switching.md) — LLM backend switching
+- [observability.md](observability.md) — Monitoring and logging

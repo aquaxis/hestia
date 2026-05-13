@@ -1,56 +1,56 @@
-# UI コンポーネントライブラリ
+# UI Component Library
 
-**対象領域**: frontend — UI デザインシステム
-**ソース**: 設計仕様書 §16.3
+**Target Domain**: frontend — UI design system
+**Source**: Design Specification §16.3
 
-## 概要
+## Overview
 
-`hestia-ui`（React + TypeScript）として独立配布される UI コンポーネントライブラリ。VSCode 拡張と Tauri デスクトップアプリで共通利用する。
+A standalone UI component library distributed as `hestia-ui` (React + TypeScript). Shared between the VSCode extension and the Tauri desktop app.
 
-## コンポーネント一覧
+## Component List
 
-| コンポーネント | 用途 |
-|-------------|------|
-| `ConductorStatusCard` | 各 conductor のステータス表示（Online / Offline / Degraded / Upgrading）|
-| `AgentList` | サブエージェント一覧表示・起動・終了操作 |
-| `SpecViewer` | 仕様書（DesignSpec）の構造化表示・編集 |
-| `LogViewer` | 構造化ログのリアルタイムストリーム表示 |
-| `WaveformViewer` | VCD / FST / GHW / EVCD 波形表示（WASM レンダリング）|
-| `ConfigPanel` | 設定（config.toml / fpga.toml 等）のフォーム編集 |
-| `TaskProgress` | ビルド / ワークフロータスクの進捗表示 |
+| Component | Purpose |
+|-----------|---------|
+| `ConductorStatusCard` | Display status for each conductor (Online / Offline / Degraded / Upgrading) |
+| `AgentList` | List, start, and stop sub-agents |
+| `SpecViewer` | Structured display and editing of specifications (DesignSpec) |
+| `LogViewer` | Real-time streaming display of structured logs |
+| `WaveformViewer` | VCD / FST / GHW / EVCD waveform display (WASM rendering) |
+| `ConfigPanel` | Form-based editing of configuration files (config.toml, fpga.toml, etc.) |
+| `TaskProgress` | Progress display for build / workflow tasks |
 
-## デザインシステム
+## Design System
 
-### ブランド色
+### Brand Colors
 
-| 色 | コード | 用途 |
-|----|-------|------|
-| プライマリ（akane） | `#e84d2c` | アクション・アクセント |
-| セカンダリ（deep green） | `#2d8f5e` | 成功・肯定 |
+| Color | Code | Purpose |
+|-------|------|---------|
+| Primary (akane) | `#e84d2c` | Actions and accents |
+| Secondary (deep green) | `#2d8f5e` | Success and affirmation |
 
-### 機能色
+### Functional Colors
 
-| 色 | 用途 |
-|----|------|
-| success | 成功・完了 |
-| warning | 警告 |
-| error | エラー・失敗 |
-| info | 情報通知 |
+| Color | Purpose |
+|-------|---------|
+| success | Success and completion |
+| warning | Warnings |
+| error | Errors and failures |
+| info | Informational notices |
 
-## テーマ追従
+## Theme Adaptation
 
-VSCode / Tauri のテーマ変数に追従し、ダーク / ライトテーマに自動対応:
+Follows VSCode / Tauri theme variables, automatically adapting to dark / light themes:
 
-- VSCode: `--vscode-editor-background` / `--vscode-list-hoverBackground` 等
-- Tauri: Tauri テーマ変数経由で OS テーマに追従
+- VSCode: `--vscode-editor-background` / `--vscode-list-hoverBackground`, etc.
+- Tauri: Follows OS theme via Tauri theme variables
 
-## 配布形式
+## Distribution
 
-- npm パッケージ: `hestia-ui`
-- VSCode 拡張と Tauri アプリの両方で同一コンポーネントを import
+- npm package: `hestia-ui`
+- Both VSCode extension and Tauri app import the same components
 
-## 関連ドキュメント
+## Related Documentation
 
-- [vscode_extension.md](vscode_extension.md) — VSCode 拡張
-- [tauri_ide.md](tauri_ide.md) — Tauri デスクトップアプリ
-- [wasm_waveform_viewer.md](../common/wasm_waveform_viewer.md) — WASM 波形ビューア
+- [vscode_extension.md](vscode_extension.md) — VSCode extension
+- [tauri_ide.md](tauri_ide.md) — Tauri desktop app
+- [wasm_waveform_viewer.md](../common/wasm_waveform_viewer.md) — WASM waveform viewer

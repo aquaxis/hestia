@@ -1,9 +1,9 @@
-# apps-conductor 主要ツールチェーンアダプター
+# apps-conductor Main Toolchain Adapters
 
-**対象 Conductor**: apps-conductor
-**ソース**: 設計仕様書 §9.5（2356-2369行目付近）
+**Target Conductor**: apps-conductor
+**Source**: Design specification §9.5 (around lines 2356-2369)
 
-## AppsToolAdapter トレイト
+## AppsToolAdapter Trait
 
 ```rust
 #[async_trait]
@@ -19,59 +19,59 @@ pub trait AppsToolAdapter: Send + Sync {
 }
 ```
 
-## 主要アダプター一覧
+## Main Adapter List
 
-### クロスコンパイラ
+### Cross-Compilers
 
-| アダプター | 役割 | 対象言語 | 対象アーキテクチャ |
-|----------|------|---------|------------------|
-| `arm-gcc` | ARM Cortex-M ビルド | C / C++ | arm-cortex-m |
-| `riscv-gcc` | RISC-V ビルド | C / C++ | riscv32imac |
-| `cargo-embed` | Rust 組み込みビルド | Rust | arm / riscv |
-| `cargo-binutils` | バイナリサイズ解析 | Rust | 全アーキテクチャ |
+| Adapter | Role | Target Language | Target Architecture |
+|----------|------|----------------|--------------------|
+| `arm-gcc` | ARM Cortex-M build | C / C++ | arm-cortex-m |
+| `riscv-gcc` | RISC-V build | C / C++ | riscv32imac |
+| `cargo-embed` | Rust embedded build | Rust | arm / riscv |
+| `cargo-binutils` | Binary size analysis | Rust | All architectures |
 
-### RTOS ビルド
+### RTOS Build
 
-| アダプター | 役割 | 対象言語 | 対象 RTOS |
-|----------|------|---------|----------|
-| `west-zephyr` | Zephyr RTOS ビルド | C | Zephyr |
-| `freertos-builder` | FreeRTOS 統合 | C / C++ | FreeRTOS |
-| `embassy-builder` | embassy-rs（async Rust）ビルド | Rust | Embassy |
+| Adapter | Role | Target Language | Target RTOS |
+|----------|------|----------------|------------|
+| `west-zephyr` | Zephyr RTOS build | C | Zephyr |
+| `freertos-builder` | FreeRTOS integration | C / C++ | FreeRTOS |
+| `embassy-builder` | embassy-rs (async Rust) build | Rust | Embassy |
 
-### テスト・デバッグ
+### Testing and Debugging
 
-| アダプター | 役割 | 対象言語 | 説明 |
-|----------|------|---------|------|
-| `qemu-system` | QEMU SIL テスト | C / C++ / Rust | エミュレーションベーステスト |
-| `probe-rs` | フラッシュ書込 / RTT ログ | Rust | Rust エコシステムのプローブツール |
-| `openocd-bridge` | OpenOCD 連携 | C / C++ | debug-conductor 経由で使用 |
+| Adapter | Role | Target Language | Description |
+|----------|------|----------------|-------------|
+| `qemu-system` | QEMU SIL testing | C / C++ / Rust | Emulation-based testing |
+| `probe-rs` | Flash writing / RTT logging | Rust | Probe tool from the Rust ecosystem |
+| `openocd-bridge` | OpenOCD integration | C / C++ | Used via debug-conductor |
 
-## クレート構成
+## Crate Structure
 
 ```
 crates/apps-conductor/
 ├── src/
-│   ├── lib.rs              # Conductor 本体
-│   ├── adapter.rs          # AppsToolAdapter トレイト
-│   ├── toolchain.rs        # クロスコンパイラ管理
-│   ├── rtos.rs             # RTOS 統合
-│   ├── linker.rs           # リンカスクリプト管理
-│   ├── target.rs           # ターゲット定義
-│   ├── hil.rs              # HIL / SIL テスト統合
-│   └── fsm_states.rs       # ビルドステートマシン
+│   ├── lib.rs              # Conductor main body
+│   ├── adapter.rs          # AppsToolAdapter trait
+│   ├── toolchain.rs        # Cross-compiler management
+│   ├── rtos.rs             # RTOS integration
+│   ├── linker.rs           # Linker script management
+│   ├── target.rs           # Target definition
+│   ├── hil.rs              # HIL / SIL test integration
+│   └── fsm_states.rs       # Build state machine
 ```
 
-## TargetArch 対応一覧
+## TargetArch Support List
 
-| アーキテクチャ | 識別子 | 説明 |
-|-------------|--------|------|
-| ARM Cortex-M | `arm-cortex-m` | STM32 / nRF / LPC 等 |
-| RISC-V 32bit | `riscv32imac` | SiFive / ESP32-C 等 |
+| Architecture | Identifier | Description |
+|-------------|-----------|-------------|
+| ARM Cortex-M | `arm-cortex-m` | STM32 / nRF / LPC, etc. |
+| RISC-V 32bit | `riscv32imac` | SiFive / ESP32-C, etc. |
 | Xtensa ESP32 | `xtensa-esp32` | ESP32 / ESP32-S2 / S3 |
 
-## 関連ドキュメント
+## Related Documentation
 
-- [apps/binary_spec.md](binary_spec.md) — hestia-apps-cli バイナリ仕様
-- [apps/rtos.md](rtos.md) — RTOS サポート
-- [apps/hil_sil.md](hil_sil.md) — HIL/SIL テスト
-- [apps/config_schema.md](config_schema.md) — apps.toml スキーマ
+- [apps/binary_spec.md](binary_spec.md) — hestia-apps-cli binary specification
+- [apps/rtos.md](rtos.md) — RTOS support
+- [apps/hil_sil.md](hil_sil.md) — HIL/SIL testing
+- [apps/config_schema.md](config_schema.md) — apps.toml schema

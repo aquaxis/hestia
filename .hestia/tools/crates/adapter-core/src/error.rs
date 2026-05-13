@@ -1,8 +1,8 @@
-//! AdapterError — アダプターエラー型
+//! AdapterError — Adapter error type
 
 use thiserror::Error;
 
-/// アダプターエラー
+/// Adapter error
 #[derive(Debug, Error)]
 pub enum AdapterError {
     #[error("Tool not found: {0}")]

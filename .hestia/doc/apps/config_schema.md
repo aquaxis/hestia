@@ -1,69 +1,69 @@
-# apps-conductor 設定スキーマ
+# apps-conductor Configuration Schema
 
-**対象 Conductor**: apps-conductor
-**ソース**: 設計仕様書 §9.4（2325-2354行目付近）
+**Target Conductor**: apps-conductor
+**Source**: Design specification §9.4 (around lines 2325-2354)
 
-## apps.toml — 統一プロジェクトフォーマット
+## apps.toml — Unified Project Format
 
-アプリケーションファームウェアプロジェクトの設定・ツールチェーン・RTOS・メモリレイアウト・HAL 連携・テスト設定を宣言的に定義するファイル。
+A file that declaratively defines the configuration, toolchain, RTOS, memory layout, HAL integration, and test settings for an application firmware project.
 
-### セクション一覧
+### Sections
 
-| セクション | 必須 | 説明 |
-|-----------|------|------|
-| `[project]` | 必須 | プロジェクト基本設定 |
-| `[toolchain]` | 必須 | コンパイラ・バージョン指定 |
-| `[rtos]` | 任意 | RTOS カーネル・バージョン |
-| `[memory]` | 必須 | メモリレイアウト（Flash / RAM） |
-| `[hal]` | 任意 | HAL モジュールの import |
-| `[test]` | 任意 | テストモード・プローブ設定 |
+| Section | Required | Description |
+|-----------|----------|------------|
+| `[project]` | Required | Project basic configuration |
+| `[toolchain]` | Required | Compiler and version specification |
+| `[rtos]` | Optional | RTOS kernel and version |
+| `[memory]` | Required | Memory layout (Flash / RAM) |
+| `[hal]` | Optional | HAL module import |
+| `[test]` | Optional | Test mode and probe settings |
 
-### `[project]` セクション
+### `[project]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `name` | string | プロジェクト名 |
-| `language` | string | 言語（`c` / `cpp` / `rust`） |
-| `target` | string | ターゲットトリプル（例: `thumbv7em-none-eabihf`） |
+| Field | Type | Description |
+|-----------|---|------------|
+| `name` | string | Project name |
+| `language` | string | Language (`c` / `cpp` / `rust`) |
+| `target` | string | Target triple (e.g., `thumbv7em-none-eabihf`) |
 
-### `[toolchain]` セクション
+### `[toolchain]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `compiler` | string | コンパイラ（`arm-none-eabi-gcc` / `riscv32-unknown-elf-gcc` / `cargo`） |
-| `version` | string | バージョン |
+| Field | Type | Description |
+|-----------|---|------------|
+| `compiler` | string | Compiler (`arm-none-eabi-gcc` / `riscv32-unknown-elf-gcc` / `cargo`) |
+| `version` | string | Version |
 
-### `[rtos]` セクション
+### `[rtos]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `kernel` | string | RTOS カーネル（`freertos` / `zephyr` / `embassy-rs` / `bare-metal`） |
-| `version` | string | RTOS バージョン |
+| Field | Type | Description |
+|-----------|---|------------|
+| `kernel` | string | RTOS kernel (`freertos` / `zephyr` / `embassy-rs` / `bare-metal`) |
+| `version` | string | RTOS version |
 
-### `[memory]` セクション
+### `[memory]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `flash_origin` | integer | Flash 開始アドレス |
-| `flash_length` | string | Flash サイズ（例: `256K`） |
-| `ram_origin` | integer | RAM 開始アドレス |
-| `ram_length` | string | RAM サイズ（例: `64K`） |
-| `linker_script` | string | リンカスクリプトパス |
+| Field | Type | Description |
+|-----------|---|------------|
+| `flash_origin` | integer | Flash start address |
+| `flash_length` | string | Flash size (e.g., `256K`) |
+| `ram_origin` | integer | RAM start address |
+| `ram_length` | string | RAM size (e.g., `64K`) |
+| `linker_script` | string | Linker script path |
 
-### `[hal]` セクション
+### `[hal]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `import` | string | hal-conductor（§8）の生成物 import パス |
+| Field | Type | Description |
+|-----------|---|------------|
+| `import` | string | Import path for hal-conductor (§8) output |
 
-### `[test]` セクション
+### `[test]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `mode` | string | テストモード（`sil` / `hil` / `qemu`） |
-| `probe` | string | デバッグプローブ（`stlink-v3` 等、debug-conductor §10 経由） |
+| Field | Type | Description |
+|-----------|---|------------|
+| `mode` | string | Test mode (`sil` / `hil` / `qemu`) |
+| `probe` | string | Debug probe (e.g., `stlink-v3`, via debug-conductor §10) |
 
-### 設定例
+### Configuration Example
 
 ```toml
 [project]
@@ -94,9 +94,9 @@ mode  = "hil"
 probe = "stlink-v3"
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [apps/binary_spec.md](binary_spec.md) — hestia-apps-cli バイナリ仕様
-- [apps/toolchain.md](toolchain.md) — 主要アダプター
-- [apps/rtos.md](rtos.md) — RTOS サポート
-- [../hal/config_schema.md](../hal/config_schema.md) — hal.toml スキーマ
+- [apps/binary_spec.md](binary_spec.md) — hestia-apps-cli binary specification
+- [apps/toolchain.md](toolchain.md) — Main adapters
+- [apps/rtos.md](rtos.md) — RTOS support
+- [../hal/config_schema.md](../hal/config_schema.md) — hal.toml schema

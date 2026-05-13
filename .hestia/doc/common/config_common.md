@@ -1,100 +1,100 @@
-# Conductor 共通設定セクション
+# Conductor Common Configuration Sections
 
-**対象領域**: common — 設定
-**ソース**: 設計仕様書 §3.8, §13.7.6, §20.2
+**Domain**: common — Configuration
+**Source**: Design Specification §3.8, §13.7.6, §20.2
 
-## 概要
+## Overview
 
-各 conductor の TOML 設定ファイル（`fpga.toml` / `asic.toml` / `pcb.toml` 等）には、共通するセクションが定義されている。本ドキュメントは共通セクションのスキーマと意味を規定する。
+Each conductor's TOML configuration file (`fpga.toml` / `asic.toml` / `pcb.toml`, etc.) defines common sections. This document specifies the schema and semantics of these common sections.
 
-## 共通セクション一覧
+## Common Sections
 
 ### `[project]`
 
-プロジェクト基本情報。
+Basic project information.
 
-| キー | 型 | 必須 | 説明 |
+| Key | Type | Required | Description |
 |------|----|------|------|
-| `name` | string | 必須 | プロジェクト名 |
-| `version` | string | 必須 | プロジェクトバージョン |
-| `description` | string | 任意 | プロジェクト概要 |
+| `name` | string | Required | Project name |
+| `version` | string | Required | Project version |
+| `description` | string | Optional | Project description |
 
 ### `[adapters]`
 
-使用するツールアダプターの宣言。
+Declaration of tool adapters to use.
 
-| キー | 型 | 必須 | 説明 |
+| Key | Type | Required | Description |
 |------|----|------|------|
-| `active` | string[] | 必須 | 使用するアダプター名のリスト |
-| `search_paths` | string[] | 任意 | adapter.toml 検索パス |
+| `active` | string[] | Required | List of adapter names to use |
+| `search_paths` | string[] | Optional | adapter.toml search paths |
 
 ### `[build]`
 
-ビルド設定。
+Build settings.
 
-| キー | 型 | 必須 | 説明 |
+| Key | Type | Required | Description |
 |------|----|------|------|
-| `targets` | table[] | 必須 | ビルドターゲット定義 |
-| `steps` | string[] | 任意 | ビルドステップ順序 |
-| `timeout_secs` | int | 任意 | ビルドタイムアウト（既定 3600）|
-| `max_parallel` | int | 任意 | 最大並列数（既定 4）|
+| `targets` | table[] | Required | Build target definitions |
+| `steps` | string[] | Optional | Build step order |
+| `timeout_secs` | int | Optional | Build timeout (default 3600)|
+| `max_parallel` | int | Optional | Maximum parallelism (default 4)|
 
 ### `[container]`
 
-コンテナ実行設定（コンテナ実行を選択した場合のみ）。
+Container execution settings (only when container execution is selected).
 
-| キー | 型 | 必須 | 説明 |
+| Key | Type | Required | Description |
 |------|----|------|------|
-| `name` | string | 必須 | コンテナ名 |
-| `base_image` | string | 必須 | ベースイメージ |
-| `conductor` | string | 必須 | 対象 conductor |
+| `name` | string | Required | Container name |
+| `base_image` | string | Required | Base image |
+| `conductor` | string | Required | Target conductor |
 
 ### `[health]`
 
-ヘルスチェック設定。
+Health check settings.
 
-| キー | 型 | 既定 | 説明 |
+| Key | Type | Default | Description |
 |------|----|------|------|
-| `cmd` | string | — | ローカル実行モードでの簡易確認コマンド |
-| `interval_secs` | int | 30 | ポーリング間隔 |
-| `timeout_secs` | int | 3 | 1 回の応答タイムアウト |
-| `max_retries` | int | 3 | 失敗時の連続リトライ回数 |
-| `escalate_on_fail` | bool | true | 連続失敗時にフロントエンドへ通知 |
-| `restart_on_fail` | bool | true | 自動再起動試行 |
+| `cmd` | string | — | Quick verification command in local execution mode |
+| `interval_secs` | int | 30 | Polling interval |
+| `timeout_secs` | int | 3 | Single response timeout |
+| `max_retries` | int | 3 | Consecutive retry count on failure |
+| `escalate_on_fail` | bool | true | Notify frontend on consecutive failures |
+| `restart_on_fail` | bool | true | Automatic restart attempt |
 
 ### `[agent_cli]`
 
-agent-cli バックエンド設定（§20 参照）。
+agent-cli backend settings (see §20).
 
-| キー | 型 | 既定 | 説明 |
+| Key | Type | Default | Description |
 |------|----|------|------|
-| `backend` | string | `"claude"` | LLM バックエンド種別 |
-| `binary_path` | string | `""` | agent-cli バイナリパス |
-| `anthropic_base_url` | string | `""` | OpenAI 互換 API エンドポイント |
-| `anthropic_api_key_env` | string | `"ANTHROPIC_API_KEY"` | API キー環境変数名 |
-| `model` | string | `"claude-opus-4-7"` | LLM モデル名 |
-| `max_tokens` | int | 4096 | 応答上限トークン数 |
-| `registry_dir` | string | `""` | IPC レジストリディレクトリ |
+| `backend` | string | `"claude"` | LLM backend type |
+| `binary_path` | string | `""` | agent-cli binary path |
+| `anthropic_base_url` | string | `""` | OpenAI-compatible API endpoint |
+| `anthropic_api_key_env` | string | `"ANTHROPIC_API_KEY"` | API key environment variable name |
+| `model` | string | `"claude-opus-4-7"` | LLM model name |
+| `max_tokens` | int | 4096 | Response token limit |
+| `registry_dir` | string | `""` | IPC registry directory |
 
 ### `[rag]`
 
-RAG 設定（rag-conductor 用）。
+RAG settings (for rag-conductor).
 
-| キー | 型 | 既定 | 説明 |
+| Key | Type | Default | Description |
 |------|----|------|------|
-| `backend` | string | `"chroma"` | ベクトル DB バックエンド |
-| `embedding_model` | string | `"nomic-embed-text"` | 埋め込みモデル |
-| `top_k` | int | 5 | 検索上位件数 |
-| `chunk_size` | int | 1000 | チャンクサイズ |
-| `chunk_overlap` | int | 200 | チャンクオーバーラップ |
-| `self_learning_enabled` | bool | true | 自己学習機能 ON/OFF |
+| `backend` | string | `"chroma"` | Vector DB backend |
+| `embedding_model` | string | `"nomic-embed-text"` | Embedding model |
+| `top_k` | int | 5 | Number of top search results |
+| `chunk_size` | int | 1000 | Chunk size |
+| `chunk_overlap` | int | 200 | Chunk overlap |
+| `self_learning_enabled` | bool | true | Self-learning feature ON/OFF |
 
-## TOML パーサー
+## TOML Parser
 
-共通パーサーは `project-model` クレートに実装され、各 conductor が利用する。`serde` によるデシリアライズで `#[serde(default)]` を活用し、各キー個別に省略可能。
+The common parser is implemented in the `project-model` crate and used by each conductor. It leverages `serde` deserialization with `#[serde(default)]` to make each key individually optional.
 
-## 関連ドキュメント
+## Related Documents
 
-- [configuration_management.md](configuration_management.md) — 設定ファイル管理（ホットリロード）
-- [backend_switching.md](backend_switching.md) — LLM バックエンド切替
-- [health_check_orchestration.md](health_check_orchestration.md) — ヘルスチェック
+- [configuration_management.md](configuration_management.md) — Configuration file management (hot reload)
+- [backend_switching.md](backend_switching.md) — LLM backend switching
+- [health_check_orchestration.md](health_check_orchestration.md) — Health checks

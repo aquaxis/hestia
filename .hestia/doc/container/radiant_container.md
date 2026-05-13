@@ -1,29 +1,29 @@
-# Radiant コンテナ詳細
+# Radiant Container Details
 
-**対象領域**: container — FPGA ツールコンテナ
-**ソース**: 設計仕様書 §12.2
+**Domain**: container — FPGA Tool Container
+**Source**: Design Specification §12.2
 
-## 概要
+## Overview
 
-Lattice Radiant 2024.2 を実行するためのコンテナイメージ `fpga/radiant:2024.2`。Lattice LIFCL / LFD2NX / iCE40 系 FPGA の合成・配置配線に使用する。
+Container image `fpga/radiant:2024.2` for running Lattice Radiant 2024.2. Used for synthesis and place-and-route of Lattice LIFCL / LFD2NX / iCE40 family FPGAs.
 
-## イメージ構成
+## Image Configuration
 
-| 項目 | 値 |
+| Item | Value |
 |------|-----|
-| イメージ名 | `fpga/radiant:2024.2` |
-| ベースイメージ | `registry.access.redhat.com/ubi9/ubi:9.5` |
-| 主要ツール | Lattice Radiant 2024.2 |
-| ライセンス | FlexLM |
-| ユーザー | `hestia` (UID 1000) |
+| Image name | `fpga/radiant:2024.2` |
+| Base image | `registry.access.redhat.com/ubi9/ubi:9.5` |
+| Primary tool | Lattice Radiant 2024.2 |
+| License | FlexLM |
+| User | `hestia` (UID 1000) |
 
-## 特記事項
+## Notable Points
 
-- Vivado コンテナパターンを踏襲（商用ライセンス扱い）
-- FlexLM ライセンスサーバは実行時に注入
-- UBI 9 ベース
+- Follows the Vivado container pattern (commercial license handling)
+- FlexLM license server is injected at runtime
+- UBI 9 based
 
-## 実行例
+## Execution Example
 
 ```bash
 podman run --rm \
@@ -36,8 +36,8 @@ podman run --rm \
   radiantc --job project.rdf
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [container_manager.md](container_manager.md) — container-manager 全体
-- [vivado_container.md](vivado_container.md) — Vivado コンテナ
-- [oss_container.md](oss_container.md) — OSS FPGA コンテナ
+- [container_manager.md](container_manager.md) — container-manager overview
+- [vivado_container.md](vivado_container.md) — Vivado container
+- [oss_container.md](oss_container.md) — OSS FPGA container

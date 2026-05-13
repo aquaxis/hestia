@@ -1,13 +1,14 @@
-//! Phase 126 — サブエージェント並列度の統合テスト。
+//! Phase 126 — Integration tests for sub-agent parallelism.
 //!
-//! AgentManager のグローバル cap が env 経由で反映され、reviewer が予約 slot を
-//! 取れること、cap 枯渇時に acquire timeout で fail-fast すること、を検証する。
+//! Verifies that AgentManager's global cap is reflected via env vars,
+//! that reviewers can acquire the reserved slot, and that acquire timeout
+//! causes fail-fast when the cap is exhausted.
 
 use multi_agent::agent_manager::AgentManager;
 
 #[tokio::test]
 async fn agent_manager_with_caps_reserves_reviewer_slot() {
-    // global_max=2 → 一般 limiter は 1, reviewer 予約 slot は 1
+    // global_max=2 so general limiter is 1, reviewer reserved slot is 1
     let mgr = AgentManager::with_caps(2, 5);
     assert_eq!(mgr.capacity(), 1);
 }
@@ -25,7 +26,7 @@ async fn agent_manager_default_cap_picks_up_env_override() {
 
 #[tokio::test]
 async fn agent_manager_minimum_capacity_is_one() {
-    // global_max=1 でも一般 limiter は最低 1 確保される
+    // Even with global_max=1, the general limiter reserves at least 1
     let mgr = AgentManager::with_caps(1, 5);
     assert_eq!(mgr.capacity(), 1);
 }
@@ -35,6 +36,6 @@ async fn agent_manager_with_default_cap_uses_safe_default_when_env_missing() {
     std::env::remove_var("HESTIA_GLOBAL_MAX_AGENTS");
     std::env::remove_var("HESTIA_ACQUIRE_TIMEOUT_SECS");
     let mgr = AgentManager::with_default_cap();
-    // 既定 8 - reviewer 予約 1 = 7
+    // Default 8 - reviewer reserved 1 = 7
     assert_eq!(mgr.capacity(), 7);
 }

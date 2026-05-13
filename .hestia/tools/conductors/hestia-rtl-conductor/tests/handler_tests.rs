@@ -23,8 +23,8 @@ async fn invoke_with_peers(method: &str, params: serde_json::Value, alive_peers:
     std::env::set_var("HESTIA_PROJECT_ROOT", tmp.path());
     std::env::set_var("HESTIA_PEER_ALIVE_FORCE", alive_peers);
     std::env::set_var("HESTIA_PEER_SEND_NOOP", "1");
-    // Phase 88: default が strict ON に変更されたため、phase55b-fallback path テストでは
-    // 明示的に opt-out する。phase84-strict path のテストは個別に "1" に上書きする。
+    // Phase 88: Since the default was changed to strict ON, explicitly opt out
+    // for phase55b-fallback path tests. phase84-strict path tests override to "1" individually.
     std::env::set_var("HESTIA_STRICT_SUBAGENT", "0");
 
     let handler = RtlHandler;
@@ -137,17 +137,17 @@ async fn dispatch_coders_v1_includes_auto_review_dispatched_field() {
 
 #[tokio::test]
 async fn dispatch_coders_v1_returns_cap_exhausted_when_alive_at_cap() {
-    // Phase 129 — alive cap セマンティクス。
-    // HESTIA_PER_CONDUCTOR_MAX=1 で limiter capacity=1。
-    // HESTIA_PEER_ALIVE_FORCE で 1 件の rtl-coder-* を「alive」と擬似化。
-    // dispatch_coders.v1 を呼び出すと cap 到達済で `cap_exhausted` を返す。
+    // Phase 129 — alive cap semantics.
+    // With HESTIA_PER_CONDUCTOR_MAX=1, limiter capacity=1.
+    // HESTIA_PEER_ALIVE_FORCE simulates 1 rtl-coder-* as "alive".
+    // Calling dispatch_coders.v1 when at cap returns `cap_exhausted`.
     let prior_max = std::env::var("HESTIA_PER_CONDUCTOR_MAX").ok();
     std::env::set_var("HESTIA_PER_CONDUCTOR_MAX", "1");
 
     let result = invoke_with_peers(
         "rtl.dispatch_coders.v1",
         json!({"modules": ["uart_rx", "uart_tx"], "spec": "test"}),
-        "rtl-coder-axi", // 1 件 alive
+        "rtl-coder-axi", // 1 alive
     ).await;
 
     match prior_max {
@@ -155,12 +155,12 @@ async fn dispatch_coders_v1_returns_cap_exhausted_when_alive_at_cap() {
         None => std::env::remove_var("HESTIA_PER_CONDUCTOR_MAX"),
     }
 
-    // 注: rtl_limiter は OnceLock で初期化されるため、本テスト単独でも
-    //     他テスト後でも同じ capacity を返すように、env を事前 set した上で
-    //     最初のテスト実行で cap=1 が固定される (本クレートで他に limiter 使用箇所なし)。
-    //     limiter capacity が 4 (env 未設定既定) のままだった場合、
-    //     alive=1 でも残 slot=3 で max_parallel=2 となり cap_exhausted にならない。
-    //     その場合は status 別の assertion を行う。
+    // Note: rtl_limiter is initialized via OnceLock, so even if this test runs
+    //     alone or after other tests, setting the env var beforehand ensures
+    //     cap=1 is fixed at the first test execution (this crate has no other limiter users).
+    //     If limiter capacity remains at 4 (env unset default), alive=1 would leave
+    //     remaining slots=3, max_parallel=2, and cap_exhausted would not occur.
+    //     In that case, assert on alternative status.
     if result["status"] == "cap_exhausted" {
         assert_eq!(result["method"], "rtl.dispatch_coders.v1");
         assert_eq!(result["phase"], "phase129");
@@ -171,8 +171,8 @@ async fn dispatch_coders_v1_returns_cap_exhausted_when_alive_at_cap() {
         assert_eq!(result["dispatched_all"], false);
         assert_eq!(result["auto_review_dispatched"], false);
     } else {
-        // limiter が他テストで初期化済 (cap=4) の場合は alive=1 で max_parallel=2
-        // となり、partial / delegated になる。alive cap ロジックは正しく適用されている。
+        // If the limiter was initialized in another test (cap=4), alive=1 gives max_parallel=2,
+        // resulting in partial/delegated. The alive cap logic is still correctly applied.
         assert_eq!(result["alive_coders"], 1);
         assert!(result["max_parallel"].as_u64().unwrap() <= 3);
     }

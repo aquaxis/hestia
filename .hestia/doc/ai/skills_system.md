@@ -1,26 +1,26 @@
-# ai-conductor SkillSystem 詳細
+# ai-conductor SkillSystem Details
 
-**対象 Conductor**: ai-conductor
-**ソース**: 設計仕様書 §3.7（1095-1108行目付近）, §1.3.2（95-114行目付近）
+**Target Conductor**: ai-conductor
+**Source**: Design Specification §3.7 (around lines 1095-1108), §1.3.2 (around lines 95-114)
 
-## 概要
+## Overview
 
-SkillRegistry に専門スキルを登録し、AI エージェント（agent-cli プロセスとして起動、§20 参照）が呼び出す。スキルは agent-cli のペルソナファイル（YAML+Markdown）と組み合わせて conductor ごとのメインエージェント・サブエージェントの能力を定義する。
+SkillRegistry registers specialized skills that AI agents (launched as agent-cli processes, see §20) can invoke. Skills are combined with agent-cli persona files (YAML+Markdown) to define the capabilities of each conductor's main agent and sub-agents.
 
 ## SkillRegistry
 
-スキルの登録・管理・解決を行うレジストリ。ai-conductor の `skill-system/` クレートに実装される。
+A registry for skill registration, management, and resolution. Implemented in the `skill-system/` crate of ai-conductor.
 
 ```
 skill-system/
 └── src/
     ├── lib.rs      # SkillRegistry
-    └── skill.rs    # Skill トレイト
+    └── skill.rs    # Skill trait
 ```
 
-## Skill トレイト
+## Skill Trait
 
-全スキルが実装すべきトレイト。
+A trait that all skills must implement.
 
 ```rust
 pub trait Skill {
@@ -30,44 +30,44 @@ pub trait Skill {
 }
 ```
 
-カスタムスキルは `Skill` トレイトを実装して SkillRegistry に登録する。
+Custom skills implement the `Skill` trait and register with SkillRegistry.
 
-## デフォルトスキル（5種）
+## Default Skills (5 types)
 
-| スキル | 入力 | 出力 | 説明 |
+| Skill | Input | Output | Description |
 |--------|------|------|------|
-| **HDL 生成** | 仕様書 / ブロック図 | SystemVerilog / Verilog / VHDL ソースコード | AI による HDL コード自動生成 |
-| **制約生成** | ターゲットデバイス / タイミング要件 | XDC / SDC / PCF 制約ファイル | デバイス固有制約の自動生成 |
-| **テストベンチ生成** | HDL モジュール定義 | テストベンチ + アサーション + カバレッジ | 検証環境スケルトン自動生成 |
-| **回路図設計** | 自然言語仕様 / KG | SKiDL コード / KiCad ネットリスト | AI 駆動回路図合成（pcb-conductor と連携） |
-| **レビュー** | HDL コード / 回路図 | レビュー結果 + 修正提案 | 設計品質レビューと改善提案 |
+| **HDL Generation** | Specification / block diagram | SystemVerilog / Verilog / VHDL source code | AI-powered automatic HDL code generation |
+| **Constraint Generation** | Target device / timing requirements | XDC / SDC / PCF constraint files | Automatic generation of device-specific constraints |
+| **Testbench Generation** | HDL module definition | Testbench + assertions + coverage | Automatic generation of verification environment skeletons |
+| **Schematic Design** | Natural language specification / KG | SKiDL code / KiCad netlist | AI-driven schematic synthesis (integrates with pcb-conductor) |
+| **Review** | HDL code / schematics | Review results + modification suggestions | Design quality review and improvement proposals |
 
-## スキル呼び出しフロー
+## Skill Invocation Flow
 
 ```
-1. SkillRegistry にスキルを登録（Skill トレイト実装）
-2. ai-conductor が必要なスキルを持つ Agent を動的に起動
-3. Agent はスキルを実行し、結果を ai-conductor に報告
+1. Register skill in SkillRegistry (implement Skill trait)
+2. ai-conductor dynamically launches an Agent with the required skill
+3. Agent executes the skill and reports the result to ai-conductor
 ```
 
-## スキルと conductor の対応
+## Skill and Conductor Mapping
 
-| Conductor | 利用スキル |
+| Conductor | Skills Used |
 |-----------|-----------|
-| ai-conductor | 全スキル（オーケストレーション） |
-| rtl-conductor | HDL 生成、テストベンチ生成、レビュー |
-| fpga-conductor | HDL 生成、制約生成、テストベンチ生成 |
-| asic-conductor | HDL 生成、制約生成、テストベンチ生成 |
-| pcb-conductor | 回路図設計、レビュー |
-| hal-conductor | HDL 生成（SystemVerilog テンプレート） |
-| apps-conductor | レビュー |
+| ai-conductor | All skills (orchestration) |
+| rtl-conductor | HDL Generation, Testbench Generation, Review |
+| fpga-conductor | HDL Generation, Constraint Generation, Testbench Generation |
+| asic-conductor | HDL Generation, Constraint Generation, Testbench Generation |
+| pcb-conductor | Schematic Design, Review |
+| hal-conductor | HDL Generation (SystemVerilog template) |
+| apps-conductor | Review |
 
-## agent-cli ペルソナとの統合
+## Integration with agent-cli Personas
 
-スキルは agent-cli のペルソナファイルと組み合わせて使用される。各サブエージェントのペルソナファイル（`.hestia/personas/<name>.md`）にスキル利用の指示が含まれる。
+Skills are used in combination with agent-cli persona files. Each sub-agent's persona file (`.hestia/personas/<name>.md`) contains instructions for skill usage.
 
 ```yaml
-# ペルソナファイル例 (ai-planner.md)
+# Persona file example (ai-planner.md)
 skills:
   - hdl_generation
   - constraint_generation
@@ -75,13 +75,13 @@ skills:
   - documentation_generation
 ```
 
-## 拡張性
+## Extensibility
 
-新しいスキルの追加は `Skill` トレイトを実装して SkillRegistry に登録するだけで完了する。コアコードの変更は不要（原則2: ゼロ変更での拡張）。
+Adding a new skill only requires implementing the `Skill` trait and registering it with SkillRegistry. No changes to core code are needed (Principle 2: extension without modification).
 
-## 関連ドキュメント
+## Related Documentation
 
-- [ai/agent_hierarchy.md](agent_hierarchy.md) — サブエージェント構成
-- [ai/message_methods.md](message_methods.md) — ai.* メソッド一覧
-- [ai/workflow_engine.md](workflow_engine.md) — WorkflowEngine 詳細
-- [../spec_driven_development.md](../spec_driven_development.md) — 仕様書駆動開発概要
+- [ai/agent_hierarchy.md](agent_hierarchy.md) — Sub-agent hierarchy
+- [ai/message_methods.md](message_methods.md) — ai.* method list
+- [ai/workflow_engine.md](workflow_engine.md) — WorkflowEngine details
+- [../spec_driven_development.md](../spec_driven_development.md) — Spec-driven development overview

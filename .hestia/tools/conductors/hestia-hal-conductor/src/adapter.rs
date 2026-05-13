@@ -5,29 +5,29 @@ use adapter_core::{ToolAdapter, capability::CapabilitySet};
 use crate::bus_protocol::BusProtocol;
 use crate::fsm_states::HalBuildState;
 
-/// HAL ドメイン ToolAdapter トレイト
+/// HAL domain ToolAdapter trait
 #[async_trait]
 pub trait HalToolAdapter: ToolAdapter {
-    /// サポート入力フォーマット（例: "systemrdl", "ipxact", "toml"）
+    /// Supported input formats (e.g., "systemrdl", "ipxact", "toml")
     fn supported_inputs(&self) -> Vec<String>;
 
-    /// サポート出力言語（例: "c", "rust", "python", "svd"）
+    /// Supported output languages (e.g., "c", "rust", "python", "svd")
     fn supported_outputs(&self) -> Vec<String>;
 
-    /// アダプター固有の capability フラグ
+    /// Adapter-specific capability flags
     fn capabilities(&self) -> &CapabilitySet;
 
-    /// レジスタ定義をパース
+    /// Parse register definitions
     async fn parse(&self, ctx: &HalBuildContext) -> Result<HalStepResult, adapter_core::error::AdapterError>;
 
-    /// パース結果をバリデーション
+    /// Validate parsed results
     async fn validate(&self, ctx: &HalBuildContext) -> Result<HalStepResult, adapter_core::error::AdapterError>;
 
-    /// コード生成
+    /// Generate code
     async fn generate(&self, ctx: &HalBuildContext) -> Result<HalStepResult, adapter_core::error::AdapterError>;
 }
 
-/// HAL ビルドコンテキスト
+/// HAL build context
 #[derive(Debug, Clone)]
 pub struct HalBuildContext {
     pub project_dir: std::path::PathBuf,
@@ -40,7 +40,7 @@ pub struct HalBuildContext {
     pub env_vars: std::collections::HashMap<String, String>,
 }
 
-/// HAL ステップ実行結果
+/// HAL step execution result
 #[derive(Debug, Clone)]
 pub struct HalStepResult {
     pub success: bool,

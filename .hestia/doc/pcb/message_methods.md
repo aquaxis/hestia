@@ -1,59 +1,59 @@
-# pcb-conductor メッセージメソッド一覧
+# pcb-conductor Message Methods
 
-**対象 Conductor**: pcb-conductor
-**ソース**: 設計仕様書 §14（3492-3630行目付近）, §7（1982-2174行目付近）
+**Target Conductor**: pcb-conductor
+**Source**: Design specification §14 (around lines 3492-3630), §7 (around lines 1982-2174)
 
-## トランスポート
+## Transport
 
-全通信は agent-cli ネイティブ IPC に統一。peer 名 `pcb`。
+All communication uses agent-cli native IPC. Peer name: `pcb`.
 
-## pcb.* メソッド一覧
+## pcb.* Method List
 
-### 回路図設計
+### Schematic Design
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `pcb.generate_schematic` | Request | KiCad ネットリスト出力（`kicad-cli sch export netlist`） |
-| `pcb.ai_synthesize` | Request | AI 駆動回路図合成（LLM コア、Chain-of-Thought 6 ステージ） |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `pcb.generate_schematic` | Request | KiCad netlist output (`kicad-cli sch export netlist`) |
+| `pcb.ai_synthesize` | Request | AI-driven schematic synthesis (LLM core, Chain-of-Thought 6 stages) |
 
-### 検証
+### Verification
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `pcb.run_drc` | Request | DRC 実行（`kicad-cli pcb drc`） |
-| `pcb.run_erc` | Request | ERC 実行（`kicad-cli sch erc`） |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `pcb.run_drc` | Request | Run DRC (`kicad-cli pcb drc`) |
+| `pcb.run_erc` | Request | Run ERC (`kicad-cli sch erc`) |
 
-### BOM・配置
+### BOM / Placement
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `pcb.generate_bom` | Request | BOM 生成（`kicad-cli sch export bom`） |
-| `pcb.place_components` | Request | コンポーネント配置データ出力（`kicad-cli pcb export pos`） |
-| `pcb.route_traces` | Request | 配線・ドリルデータ出力（`kicad-cli pcb export drill`） |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `pcb.generate_bom` | Request | Generate BOM (`kicad-cli sch export bom`) |
+| `pcb.place_components` | Request | Component placement data output (`kicad-cli pcb export pos`) |
+| `pcb.route_traces` | Request | Routing and drill data output (`kicad-cli pcb export drill`) |
 
-### 製造出力
+### Manufacturing Output
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `pcb.generate_output` | Request | ガーバー出力（`kicad-cli pcb export gerbers`） |
-| `pcb.status` | Request | ビルド状態取得 |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `pcb.generate_output` | Request | Gerber output (`kicad-cli pcb export gerbers`) |
+| `pcb.status` | Request | Get build status |
 
-### conductor-core 共通
+### conductor-core Common
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `system.health.v1` | Request | ヘルスチェック |
-| `system.readiness` | Request | 準備状態確認 |
+| Method | Direction | Description |
+|--------|-----------|-------------|
+| `system.health.v1` | Request | Health check |
+| `system.readiness` | Request | Readiness check |
 
-## ペイロード例
+## Payload Examples
 
-### pcb.ai_synthesize リクエスト
+### pcb.ai_synthesize Request
 
 ```json
 {
   "method": "pcb.ai_synthesize",
   "params": {
-    "spec": "STM32F103 + BME280 + USB Type-C の温湿度センサボード",
+    "spec": "STM32F103 + BME280 + USB Type-C temperature/humidity sensor board",
     "input_format": "natural_language",
     "output_format": "kicad"
   },
@@ -62,7 +62,7 @@
 }
 ```
 
-### pcb.run_drc リクエスト
+### pcb.run_drc Request
 
 ```json
 {
@@ -74,10 +74,10 @@
 }
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [pcb/binary_spec.md](binary_spec.md) — hestia-pcb-cli バイナリ仕様
-- [pcb/error_types.md](error_types.md) — pcb-conductor エラーコード
-- [pcb/state_machines.md](state_machines.md) — PCB ビルドステップ
-- [pcb/tool_adapter.md](tool_adapter.md) — AI 駆動回路図設計 / KiCad アダプター
-- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli メッセージング仕様
+- [pcb/binary_spec.md](binary_spec.md) — hestia-pcb-cli binary specification
+- [pcb/error_types.md](error_types.md) — pcb-conductor error codes
+- [pcb/state_machines.md](state_machines.md) — PCB build steps
+- [pcb/tool_adapter.md](tool_adapter.md) — AI-driven schematic design / KiCad adapter
+- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli messaging specification

@@ -1,13 +1,13 @@
-# agent-cli クライアント仕様
+# agent-cli Client Specification
 
-**対象領域**: frontend — クライアント通信
-**ソース**: 設計仕様書 §16.4
+**Target Domain**: frontend — client communication
+**Source**: Design Specification §16.4
 
-## 概要
+## Overview
 
-Rust / TypeScript 共通の `AgentCliClient` 仕様。VSCode 拡張、Tauri IDE、CLI クライアントが agent-cli ネイティブ IPC 経由で conductor と通信するための共通インターフェース。
+Common `AgentCliClient` specification for Rust / TypeScript. A shared interface used by VSCode extension, Tauri IDE, and CLI clients to communicate with conductors via agent-cli native IPC.
 
-## メッセージ型
+## Message Types
 
 ### AgentCliRequest
 
@@ -56,45 +56,45 @@ interface AgentCliNotification {
 
 ## HestiaClientConfig
 
-| パラメータ | 型 | 既定値 | 説明 |
-|----------|-----|-------|------|
-| `agentCliRegistryDir` | string | `$XDG_RUNTIME_DIR/agent-cli/` | レジストリディレクトリ |
-| `requestTimeout` | number | 30000 | リクエストタイムアウト（ms）|
-| `reconnectInterval` | number | 5000 | 再接続間隔（ms）|
-| `maxReconnectAttempts` | number | 10 | 最大再接続試行数 |
-| `logLevel` | string | `"info"` | ログレベル |
-| `retryPolicy` | RetryPolicy | 下記参照 | リトライポリシー |
-| `maxFrameLength` | number | 16777216 | 最大フレーム長（16 MiB）|
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `agentCliRegistryDir` | string | `$XDG_RUNTIME_DIR/agent-cli/` | Registry directory |
+| `requestTimeout` | number | 30000 | Request timeout (ms) |
+| `reconnectInterval` | number | 5000 | Reconnection interval (ms) |
+| `maxReconnectAttempts` | number | 10 | Maximum reconnection attempts |
+| `logLevel` | string | `"info"` | Log level |
+| `retryPolicy` | RetryPolicy | See below | Retry policy |
+| `maxFrameLength` | number | 16777216 | Maximum frame length (16 MiB) |
 
 ## RetryPolicy
 
-| パラメータ | 型 | 既定値 | 説明 |
-|----------|-----|-------|------|
-| `maxRetries` | number | 3 | 最大リトライ回数 |
-| `initialBackoffMs` | number | 1000 | 初期バックオフ（ms）|
-| `maxBackoffMs` | number | 60000 | 最大バックオフ（ms）|
-| `multiplier` | number | 2.0 | バックオフ倍率 |
-| `retryableCodes` | number[] | [-32001, -32006] | リトライ対象エラーコード |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `maxRetries` | number | 3 | Maximum retry count |
+| `initialBackoffMs` | number | 1000 | Initial backoff (ms) |
+| `maxBackoffMs` | number | 60000 | Maximum backoff (ms) |
+| `multiplier` | number | 2.0 | Backoff multiplier |
+| `retryableCodes` | number[] | [-32001, -32006] | Retryable error codes |
 
 ## ConnectionState
 
-| 状態 | 意味 |
-|------|------|
-| `disconnected` | 未接続 |
-| `connecting` | 接続中 |
-| `connected` | 接続済み |
-| `reconnecting` | 再接続中 |
-| `error` | エラー状態 |
+| State | Meaning |
+|-------|---------|
+| `disconnected` | Not connected |
+| `connecting` | Connecting |
+| `connected` | Connected |
+| `reconnecting` | Reconnecting |
+| `error` | Error state |
 
-## 内部実装
+## Internal Implementation
 
-- peer 探索: 起動時に `agent-cli list` を実行
-- 送信: `agent-cli send <peer> <payload>` を spawn または FFI 経由で呼出
-- Rust 版: `conductor-sdk::transport` に実装
-- TypeScript 版: VSCode 拡張 / Tauri IDE に実装
+- Peer discovery: Runs `agent-cli list` on startup
+- Sending: Invokes `agent-cli send <peer> <payload>` via spawn or FFI
+- Rust version: Implemented in `conductor-sdk::transport`
+- TypeScript version: Implemented in VSCode extension / Tauri IDE
 
-## 関連ドキュメント
+## Related Documentation
 
-- [cli_clients.md](cli_clients.md) — CLI クライアント
-- [vscode_extension.md](vscode_extension.md) — VSCode 拡張
-- [agent_cli_messaging.md](../common/agent_cli_messaging.md) — メッセージング仕様
+- [cli_clients.md](cli_clients.md) — CLI clients
+- [vscode_extension.md](vscode_extension.md) — VSCode extension
+- [agent_cli_messaging.md](../common/agent_cli_messaging.md) — Messaging specification

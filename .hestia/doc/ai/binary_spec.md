@@ -1,39 +1,39 @@
-# ai-conductor CLI バイナリ仕様
+# ai-conductor CLI Binary Specification
 
-**対象 Conductor**: ai-conductor
-**ソース**: 設計仕様書 §15（3631-3730行目付近）, §3（745-1240行目付近）
+**Target Conductor**: ai-conductor
+**Source**: Design Specification §15 (around lines 3631-3730), §3 (around lines 745-1240)
 
-## バイナリ名
+## Binary Name
 
 `hestia-ai-cli`
 
-## サブコマンド一覧
+## Subcommand List
 
-| サブコマンド | 説明 |
+| Subcommand | Description |
 |-------------|------|
-| `exec` | agent-cli 上で自然言語指示を直接実行 |
-| `run --file <path>` | ワークフロー YAML ファイルを実行 |
-| `agent ls` | 登録済みサブエージェント一覧表示 |
-| `container ls` | コンテナ一覧表示 |
-| `container start <id>` | コンテナ起動 |
-| `container stop <id>` | コンテナ停止 |
-| `container create` | container.toml から Containerfile 生成・ビルド |
-| `workflow run <yaml>` | DAG ベースワークフローを実行（§3.5 WorkflowEngine 経由） |
-| `review start` | 仕様書レビューセッションを開始（§3.6 SpecDriven） |
+| `exec` | Execute natural language instructions directly on agent-cli |
+| `run --file <path>` | Execute a workflow YAML file |
+| `agent ls` | List registered sub-agents |
+| `container ls` | List containers |
+| `container start <id>` | Start a container |
+| `container stop <id>` | Stop a container |
+| `container create` | Generate and build a Containerfile from container.toml |
+| `workflow run <yaml>` | Execute a DAG-based workflow (via §3.5 WorkflowEngine) |
+| `review start` | Start a specification review session (§3.6 SpecDriven) |
 
-## 共通オプション（CommonOpts）
+## Common Options (CommonOpts)
 
-| オプション | 値 | 説明 |
+| Option | Value | Description |
 |-----------|---|------|
-| `--output` | `human` \| `json` | 出力フォーマット（既定: human） |
-| `--timeout` | `<秒>` | RPC タイムアウト |
-| `--registry` | `<path>` | agent-cli レジストリパス（既定: `$XDG_RUNTIME_DIR/agent-cli/`） |
-| `--config` | `<path>` | 設定ファイルパス |
-| `--verbose` | — | 詳細ログ出力 |
+| `--output` | `human` \| `json` | Output format (default: human) |
+| `--timeout` | `<seconds>` | RPC timeout |
+| `--registry` | `<path>` | agent-cli registry path (default: `$XDG_RUNTIME_DIR/agent-cli/`) |
+| `--config` | `<path>` | Configuration file path |
+| `--verbose` | — | Enable verbose logging |
 
-## Exit Code
+## Exit Codes
 
-| Exit Code | 意味 |
+| Exit Code | Meaning |
 |-----------|------|
 | 0 | SUCCESS |
 | 1 | GENERAL_ERROR |
@@ -45,31 +45,31 @@
 | 7 | SOCKET_NOT_FOUND |
 | 8 | PERMISSION_DENIED |
 
-## CLI アーキテクチャ
+## CLI Architecture
 
-Rust 製クライアントバイナリ（`tokio` + `serde` + `clap`）。対応する conductor の agent-cli peer（peer 名 `ai`）に対して agent-cli ネイティブ IPC（`agent-cli send <peer> <payload>`）で接続する。フロントエンドなしでもフルフロー実行可能。
+Rust-based client binary (`tokio` + `serde` + `clap`). Connects to the corresponding conductor's agent-cli peer (peer name `ai`) via agent-cli native IPC (`agent-cli send <peer> <payload>`). Can execute full workflows without a frontend.
 
-## 使用例
+## Usage Examples
 
 ```bash
-# エージェント一覧
+# List agents
 hestia-ai-cli agent ls
 
-# コンテナ作成・起動
+# Create and start a container
 hestia-ai-cli container create
 hestia-ai-cli container start vivado-build
 
-# ワークフロー実行
+# Run a workflow
 hestia-ai-cli run --file workflow/fpga_to_asic.yaml
 
-# 仕様書レビュー開始
+# Start a specification review
 hestia-ai-cli review start --spec spec/dsp_core.md
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [ai/config_schema.md](config_schema.md) — container.toml / upgrade.toml 設定スキーマ
-- [ai/message_methods.md](message_methods.md) — ai.* メソッド一覧
-- [ai/workflow_engine.md](workflow_engine.md) — WorkflowEngine 詳細
-- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli メッセージング仕様
-- [../frontend/cli_clients.md](../frontend/cli_clients.md) — CLI クライアント共通仕様
+- [ai/config_schema.md](config_schema.md) — container.toml / upgrade.toml configuration schemas
+- [ai/message_methods.md](message_methods.md) — ai.* method list
+- [ai/workflow_engine.md](workflow_engine.md) — WorkflowEngine details
+- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli messaging specification
+- [../frontend/cli_clients.md](../frontend/cli_clients.md) — CLI client common specification

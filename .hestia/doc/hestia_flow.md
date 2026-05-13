@@ -1,191 +1,192 @@
-# Hestia Flow — AI 活用概念の体系的解説
+# Hestia Flow — Systematic Guide to AI Utilization Concepts
 
-**対象領域**: AI 活用概念・開発プロセス
-**ソース**: 設計仕様書 §1.3（75-409行目付近）, §19（4002-5201行目付近）
-
----
-
-## 概要
-
-Hestia における AI 活用は 9 つの概念で構成される。以下に各概念の定義・目的・機能を体系的に解説する。
+**Scope**: AI utilization concepts and development process
+**Source**: Design specification §1.3 (around lines 75-409), §19 (around lines 4002-5201)
 
 ---
 
-## 1. 仕様書駆動開発（Spec-Driven Development）（§1.3.1 / §19.1）
+## Overview
 
-### 概念
+AI utilization in Hestia consists of 9 concepts. Below is a systematic explanation of the definition, purpose, and functionality of each concept.
 
-自然言語で記述された仕様書から、設計データ（HDL コード、制約ファイル、回路図、テストベンチ等）を AI が自動生成する開発手法である。
+---
 
-### なぜ必要か
+## 1. Spec-Driven Development (§1.3.1 / §19.1)
 
-ハードウェア設計では仕様書から HDL コードへの翻訳に多大な工数がかかる。仕様の曖昧さや解釈の揺れが設計ミスの原因となる。AI による自動変換で工数を削減し、仕様と実装の乖離を防止する。
+### Concept
 
-### どう機能するか
+A development methodology in which AI automatically generates design data (HDL code, constraint files, schematics, testbenches, etc.) from specifications written in natural language.
 
-1. エンジニアが自然言語で仕様を記述する（`REQ:` / `CON:` / `IF:` プレフィックス）
-2. `SpecParser` が仕様を構造化された `DesignSpec` に変換する
-3. AI エンジンが `DesignSpec` から HDL コード・制約ファイル・テストベンチを生成する
-4. 生成されたコードは自動検証パイプラインで品質を担保する
+### Why It Is Needed
+
+In hardware design, translating specifications into HDL code requires enormous effort. Ambiguities and interpretation variations in specifications cause design errors. Automated AI conversion reduces effort and prevents divergence between specifications and implementations.
+
+### How It Works
+
+1. The engineer writes the specification in natural language (using `REQ:` / `CON:` / `IF:` prefixes)
+2. `SpecParser` converts the specification into a structured `DesignSpec`
+3. The AI engine generates HDL code, constraint files, and testbenches from the `DesignSpec`
+4. The generated code is quality-assured through an automated verification pipeline
 
 ```
-仕様書（自然言語）→ SpecParser → DesignSpec → AI 生成エンジン → HDL / 制約 / テストベンチ
+Specification (natural language) → SpecParser → DesignSpec → AI generation engine → HDL / constraints / testbench
 ```
 
-### SDD プロセス（§19.1 詳細）
+### SDD Process (§19.1 Details)
 
 ```
 ┌─────────────────────────┐
-│ 1. 仕様記述（自然言語）  │  REQ: クロック周波数 100 MHz
-│   REQ: / CON: / IF:      │  CON: リソース LUT < 5000
+│ 1. Specification (natural language) │  REQ: Clock frequency 100 MHz
+│   REQ: / CON: / IF:      │  CON: Resource LUT < 5000
 │                          │  IF: AXI4-Lite slave
 └────────────┬─────────────┘
              ▼
 ┌─────────────────────────┐
-│ 2. SpecParser            │  入力: テキスト
-│   構文解析 → AST          │  出力: DesignSpec { requirements: [...],
+│ 2. SpecParser            │  Input: text
+│   Syntax parsing → AST   │  Output: DesignSpec { requirements: [...],
 │                          │                     constraints: [...],
 │                          │                     interfaces: [...] }
 └────────────┬─────────────┘
              ▼
 ┌─────────────────────────┐
-│ 3. AI 生成エンジン        │  スキル呼び出し:
-│   HDL 生成 / 制約生成 /   │    - HDL 生成（FR-AI-CONCEPT-02）
-│   テストベンチ生成        │    - 制約生成（XDC / SDC）
-│                          │    - テストベンチ生成（FR-AI-PRAC-02）
+│ 3. AI generation engine  │  Skill invocation:
+│   HDL generation /       │    - HDL generation (FR-AI-CONCEPT-02)
+│   constraint generation  │    - Constraint generation (XDC / SDC)
+│   / testbench generation │    - Testbench generation (FR-AI-PRAC-02)
 └────────────┬─────────────┘
              ▼
 ┌─────────────────────────┐
-│ 4. 自動検証              │  - HDL 静的解析（svls / veridian）
-│   構文 / 型 / 合成可能性   │  - 合成ドライラン（小構成）
-│                          │  - テストベンチ実行（Verilator）
+│ 4. Automated verification │  - HDL static analysis (svls / veridian)
+│   Syntax / types /       │  - Synthesis dry run (small configuration)
+│   synthesizability        │  - Testbench execution (Verilator)
 └────────────┬─────────────┘
              ▼
 ┌─────────────────────────┐
-│ 5. 逆方向検証（仕様差分） │  生成された HDL から仕様を再抽出し、
-│   実装 → 仕様 の再導出    │  元 DesignSpec との差分をレポート
+│ 5. Reverse verification  │  Re-extract specification from generated HDL,
+│   (spec diff)            │  report differences against the original DesignSpec
+│   Implementation → Spec   │
 └─────────────────────────┘
 ```
 
 ---
 
-## 2. スキル機能（Skill System）（§1.3.2 / §3.7）
+## 2. Skill System (§1.3.2 / §3.7)
 
-### 概念
+### Concept
 
-AI エージェントが持つ専門的な設計能力をプラグインとして登録・管理・呼び出しする機構である。
+A mechanism for registering, managing, and invoking the specialized design capabilities of AI agents as plugins.
 
-### なぜ必要か
+### Why It Is Needed
 
-ハードウェア設計には回路設計、HDL 生成、制約生成、テストベンチ生成など多様な専門知識が必要である。各スキルを独立したプラグインとして管理することで、スキルの追加・更新・組み合わせが柔軟に行える。
+Hardware design requires diverse specialized knowledge including circuit design, HDL generation, constraint generation, and testbench generation. Managing each skill as an independent plugin enables flexible addition, updating, and combination of skills.
 
-### どう機能するか
+### How It Works
 
-1. `SkillRegistry` にスキルを登録する（`Skill` トレイト実装）
-2. ai-conductor が必要なスキルを持つ Agent を動的に起動する
-3. Agent はスキルを実行し、結果を ai-conductor に報告する
+1. Register skills in `SkillRegistry` (implementing the `Skill` trait)
+2. ai-conductor dynamically launches agents with the required skills
+3. Agents execute skills and report results to ai-conductor
 
-### デフォルトスキル
+### Default Skills
 
-| スキル | 入力 | 出力 |
+| Skill | Input | Output |
 |--------|------|------|
-| HDL 生成 | 仕様書 / ブロック図 | SystemVerilog / Verilog / VHDL ソースコード |
-| 制約生成 | ターゲットデバイス / タイミング要件 | XDC / SDC / PCF 制約ファイル |
-| テストベンチ生成 | HDL モジュール定義 | テストベンチ + アサーション + カバレッジ |
-| 回路図設計 | 自然言語仕様 / KG | SKiDL コード / KiCad ネットリスト |
-| レビュー | HDL コード / 回路図 | レビュー結果 + 修正提案 |
+| HDL generation | Specification / block diagram | SystemVerilog / Verilog / VHDL source code |
+| Constraint generation | Target device / timing requirements | XDC / SDC / PCF constraint files |
+| Testbench generation | HDL module definition | Testbench + assertions + coverage |
+| Schematic design | Natural language specification / KG | SKiDL code / KiCad netlist |
+| Review | HDL code / schematic | Review results + modification suggestions |
 
 ---
 
-## 3. スケルトン開発駆動（Skeleton-Driven Development）（§1.3.3）
+## 3. Skeleton-Driven Development (§1.3.3)
 
-### 概念
+### Concept
 
-プロジェクトテンプレートやモジュールの骨格（スケルトン）を AI が自動生成し、エンジニアが詳細を実装する開発手法である。
+A development methodology in which AI automatically generates project templates or module skeletons, and engineers implement the details.
 
-### なぜ必要か
+### Why It Is Needed
 
-新規プロジェクトの立ち上げや新規モジュールの追加では、ボイラープレートコード（ポート定義、クロック/リセット接続、基本的なステートマシン構造等）の作成に時間を要する。スケルトン自動生成によりエンジニアはコアロジックの実装に集中できる。
+Setting up new projects or adding new modules requires creating boilerplate code (port definitions, clock/reset connections, basic state machine structures, etc.), which is time-consuming. Automatic skeleton generation allows engineers to focus on implementing core logic.
 
-### どう機能するか
+### How It Works
 
-1. エンジニアがモジュールの概要（名前、入出力、機能）を指定する
-2. AI がプロジェクトテンプレートまたはモジュールスケルトンを生成する
-3. 生成物にはポート定義、ステートマシン雛形、インターフェース定義、制約ファイル雛形が含まれる
-4. エンジニアが生成されたスケルトンにコアロジックを実装する
-
-```
-モジュール概要 → AI スケルトン生成 → ポート定義 + SM 雛形 + 制約雛形 → エンジニアが実装
-```
-
----
-
-## 4. テスト開発駆動（Test-Driven Development for Hardware）（§1.3.4 / §19.2）
-
-### 概念
-
-テストベンチを先に AI が生成し、その後に設計を実装するハードウェア版テスト駆動開発である。
-
-### なぜ必要か
-
-ハードウェア設計では検証が全工程の60〜70%を占める。テストベンチの作成は手間がかかるが、品質担保に不可欠である。AI によるテストベンチ自動生成で検証工数を大幅に削減し、テストカバレッジを向上させる。
-
-### どう機能するか
-
-1. 仕様書またはモジュールインターフェースから AI がテストベンチを自動生成する
-2. テストベンチにはスティミュラス生成、期待値比較、アサーション、カバレッジポイントが含まれる
-3. エンジニアが DUT（Design Under Test）を実装する
-4. テストが通過するまで設計を改善するフィードバックループを形成する
+1. The engineer specifies a module overview (name, inputs/outputs, functionality)
+2. AI generates a project template or module skeleton
+3. The generated output includes port definitions, state machine templates, interface definitions, and constraint file templates
+4. The engineer implements core logic in the generated skeleton
 
 ```
-仕様書 → AI テストベンチ生成 → テスト実行 → FAIL → 設計改善 → テスト実行 → PASS
-```
-
-### TDD プロセス（§19.2 詳細）
-
-```
-仕様書 or モジュールインターフェース
-        ↓
-AI テストベンチ生成（skill-system）
-        ├── スティミュラス生成（境界値 / ランダム / シーケンス）
-        ├── 期待値生成（参照モデル / 仕様式）
-        ├── アサーション生成（SVA / psl）
-        └── カバレッジポイント生成（covergroup / cross）
-        ↓
-（テスト先行）テスト実行 → FAIL（DUT 未実装）
-        ↓
-設計実装（エンジニア or AI 生成）
-        ↓
-テスト実行 → PASS/FAIL
-        ↓ FAIL の場合
-Feedback Loop（§19.10）
-  - PatcherAgent / エンジニアによる修正
-        ↓
-全テスト PASS → カバレッジ解析 → サインオフ
+Module overview → AI skeleton generation → Port definitions + SM template + Constraint template → Engineer implementation
 ```
 
 ---
 
-## 5. オーケストレーション（Orchestration）（§1.3.5 / §19.4）
+## 4. Test-Driven Development for Hardware (§1.3.4 / §19.2)
 
-### 概念
+### Concept
 
-複数の conductor（fpga / asic / pcb / debug）にまたがるワークフローを自動的に制御・連携させる機構である。
+A hardware version of test-driven development where AI generates testbenches first, followed by design implementation.
 
-### なぜ必要か
+### Why It Is Needed
 
-現実のハードウェア開発では「FPGA でプロトタイプ → ASIC 化 → テストボード（PCB）設計 → デバッグ」といった複数領域にまたがる一連のフローが存在する。各 conductor を個別に操作するのではなく、ワークフローとして定義・自動実行することで、手動調整の手間とミスを排除する。
+In hardware design, verification accounts for 60-70% of the entire process. Creating testbenches is labor-intensive but essential for quality assurance. AI-automated testbench generation significantly reduces verification effort and improves test coverage.
 
-### どう機能するか
+### How It Works
 
-1. ワークフローを DAG（有向非巡回グラフ）として定義する（YAML 形式）
-2. WorkflowEngine がトポロジカルソートで実行順序を決定する
-3. 依存関係を満たしたステップから順に実行する（並列実行対応）
-4. 各ステップは対象 conductor の agent-cli peer に対して構造化メッセージを送信する
-5. ダイヤモンド型依存関係（分岐→合流）にも対応する
+1. AI automatically generates testbenches from specifications or module interfaces
+2. Testbenches include stimulus generation, expected value comparison, assertions, and coverage points
+3. Engineers implement the DUT (Design Under Test)
+4. A feedback loop iterates design improvements until tests pass
+
+```
+Specification → AI testbench generation → Test execution → FAIL → Design improvement → Test execution → PASS
+```
+
+### TDD Process (§19.2 Details)
+
+```
+Specification or module interface
+        ↓
+AI testbench generation (skill-system)
+        ├── Stimulus generation (boundary values / random / sequences)
+        ├── Expected value generation (reference model / specification formulas)
+        ├── Assertion generation (SVA / psl)
+        └── Coverage point generation (covergroup / cross)
+        ↓
+(Test-first) Test execution → FAIL (DUT not implemented)
+        ↓
+Design implementation (engineer or AI generation)
+        ↓
+Test execution → PASS/FAIL
+        ↓ On FAIL
+Feedback Loop (§19.10)
+  - Fix by PatcherAgent / engineer
+        ↓
+All tests PASS → Coverage analysis → Sign-off
+```
+
+---
+
+## 5. Orchestration (§1.3.5 / §19.4)
+
+### Concept
+
+A mechanism that automatically controls and coordinates workflows spanning multiple conductors (fpga / asic / pcb / debug).
+
+### Why It Is Needed
+
+In real-world hardware development, there are cross-domain flows such as "FPGA prototyping → ASIC conversion → test board (PCB) design → debugging." Rather than operating each conductor individually, defining and automatically executing workflows eliminates manual coordination effort and errors.
+
+### How It Works
+
+1. Define workflows as DAGs (Directed Acyclic Graphs) in YAML format
+2. WorkflowEngine determines execution order via topological sort
+3. Execute steps whose dependencies are satisfied (supports parallel execution)
+4. Each step sends a structured message to the target conductor's agent-cli peer
+5. Diamond dependencies (branch → merge) are supported
 
 ```yaml
-# ワークフロー定義例
+# Workflow definition example
 steps:
   - id: fpga_synth
     conductor: fpga
@@ -201,163 +202,163 @@ steps:
     depends_on: [fpga_synth, pcb_design]
 ```
 
-### 実行エンジン（WorkflowEngine）
+### Execution Engine (WorkflowEngine)
 
-- カーンのアルゴリズムでトポロジカルソート
-- `depends_on` を DAG として解析、ダイヤモンド型依存（分岐→合流）を許容
-- `max_parallel` 個まで並列実行
-- 各ステップの出力（`${step.outputs.*}`）を後続ステップで参照可能
-- 失敗時: `abort` / `continue` / `rollback`（ロールバック用の逆ステップを自動生成）
+- Topological sort using Kahn's algorithm
+- Parses `depends_on` as a DAG, allows diamond dependencies (branch → merge)
+- Executes up to `max_parallel` steps in parallel
+- Each step's output (`${step.outputs.*}`) can be referenced in subsequent steps
+- On failure: `abort` / `continue` / `rollback` (automatically generates reverse steps for rollback)
 
 ---
 
-## 6. ハーネス駆動開発（Harness-Driven Development）（§1.3.6）
+## 6. Harness-Driven Development (§1.3.6)
 
-### 概念
+### Concept
 
-テストハーネス（DUT を取り囲む検証環境の骨格）を AI が自動生成し、それを基盤として検証を進める開発手法である。
+A development methodology in which AI automatically generates test harnesses (the skeleton of the verification environment surrounding the DUT) and uses them as the foundation for verification.
 
-### なぜ必要か
+### Why It Is Needed
 
-SystemVerilog / UVM ベースの検証環境構築は高度な専門知識を要し、数週間を費やすことがある。テストハーネスの自動生成により、検証環境の立ち上げ時間を大幅に短縮し、エンジニアはテストシナリオの設計に集中できる。
+Building SystemVerilog / UVM-based verification environments requires advanced expertise and can take weeks. Automatic test harness generation dramatically reduces verification environment setup time, allowing engineers to focus on designing test scenarios.
 
-### どう機能するか
+### How It Works
 
-1. DUT のポート定義・インターフェース仕様を解析する
-2. AI が以下のハーネスコンポーネントを自動生成する:
-   - クロック・リセット生成回路
-   - バスインターフェースドライバ（AXI / AHB / Wishbone 等）
-   - モニター（信号観測・プロトコルチェック）
-   - スコアボード（期待値比較）
-   - カバレッジコレクター
-3. エンジニアがテストシナリオを追加し、検証を実行する
+1. Analyze the DUT's port definitions and interface specifications
+2. AI automatically generates the following harness components:
+   - Clock and reset generation circuits
+   - Bus interface drivers (AXI / AHB / Wishbone etc.)
+   - Monitors (signal observation / protocol checking)
+   - Scoreboards (expected value comparison)
+   - Coverage collectors
+3. Engineers add test scenarios and run verification
 
 ```
-DUT ポート定義 → AI ハーネス生成 → クロック/リセット + ドライバ + モニター + スコアボード
+DUT port definitions → AI harness generation → Clock/reset + Driver + Monitor + Scoreboard
                                      ↓
-                              エンジニアがテストシナリオ追加
+                              Engineer adds test scenarios
                                      ↓
-                              検証実行 → カバレッジレポート
+                              Verification execution → Coverage report
 ```
 
 ---
 
-## 7. 持続可能なアップグレード（Sustainable Upgrade）（§1.3.7）
+## 7. Sustainable Upgrade (§1.3.7)
 
-### 概念
+### Concept
 
-ベンダーツールのバージョンアップに対して、AI エージェントが自動的にパッチを生成・検証・適用し、人間の介入を最小化する維持管理手法である。
+A maintenance methodology in which AI agents automatically generate, verify, and apply patches for vendor tool version upgrades, minimizing human intervention.
 
-### なぜ必要か
+### Why It Is Needed
 
-FPGA / ASIC / PCB のベンダーツールは年1〜2回のメジャーリリースがあり、バージョンアップのたびに TCL スクリプト・ログパーサー・制約形式の修正が必要となる。この維持管理コストは累積的に増大する。AI エージェントによる自動追従で、持続可能な開発環境の維持を実現する。
+FPGA / ASIC / PCB vendor tools have 1-2 major releases per year, and each version upgrade requires modifications to TCL scripts, log parsers, and constraint formats. This maintenance cost accumulates over time. AI agent-driven automatic tracking enables the sustainable maintenance of the development environment.
 
-### どう機能するか
+### How It Works
 
-各 Agent は agent-cli プロセスとして実装される:
+Each agent is implemented as an agent-cli process:
 
-1. **WatcherAgent**: 6時間ごとにベンダーサイトを監視し、新バージョンを検出する
-2. **ProbeAgent**: 標準テストプロジェクト群で新バージョンのテストビルドを実行し、非互換を検出する
-3. **PatcherAgent**: agent-cli の内部ツール / Tool Use 機能（バックエンド: Claude / Codex / Ollama / llama.cpp）を活用し、パッチを自動生成する
-4. **ValidatorAgent**: サンドボックス環境でパッチを検証し、信頼度スコアを算出する
-5. **HumanReviewGate**: 信頼度に基づき自動適用 or 手動レビューを判定する
-6. **UpgradeManager**: セマンティックバージョニングに基づき段階的ロールアウト（Canary → Staging → Production）を制御する
+1. **WatcherAgent**: Monitors vendor sites every 6 hours to detect new versions
+2. **ProbeAgent**: Runs test builds with new versions using standard test project suites to detect incompatibilities
+3. **PatcherAgent**: Leverages agent-cli's internal tools / Tool Use functionality (backends: Claude / Codex / Ollama / llama.cpp) to automatically generate patches
+4. **ValidatorAgent**: Verifies patches in a sandbox environment and calculates confidence scores
+5. **HumanReviewGate**: Determines automatic application or manual review based on confidence
+6. **UpgradeManager**: Controls gradual rollout (Canary → Staging → Production) based on semantic versioning
 
-各 Agent はそれぞれ独立した agent-cli プロセスとして動作し、agent-cli 共有レジストリ（`$XDG_RUNTIME_DIR/agent-cli`）経由で peer 探索 + `/send <peer> <text>` IPC で進捗・パッチ・検証結果を授受する。
+Each agent operates as an independent agent-cli process, exchanging progress, patches, and verification results via the agent-cli shared registry (`$XDG_RUNTIME_DIR/agent-cli`) peer discovery + `/send <peer> <text>` IPC.
 
 ```
-検出 → テスト → パッチ生成 → 検証 → 判定 → 段階的適用 → 異常時ロールバック
+Detection → Testing → Patch generation → Verification → Judgment → Gradual application → Rollback on failure
 ```
 
 ---
 
-## 8. 生成 AI の Tool Use 機能（Generative AI Tool Use）（§1.3.8）
+## 8. Generative AI Tool Use (§1.3.8)
 
-### 概念
+### Concept
 
-生成 AI（LLM）が外部ツールや関数を呼び出しながら、反復的に問題を解決するエージェントループ機構である。
+An agent loop mechanism in which generative AI (LLM) calls external tools and functions to iteratively solve problems.
 
-### なぜ必要か
+### Why It Is Needed
 
-LLM は自然言語の理解・生成に優れるが、ファイル読み込み・コマンド実行・データベース検索などの外部操作は直接行えない。Tool Use 機能により LLM が外部ツールを呼び出し、その結果をコンテキストに追加して推論を継続することで、実世界の問題を解決できる。
+LLMs excel at understanding and generating natural language but cannot directly perform external operations such as file reading, command execution, or database searches. The Tool Use functionality allows LLMs to call external tools, add the results to their context, and continue reasoning, enabling them to solve real-world problems.
 
-### どう機能するか
+### How It Works
 
-1. LLM にツール定義（名前、引数、説明）を事前に提示する
-2. LLM がタスクを分析し、必要なツールの呼び出しを要求する（`tool_use` レスポンス）
-3. 実行環境がツールを実行し、結果を LLM に返却する（`tool_result`）
-4. LLM が結果を踏まえて次のアクションを決定する（反復）
-5. 最終的な回答が得られるまでループを継続する（最大試行回数制限あり）
+1. Present tool definitions (name, arguments, description) to the LLM in advance
+2. The LLM analyzes the task and requests the necessary tool calls (`tool_use` response)
+3. The execution environment runs the tool and returns the result to the LLM (`tool_result`)
+4. The LLM determines the next action based on the result (iteration)
+5. The loop continues until a final answer is obtained (with a maximum retry limit)
 
-### Hestia での活用例（PatcherAgent）
+### Usage Example in Hestia (PatcherAgent)
 
 ```
-LLM ← ツール定義（6種）
+LLM ← Tool definitions (6 types)
   │
-  ├── read_adapter_manifest()  → adapter.toml の内容を取得
-  ├── read_error_log()         → ビルドエラーの詳細を取得
-  ├── search_breaking_changes() → 既知の非互換変更を検索
-  ├── read_vendor_changelog()  → リリースノートを取得
-  ├── propose_patch()          → パッチ案を提出
-  └── trigger_validation()     → 検証を実行
+  ├── read_adapter_manifest()  → Get adapter.toml contents
+  ├── read_error_log()         → Get build error details
+  ├── search_breaking_changes() → Search known breaking changes
+  ├── read_vendor_changelog()  → Get release notes
+  ├── propose_patch()          → Submit a patch proposal
+  └── trigger_validation()     → Run verification
   │
-  └── 最終回答: パッチ提案 + 修正理由 + 信頼度スコア
+  └── Final answer: patch proposal + fix reason + confidence score
 ```
 
-この Tool Use ループにより、PatcherAgent は単なるテキスト生成ではなく、実際のファイルを読み込み、既知の問題を検索し、パッチを提案・検証する一連のワークフローを自律的に実行できる。
+Through this Tool Use loop, PatcherAgent can autonomously execute a series of workflows including reading actual files, searching known issues, and proposing and verifying patches — not merely generating text.
 
 ---
 
-## 9. RAG（Retrieval-Augmented Generation）（§1.3.9 / §19.3）
+## 9. RAG (Retrieval-Augmented Generation) (§1.3.9 / §19.3)
 
-### 概念
+### Concept
 
-自前のデータ（データシート、設計ガイドライン、過去の設計資産、エラーログ等）をベクトルデータベースに格納し、LLM への問い合わせ時に関連ドキュメントを自動検索・注入することで、回答の正確性と専門性を飛躍的に向上させる手法である。
+A technique that dramatically improves the accuracy and expertise of responses by storing proprietary data (datasheets, design guidelines, past design assets, error logs, etc.) in a vector database, and automatically searching and injecting relevant documents when querying the LLM.
 
-### なぜ必要か
+### Why It Is Needed
 
-LLM は汎用的な知識を持つが、特定の IC のデータシート詳細、社内の設計ガイドライン、過去プロジェクトの設計パターンといったドメイン固有の情報は学習データに含まれない場合がある。RAG によりこれらの自前データを LLM のコンテキストに動的に注入し、ハルシネーション（事実と異なる回答）を防止しつつ、プロジェクト固有の正確な回答を生成する。
+LLMs possess general knowledge but may not include domain-specific information such as specific IC datasheet details, internal design guidelines, or past project design patterns. RAG dynamically injects this proprietary data into the LLM's context, preventing hallucinations (factually incorrect responses) while generating accurate, project-specific answers.
 
-### どう機能するか
+### How It Works
 
 ```
-[インデックス構築フェーズ（オフライン）]
+[Index Construction Phase (Offline)]
 
-ドキュメント群（データシート PDF / 設計ガイドライン / 過去の HDL / ビルドエラーログ / adapter.toml 等）
+Document collection (datasheet PDFs / design guidelines / past HDL / build error logs / adapter.toml etc.)
     ↓
-ドキュメントローダー（PDF/MD/TOML）→ チャンク分割（500〜1000 トークン）→ Embedding モデル（Ollama）→ ベクトル DB（Chroma/Qdrant）
+Document loaders (PDF/MD/TOML) → Chunk splitting (500-1000 tokens) → Embedding model (Ollama) → Vector DB (Chroma/Qdrant)
 
-[クエリフェーズ（オンライン）]
+[Query Phase (Online)]
 
-ユーザークエリ → クエリ Embedding → ベクトル DB 類似検索（top-k=5）→ 関連ドキュメント取得 → LLM（Ollama ローカル）に注入 → 回答生成
+User query → Query embedding → Vector DB similarity search (top-k=5) → Relevant document retrieval → Inject into LLM (Ollama local) → Response generation
 ```
 
-### 技術スタック
+### Technology Stack
 
-| コンポーネント | 技術 | 役割 |
+| Component | Technology | Role |
 |--------------|------|------|
-| LLM 実行 | Ollama | ローカル LLM 実行（プライバシー保護） |
-| パイプライン制御 | TypeScript + LangChain | RAG パイプラインの構築・制御 |
-| 埋め込みモデル | Ollama Embedding（nomic-embed-text 等） | ドキュメント・クエリのベクトル化 |
-| ベクトル DB | Chroma または Qdrant | ベクトルストレージ・類似度検索 |
-| ドキュメントローダー | LangChain DocumentLoader | PDF / Markdown / TOML / ソースコード読み込み |
+| LLM execution | Ollama | Local LLM execution (privacy protection) |
+| Pipeline control | TypeScript + LangChain | RAG pipeline construction and control |
+| Embedding model | Ollama Embedding (nomic-embed-text etc.) | Vectorization of documents and queries |
+| Vector DB | Chroma or Qdrant | Vector storage and similarity search |
+| Document loader | LangChain DocumentLoader | PDF / Markdown / TOML / source code loading |
 
-### Hestia における RAG の具体的活用例
+### Concrete RAG Use Cases in Hestia
 
-1. **回路図設計支援**: 「STM32F103 + BME280 の接続方法」→ 両 IC のデータシートから推奨回路・ピン接続を自動抽出し、SKiDL コード生成の精度を向上
-2. **HDL 設計支援**: 「AXI4 バスインターフェースの実装」→ 過去の HDL ライブラリから AXI4 実装パターンを検索し、スケルトンコード生成に反映
-3. **エラー修復支援**: 「Vivado 2026.1 で Synth 8-439 エラー」→ 過去の同種エラーと修正パッチを検索し、PatcherAgent のコンテキストに注入
-4. **制約設計支援**: 「Artix-7 のクロック制約設定」→ Vivado UG903 からタイミング制約の設定方法を検索し、XDC ファイル生成に反映
-5. **ASIC フロー支援**: 「Sky130 の配線ルール」→ PDK ドキュメントから DRC ルールを検索し、OpenROAD の設定パラメータを最適化
+1. **Circuit design assistance**: "How to connect STM32F103 + BME280" → Automatically extract recommended circuits and pin connections from both IC datasheets, improving SKiDL code generation accuracy
+2. **HDL design assistance**: "Implement AXI4 bus interface" → Search past HDL library AXI4 implementation patterns, reflecting them in skeleton code generation
+3. **Error repair assistance**: "Vivado 2026.1 Synth 8-439 error" → Search past similar errors and fix patches, injecting them into PatcherAgent's context
+4. **Constraint design assistance**: "Artix-7 clock constraint settings" → Search timing constraint configuration methods from Vivado UG903, reflecting them in XDC file generation
+5. **ASIC flow assistance**: "Sky130 routing rules" → Search DRC rules from PDK documentation, optimizing OpenROAD configuration parameters
 
 ---
 
-## 関連ドキュメント
+## Related Documentation
 
-- [仕様書駆動開発](spec_driven_development.md) — SDD の詳細仕様・DesignSpec AST・運用ルール
-- [アーキテクチャ概要](architecture_overview.md) — 全体アーキテクチャにおける AI 活用の位置づけ
-- [セキュリティ](security.md) — API キー保護・知的財産保護
-- [共有サービス](shared_services.md) — RAG（rag-conductor）の詳細・インジェストパイプライン・自己学習
-- [コンテナ実行](container_execution.md) — コンテナビルドの CI/CD 統合
-- `.hestia/doc/ai/skills_system.md` — スキルシステムの詳細仕様
-- `.hestia/doc/ai/workflow_engine.md` — ワークフローエンジンの詳細仕様
+- [Spec-Driven Development](spec_driven_development.md) — SDD detailed specification, DesignSpec AST, operational rules
+- [Architecture Overview](architecture_overview.md) — Position of AI utilization in the overall architecture
+- [Security](security.md) — API key protection and intellectual property protection
+- [Shared Services](shared_services.md) — RAG (rag-conductor) details, ingestion pipeline, self-learning
+- [Container Execution](container_execution.md) — Container build CI/CD integration
+- `.hestia/doc/ai/skills_system.md` — Skill system detailed specification
+- `.hestia/doc/ai/workflow_engine.md` — Workflow engine detailed specification

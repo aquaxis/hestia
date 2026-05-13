@@ -1,97 +1,97 @@
-# rag-conductor エラーコード
+# rag-conductor Error Codes
 
-**対象 Conductor**: rag-conductor
-**ソース**: 設計仕様書 §14.3（3565-3581行目付近）
+**Target Conductor**: rag-conductor
+**Source**: Design Specification §14.3 (around lines 3565-3581)
 
-## エラーコード範囲
+## Error Code Range
 
-rag-conductor のエラーコードは **-32600 〜 -32699** の範囲を使用する。
+rag-conductor error codes use the **-32600 to -32699** range.
 
-## エラーカテゴリ
+## Error Categories
 
-### Ingest（取り込み）
+### Ingest
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32600 | INGEST_FAILED | 取り込み処理失敗 |
-| -32601 | INGEST_SOURCE_NOT_FOUND | 取り込みソース未検出 |
-| -32602 | INGEST_UNSUPPORTED_SOURCE_TYPE | 未対応のソース種別 |
+| Code | Name | Description |
+|------|------|-------------|
+| -32600 | INGEST_FAILED | Ingestion processing failure |
+| -32601 | INGEST_SOURCE_NOT_FOUND | Ingestion source not found |
+| -32602 | INGEST_UNSUPPORTED_SOURCE_TYPE | Unsupported source type |
 
 ### PDF
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32610 | PDF_TEXT_EXTRACTION_FAILED | PDF テキスト抽出失敗 |
-| -32611 | PDF_OCR_FAILED | OCR 処理失敗（Tesseract） |
-| -32612 | PDF_TABLE_EXTRACTION_FAILED | 表抽出失敗（Camelot） |
-| -32613 | PDF_IMAGE_EXTRACTION_FAILED | 画像抽出失敗 |
+| Code | Name | Description |
+|------|------|-------------|
+| -32610 | PDF_TEXT_EXTRACTION_FAILED | PDF text extraction failure |
+| -32611 | PDF_OCR_FAILED | OCR processing failure (Tesseract) |
+| -32612 | PDF_TABLE_EXTRACTION_FAILED | Table extraction failure (Camelot) |
+| -32613 | PDF_IMAGE_EXTRACTION_FAILED | Image extraction failure |
 
 ### Web
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32620 | WEB_FETCH_FAILED | HTTP 取得失敗 |
-| -32630 | WEB_ROBOTS_TXT_DENIED | robots.txt によりアクセス拒否 |
-| -32621 | WEB_CONTENT_EXTRACTION_FAILED | 本文抽出失敗（trafilatura） |
-| -32622 | WEB_LANGUAGE_DETECTION_FAILED | 言語検出失敗（CLD3 / fasttext） |
+| Code | Name | Description |
+|------|------|-------------|
+| -32620 | WEB_FETCH_FAILED | HTTP fetch failure |
+| -32630 | WEB_ROBOTS_TXT_DENIED | Access denied by robots.txt |
+| -32621 | WEB_CONTENT_EXTRACTION_FAILED | Content extraction failure (trafilatura) |
+| -32622 | WEB_LANGUAGE_DETECTION_FAILED | Language detection failure (CLD3 / fasttext) |
 
-### Quality Gate（品質ゲート）
+### Quality Gate
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32640 | QUALITY_GATE_FAILED | 品質ゲート不合格 |
-| -32641 | QUALITY_MIN_LENGTH | 最小文字数不足 |
-| -32642 | QUALITY_MAX_LENGTH | 最大文字数超過 |
-| -32643 | QUALITY_DUPLICATE | 重複検出（cosine >= 0.95） |
-| -32644 | QUALITY_UTF8_INVALID | UTF-8 妥当性エラー |
-| -32645 | QUALITY_OCR_LOW_CONFIDENCE | OCR 信頼度不足（< 60%） |
+| Code | Name | Description |
+|------|------|-------------|
+| -32640 | QUALITY_GATE_FAILED | Quality gate failure |
+| -32641 | QUALITY_MIN_LENGTH | Below minimum character count |
+| -32642 | QUALITY_MAX_LENGTH | Exceeds maximum character count |
+| -32643 | QUALITY_DUPLICATE | Duplicate detected (cosine >= 0.95) |
+| -32644 | QUALITY_UTF8_INVALID | UTF-8 validity error |
+| -32645 | QUALITY_OCR_LOW_CONFIDENCE | OCR confidence below threshold (< 60%) |
 
 ### Chunk / Embedding
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32650 | CHUNK_SPLIT_FAILED | チャンク分割失敗 |
-| -32651 | EMBEDDING_FAILED | 埋め込み生成失敗（Ollama） |
-| -32652 | EMBEDDING_MODEL_NOT_FOUND | 埋め込みモデル未検出 |
-| -32653 | UPSERT_FAILED | ベクトル DB への upsert 失敗 |
+| Code | Name | Description |
+|------|------|-------------|
+| -32650 | CHUNK_SPLIT_FAILED | Chunk splitting failure |
+| -32651 | EMBEDDING_FAILED | Embedding generation failure (Ollama) |
+| -32652 | EMBEDDING_MODEL_NOT_FOUND | Embedding model not found |
+| -32653 | UPSERT_FAILED | Upsert to vector DB failed |
 
 ### Vector / Search
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32660 | VECTOR_DB_CONNECTION_FAILED | ベクトル DB 接続失敗（Chroma / Qdrant） |
-| -32661 | SEARCH_FAILED | 検索実行失敗 |
-| -32662 | SEARCH_TIMEOUT | 検索タイムアウト |
+| Code | Name | Description |
+|------|------|-------------|
+| -32660 | VECTOR_DB_CONNECTION_FAILED | Vector DB connection failure (Chroma / Qdrant) |
+| -32661 | SEARCH_FAILED | Search execution failure |
+| -32662 | SEARCH_TIMEOUT | Search timeout |
 
 ### License / PII
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32670 | LICENSE_VIOLATION | ライセンス違反（unknown / vendor-proprietary without terms_accepted） |
-| -32671 | PII_DETECTION_FAILED | PII 検出処理失敗 |
-| -32672 | PII_MASKING_FAILED | PII マスキング処理失敗 |
+| Code | Name | Description |
+|------|------|-------------|
+| -32670 | LICENSE_VIOLATION | License violation (unknown / vendor-proprietary without terms_accepted) |
+| -32671 | PII_DETECTION_FAILED | PII detection processing failure |
+| -32672 | PII_MASKING_FAILED | PII masking processing failure |
 
 ### Scheduler / Cache
 
-| コード | 名称 | 説明 |
-|-------|------|------|
-| -32680 | SCHEDULER_QUEUE_FULL | 取り込みキュー満杯 |
-| -32681 | CACHE_EXPIRED | キャッシュ期限切れ |
-| -32682 | CACHE_READ_ERROR | キャッシュ読み出しエラー |
+| Code | Name | Description |
+|------|------|-------------|
+| -32680 | SCHEDULER_QUEUE_FULL | Ingestion queue full |
+| -32681 | CACHE_EXPIRED | Cache expired |
+| -32682 | CACHE_READ_ERROR | Cache read error |
 
 ## IngestJobStatus
 
-| ステータス | 説明 |
-|-----------|------|
-| `Queued` | キュー待ち |
-| `Processing` | 処理中 |
-| `Completed` | 完了 |
-| `Failed` | 失敗 |
-| `PartiallyCompleted` | 一部完了（一部ソースが失敗） |
+| Status | Description |
+|--------|-------------|
+| `Queued` | Waiting in queue |
+| `Processing` | Processing |
+| `Completed` | Completed |
+| `Failed` | Failed |
+| `PartiallyCompleted` | Partially completed (some sources failed) |
 
-## 関連ドキュメント
+## Related Documentation
 
-- [rag/message_methods.md](message_methods.md) — rag.* メソッド一覧
-- [rag/ingest_pipeline.md](ingest_pipeline.md) — 取り込みパイプライン
-- [rag/search_engine.md](search_engine.md) — 検索エンジン仕様
-- [../common/error_registry.md](../common/error_registry.md) — HESTIA 共通エラーレジストリ
+- [rag/message_methods.md](message_methods.md) — rag.* method list
+- [rag/ingest_pipeline.md](ingest_pipeline.md) — Ingestion pipeline
+- [rag/search_engine.md](search_engine.md) — Search engine specification
+- [../common/error_registry.md](../common/error_registry.md) — HESTIA common error registry

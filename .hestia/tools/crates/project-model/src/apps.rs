@@ -1,4 +1,4 @@
-//! apps.toml 設定モデル（§9.4）
+//! apps.toml configuration model (section 9.4)
 
 use serde::{Deserialize, Serialize};
 

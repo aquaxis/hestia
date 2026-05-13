@@ -1,19 +1,19 @@
-# データベーススキーマ
+# Database Schema
 
-**対象領域**: common — データ永続化
-**ソース**: 設計仕様書 §18.9
+**Domain**: common — Data Persistence
+**Source**: Design Specification §18.9
 
-## 概要
+## Overview
 
-HESTIA は SQLite と sled の2種類のデータストアを使い分ける。SQLite はリレーショナルな構造化データ、sled は高スループットな KV データに使用する。
+HESTIA uses two types of data stores: SQLite for relational structured data and sled for high-throughput KV data.
 
-## SQLite スキーマ
+## SQLite Schema
 
-用途: 構造化データの永続化。軽量組み込み DB。
+Purpose: Persistence of structured data. Lightweight embedded DB.
 
 ### compat-matrix
 
-ツールバージョン互換性マトリクス。
+Tool version compatibility matrix.
 
 ```sql
 CREATE TABLE compat_matrix (
@@ -29,7 +29,7 @@ CREATE TABLE compat_matrix (
 
 ### spec_history
 
-仕様書の変更履歴。
+Specification change history.
 
 ```sql
 CREATE TABLE spec_history (
@@ -44,7 +44,7 @@ CREATE TABLE spec_history (
 
 ### work_log
 
-作業ログのメタデータ。
+Work log metadata.
 
 ```sql
 CREATE TABLE work_log (
@@ -60,7 +60,7 @@ CREATE TABLE work_log (
 
 ### ip_registry
 
-IP コアの登録情報。
+IP core registration information.
 
 ```sql
 CREATE TABLE ip_registry (
@@ -75,7 +75,7 @@ CREATE TABLE ip_registry (
 
 ### container_images
 
-コンテナイメージ管理。
+Container image management.
 
 ```sql
 CREATE TABLE container_images (
@@ -91,7 +91,7 @@ CREATE TABLE container_images (
 
 ### prompt-archive/index.db
 
-プロンプトアーカイブのインデックス。
+Prompt archive index.
 
 ```sql
 CREATE TABLE prompts (
@@ -111,21 +111,21 @@ CREATE INDEX idx_prompt_trace ON prompts(trace_id);
 CREATE INDEX idx_prompt_template ON prompts(template_id);
 ```
 
-## sled スキーマ
+## sled Schema
 
-用途: 高スループット KV ストア。zstd 圧縮、cache 1 GiB。
+Purpose: High-throughput KV store. zstd compression, 1 GiB cache.
 
-| KV コレクション | キー | 値 | 用途 |
+| KV Collection | Key | Value | Purpose |
 |----------------|------|----|------|
-| `messages` | `trace_id` | JSON | メッセージ履歴 |
-| `agent_state` | `agent_id` | JSON | エージェント状態スナップショット |
-| `task_queue` | `task_id` | JSON | タスクキュー |
-| `rag_cache` | `query_hash` | JSON | RAG クエリキャッシュ |
-| `version_matrix` | `tool@version` | JSON | バージョン互換性情報 |
-| `workflow_state` | `workflow_id` | JSON | ワークフロー実行状態 |
+| `messages` | `trace_id` | JSON | Message history |
+| `agent_state` | `agent_id` | JSON | Agent state snapshot |
+| `task_queue` | `task_id` | JSON | Task queue |
+| `rag_cache` | `query_hash` | JSON | RAG query cache |
+| `version_matrix` | `tool@version` | JSON | Version compatibility information |
+| `workflow_state` | `workflow_id` | JSON | Workflow execution state |
 
-## 関連ドキュメント
+## Related Documents
 
-- [observability.md](observability.md) — 監視・メトリクス
-- [ip_manager.md](ip_manager.md) — IP Manager（ip_registry 利用）
-- [cicd_api.md](cicd_api.md) — CI/CD API（work_log 利用）
+- [observability.md](observability.md) — Monitoring and metrics
+- [ip_manager.md](ip_manager.md) — IP Manager (uses ip_registry)
+- [cicd_api.md](cicd_api.md) — CI/CD API (uses work_log)

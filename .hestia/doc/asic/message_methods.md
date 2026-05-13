@@ -1,59 +1,59 @@
-# asic-conductor メッセージメソッド一覧
+# asic-conductor Message Methods
 
-**対象 Conductor**: asic-conductor
-**ソース**: 設計仕様書 §14（3492-3630行目付近）, §6（1761-1981行目付近）
+**Target Conductor**: asic-conductor
+**Source**: Design specification §14 (around lines 3492-3630), §6 (around lines 1761-1981)
 
-## トランスポート
+## Transport
 
-全通信は agent-cli ネイティブ IPC に統一。peer 名 `asic`。
+All communication uses agent-cli native IPC. Peer name: `asic`.
 
-## asic.* メソッド一覧
+## asic.* Method List
 
-### RTL-to-GDSII フロー
+### RTL-to-GDSII Flow
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `asic.synthesize` | Request | 論理合成実行（Yosys） |
-| `asic.floorplan` | Request | フロアプラン作成（OpenROAD） |
-| `asic.place` | Request | セル配置実行（RePlAce + OpenDP） |
-| `asic.cts` | Request | クロックツリー合成（TritonCTS） |
-| `asic.route` | Request | 配線実行（FastRoute + TritonRoute） |
-| `asic.gdsii` | Request | GDSII ストリーム生成 |
+| Method | Direction | Description |
+|---------|-----------|-------------|
+| `asic.synthesize` | Request | Execute logic synthesis (Yosys) |
+| `asic.floorplan` | Request | Create floorplan (OpenROAD) |
+| `asic.place` | Request | Execute cell placement (RePlAce + OpenDP) |
+| `asic.cts` | Request | Clock tree synthesis (TritonCTS) |
+| `asic.route` | Request | Execute routing (FastRoute + TritonRoute) |
+| `asic.gdsii` | Request | Generate GDSII stream |
 
-### サインオフ
+### Signoff
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `asic.drc` | Request | デザインルールチェック（Magic / KLayout） |
-| `asic.lvs` | Request | レイアウト対回路図検証（Netgen / KLayout） |
-| `asic.timing_signoff` | Request | タイミングサインオフ（OpenSTA） |
+| Method | Direction | Description |
+|---------|-----------|-------------|
+| `asic.drc` | Request | Design rule check (Magic / KLayout) |
+| `asic.lvs` | Request | Layout versus schematic verification (Netgen / KLayout) |
+| `asic.timing_signoff` | Request | Timing signoff (OpenSTA) |
 
-### PDK 管理
+### PDK Management
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `asic.pdk.install` | Request | PDK インストール（volare 経由） |
-| `asic.pdk.list` | Request | インストール済み PDK 一覧 |
+| Method | Direction | Description |
+|---------|-----------|-------------|
+| `asic.pdk.install` | Request | Install PDK (via volare) |
+| `asic.pdk.list` | Request | List installed PDKs |
 
-### AI エージェント連携
+### AI Agent Integration
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `asic.ai.timing_fix` | Request | タイミング違反自動修復提案 |
-| `asic.ai.drc_fix` | Request | DRC 違反自動修復パッチ生成 |
-| `asic.ai.floorplan_optimize` | Request | フロアプラン最適化提案 |
-| `asic.ai.pdk_migrate` | Request | PDK マイグレーション支援 |
+| Method | Direction | Description |
+|---------|-----------|-------------|
+| `asic.ai.timing_fix` | Request | Automatic timing violation fix suggestion |
+| `asic.ai.drc_fix` | Request | Automatic DRC violation fix patch generation |
+| `asic.ai.floorplan_optimize` | Request | Floorplan optimization suggestion |
+| `asic.ai.pdk_migrate` | Request | PDK migration assistance |
 
-### conductor-core 共通
+### conductor-core Common
 
-| メソッド | 方向 | 説明 |
-|---------|------|------|
-| `system.health.v1` | Request | ヘルスチェック |
-| `system.readiness` | Request | 準備状態確認 |
+| Method | Direction | Description |
+|---------|-----------|-------------|
+| `system.health.v1` | Request | Health check |
+| `system.readiness` | Request | Readiness check |
 
-## ペイロード例
+## Payload Examples
 
-### asic.synthesize リクエスト
+### asic.synthesize Request
 
 ```json
 {
@@ -68,7 +68,7 @@
 }
 ```
 
-### asic.drc リクエスト
+### asic.drc Request
 
 ```json
 {
@@ -81,10 +81,10 @@
 }
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [asic/binary_spec.md](binary_spec.md) — hestia-asic-cli バイナリ仕様
-- [asic/error_types.md](error_types.md) — asic-conductor エラーコード
-- [asic/state_machines.md](state_machines.md) — ASIC ビルドステートマシン
-- [asic/tool_adapter.md](tool_adapter.md) — AsicToolAdapter トレイト
-- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli メッセージング仕様
+- [asic/binary_spec.md](binary_spec.md) — hestia-asic-cli binary specification
+- [asic/error_types.md](error_types.md) — asic-conductor error codes
+- [asic/state_machines.md](state_machines.md) — ASIC build state machine
+- [asic/tool_adapter.md](tool_adapter.md) — AsicToolAdapter trait
+- [../common/agent_cli_messaging.md](../common/agent_cli_messaging.md) — agent-cli messaging specification

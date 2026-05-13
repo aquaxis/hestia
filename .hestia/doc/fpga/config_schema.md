@@ -1,88 +1,88 @@
-# fpga-conductor 設定スキーマ
+# fpga-conductor Configuration Schema
 
-**対象 Conductor**: fpga-conductor
-**ソース**: 設計仕様書 §5.4（1542-1683行目付近）
+**Target Conductor**: fpga-conductor
+**Source**: Design Specification §5.4 (around lines 1542-1683)
 
-## fpga.toml — 統一プロジェクトフォーマット
+## fpga.toml — Unified Project Format
 
-FPGA プロジェクトの設定・ターゲット定義・ツールチェーン制約・IP 管理・ビルド設定を宣言的に定義するファイル。
+A file that declaratively defines FPGA project settings, target definitions, toolchain constraints, IP management, and build configuration.
 
-### セクション一覧
+### Sections
 
-| セクション | 必須 | 説明 |
-|-----------|------|------|
-| `[project]` | 必須 | プロジェクト基本設定 |
-| `[targets.*]` | 必須 | ターゲットデバイス定義（複数定義可能） |
-| `[toolchain]` | 任意 | ツールチェーンバージョン制約（semver） |
-| `[toolchain.lock]` | 任意 | ツールチェーンロック（再現性保証） |
-| `[ip.*]` | 任意 | IP コア管理 |
-| `[build]` | 任意 | ビルド設定 |
-| `[sim]` | 任意 | シミュレーション設定 |
+| Section | Required | Description |
+|---------|----------|-------------|
+| `[project]` | Required | Project basic settings |
+| `[targets.*]` | Required | Target device definitions (multiple allowed) |
+| `[toolchain]` | Optional | Toolchain version constraints (semver) |
+| `[toolchain.lock]` | Optional | Toolchain lock (reproducibility guarantee) |
+| `[ip.*]` | Optional | IP core management |
+| `[build]` | Optional | Build settings |
+| `[sim]` | Optional | Simulation settings |
 
-### `[project]` セクション
+### `[project]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `name` | string | プロジェクト名 |
-| `version` | string | バージョン |
-| `hdl_files` | string[] | HDL ソースファイル |
-| `include_dirs` | string[] | インクルードディレクトリ |
-| `testbenches` | string[] | テストベンチファイル |
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Project name |
+| `version` | string | Version |
+| `hdl_files` | string[] | HDL source files |
+| `include_dirs` | string[] | Include directories |
+| `testbenches` | string[] | Testbench files |
 
-### `[targets.*]` セクション
+### `[targets.*]` Section
 
-ターゲットごとに個別セクションを定義。
+Define a separate section for each target.
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `vendor` | string | ベンダー名（`xilinx` / `intel` / `efinix` / `yosyshq`） |
-| `device` | string | デバイス名（例: `xc7a35tcsg324-1`） |
-| `top` | string | トップモジュール名 |
-| `constraints` | string[] | 制約ファイル（XDC / SDC / PCF / peri.xml） |
-| `interface_script` | string | Efinity 用インターフェーススクリプト（任意） |
+| Field | Type | Description |
+|-------|------|-------------|
+| `vendor` | string | Vendor name (`xilinx` / `intel` / `efinix` / `yosyshq`) |
+| `device` | string | Device name (e.g., `xc7a35tcsg324-1`) |
+| `top` | string | Top module name |
+| `constraints` | string[] | Constraint files (XDC / SDC / PCF / peri.xml) |
+| `interface_script` | string | Efinity interface script (optional) |
 
-### `[toolchain]` セクション
+### `[toolchain]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `vivado` | string | Vivado バージョン制約（semver 例: `>=2023.1, <2026`） |
-| `quartus` | string | Quartus バージョン制約 |
-| `efinity` | string | Efinity バージョン制約 |
+| Field | Type | Description |
+|-------|------|-------------|
+| `vivado` | string | Vivado version constraint (semver, e.g., `>=2023.1, <2026`) |
+| `quartus` | string | Quartus version constraint |
+| `efinity` | string | Efinity version constraint |
 
-### `[toolchain.lock]` セクション
+### `[toolchain.lock]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `vivado` | string | 固定バージョン（例: `2025.2.0`） |
-| `quartus` | string | 固定バージョン |
-| `efinity` | string | 固定バージョン |
+| Field | Type | Description |
+|-------|------|-------------|
+| `vivado` | string | Pinned version (e.g., `2025.2.0`) |
+| `quartus` | string | Pinned version |
+| `efinity` | string | Pinned version |
 
-### `[ip.*]` セクション
+### `[ip.*]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `vendor` | string | IP ベンダー |
-| `name` | string | IP コア名 |
-| `version` | string | IP バージョン |
-| `config` | string | 設定ファイルパス（.xci 等） |
+| Field | Type | Description |
+|-------|------|-------------|
+| `vendor` | string | IP vendor |
+| `name` | string | IP core name |
+| `version` | string | IP version |
+| `config` | string | Configuration file path (.xci, etc.) |
 
-### `[build]` セクション
+### `[build]` Section
 
-| フィールド | 型 | 既定値 | 説明 |
-|-----------|---|-------|------|
-| `parallel_jobs` | integer | — | 並列ジョブ数 |
-| `incremental_compile` | boolean | — | インクリメンタルコンパイル有効化 |
-| `cache_dir` | string | `.fpga-cache` | キャッシュディレクトリ |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `parallel_jobs` | integer | — | Number of parallel jobs |
+| `incremental_compile` | boolean | — | Enable incremental compilation |
+| `cache_dir` | string | `.fpga-cache` | Cache directory |
 
-### `[sim]` セクション
+### `[sim]` Section
 
-| フィールド | 型 | 説明 |
-|-----------|---|------|
-| `tool` | string | シミュレーションツール（`iverilog` / `modelsim` / `questa` / `xsim`） |
-| `top_tb` | string | トップテストベンチ名 |
-| `plusargs` | string[] | プラス引数 |
+| Field | Type | Description |
+|-------|------|-------------|
+| `tool` | string | Simulation tool (`iverilog` / `modelsim` / `questa` / `xsim`) |
+| `top_tb` | string | Top testbench name |
+| `plusargs` | string[] | Plus arguments |
 
-### 設定例
+### Configuration Example
 
 ```toml
 [project]
@@ -143,9 +143,9 @@ top_tb  = "tb_top"
 plusargs = ["+DUMP_WAVES=1"]
 ```
 
-## 関連ドキュメント
+## Related Documentation
 
-- [fpga/binary_spec.md](binary_spec.md) — hestia-fpga-cli バイナリ仕様
-- [fpga/vendor_adapter.md](vendor_adapter.md) — VendorAdapter トレイト
-- [fpga/state_machines.md](state_machines.md) — ビルドステートマシン
-- [../rtl/config_schema.md](../rtl/config_schema.md) — rtl.toml スキーマ
+- [fpga/binary_spec.md](binary_spec.md) — hestia-fpga-cli binary specification
+- [fpga/vendor_adapter.md](vendor_adapter.md) — VendorAdapter trait
+- [fpga/state_machines.md](state_machines.md) — Build state machine
+- [../rtl/config_schema.md](../rtl/config_schema.md) — rtl.toml schema

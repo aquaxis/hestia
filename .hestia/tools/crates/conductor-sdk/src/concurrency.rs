@@ -1,9 +1,9 @@
-//! Phase 126 — サブエージェント並列度の階層 Semaphore + acquire timeout 制御。
+//! Phase 126 — Hierarchical semaphore for sub-agent concurrency + acquire timeout control.
 //!
-//! `ConductorLimiter` は tokio::sync::Semaphore を timeout 付きで包む薄い
-//! ヘルパで、ai-conductor / 各 domain conductor / AgentManager の 3 段階で
-//! 共通利用される。timeout 経過時に `ConcurrencyError::AcquireTimeout` を
-//! 返すことで、cap 超過によるデッドロックを検知 + 解放する。
+//! `ConductorLimiter` is a thin helper that wraps tokio::sync::Semaphore with a timeout.
+//! It is used commonly across three levels: ai-conductor / each domain conductor / AgentManager.
+//! When the timeout elapses, it returns `ConcurrencyError::AcquireTimeout` to detect and
+//! resolve deadlocks caused by exceeding the cap.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -36,9 +36,9 @@ impl ConductorLimiter {
         }
     }
 
-    /// env 駆動の既定値で構築する（per-conductor 用）。
-    /// - `HESTIA_PER_CONDUCTOR_MAX` (既定 4)
-    /// - `HESTIA_ACQUIRE_TIMEOUT_SECS` (既定 600)
+    /// Build with env-driven defaults (for per-conductor use).
+    /// - `HESTIA_PER_CONDUCTOR_MAX` (default 4)
+    /// - `HESTIA_ACQUIRE_TIMEOUT_SECS` (default 600)
     pub fn from_env() -> Self {
         let max = std::env::var("HESTIA_PER_CONDUCTOR_MAX")
             .ok()
