@@ -50,6 +50,13 @@ enum Commands {
         /// watchdog does not fire even if elapsed time exceeds `timeout_secs`.
         #[arg(long)]
         heartbeat_secs: Option<u64>,
+        /// Maximum time (seconds) the conductor may sit on the same
+        /// `current_phase` value while still writing status:in_progress JSON.
+        /// Default: heartbeat_secs × 2, clamped to [120, 7200]. Tighter than
+        /// `--heartbeat-secs`: catches "alive but not progressing" hangs that
+        /// the mtime heartbeat would tolerate.
+        #[arg(long)]
+        phase_stall_secs: Option<u64>,
         /// Polling interval in milliseconds (default: 500)
         #[arg(long, default_value_t = 500)]
         poll_interval_ms: u64,
@@ -187,6 +194,7 @@ async fn run_with_orchestrator(
     file_path: &str,
     timeout_secs: u64,
     heartbeat_secs: Option<u64>,
+    phase_stall_secs: Option<u64>,
     poll_interval_ms: u64,
 ) -> Result<()> {
     let body = std::fs::read_to_string(file_path)
@@ -239,10 +247,18 @@ async fn run_with_orchestrator(
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     let interval = Duration::from_millis(poll_interval_ms);
     let heartbeat = compute_heartbeat(timeout_secs, heartbeat_secs);
+    // Phase 134 — semantic-progress window. Catches "alive but not advancing"
+    // hangs that the mtime heartbeat alone tolerates.
+    let phase_stall = compute_phase_stall(timeout_secs, heartbeat, phase_stall_secs);
 
     let mut last_progress_at = Instant::now();
     let mut last_seen_mtime: Option<SystemTime> = None;
     let mut cached_status: Option<String> = None;
+    // Phase 134 — Phase-progress tracking. Either `current_phase` changing or
+    // `phases_completed.len()` growing counts as semantic progress.
+    let mut last_phase_progress_at = Instant::now();
+    let mut last_seen_phase: Option<String> = None;
+    let mut last_seen_phase_count: usize = 0;
 
     loop {
         let file_exists = result_path.exists();
@@ -260,18 +276,39 @@ async fn run_with_orchestrator(
             last_seen_mtime = file_mtime;
             // Re-parse on-disk status only when mtime moved, to avoid burning
             // CPU re-reading a quiescent file thousands of times.
-            cached_status = std::fs::read_to_string(&result_path)
+            let parsed = std::fs::read_to_string(&result_path)
                 .ok()
-                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-                .and_then(|v| {
-                    v.get("status")
-                        .and_then(|s| s.as_str())
-                        .map(|s| s.to_string())
-                });
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+            cached_status = parsed.as_ref().and_then(|v| {
+                v.get("status")
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.to_string())
+            });
+            // Phase 134 — extract current_phase + phases_completed.len() from the
+            // same parse pass; reset the phase window if either advanced.
+            if let Some(v) = parsed.as_ref() {
+                let phase = v
+                    .get("current_phase")
+                    .and_then(|s| s.as_str())
+                    .map(String::from);
+                let phase_count = v
+                    .get("phases_completed")
+                    .and_then(|p| p.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+                let phase_advanced =
+                    phase != last_seen_phase || phase_count > last_seen_phase_count;
+                if phase_advanced {
+                    last_phase_progress_at = Instant::now();
+                    last_seen_phase = phase;
+                    last_seen_phase_count = phase_count;
+                }
+            }
         }
 
         let now = Instant::now();
         let quiescent_for = now.saturating_duration_since(last_progress_at);
+        let phase_quiescent_for = now.saturating_duration_since(last_phase_progress_at);
 
         match classify_poll(
             now,
@@ -280,11 +317,42 @@ async fn run_with_orchestrator(
             quiescent_for,
             heartbeat,
             cached_status.as_deref(),
+            last_seen_phase.as_deref(),
+            phase_quiescent_for,
+            phase_stall,
         ) {
             PollDecision::Done => break,
             PollDecision::KeepPolling => {
                 tokio::time::sleep(interval).await;
                 continue;
+            }
+            PollDecision::PhaseStalled { frozen_phase, frozen_for } => {
+                // Phase 134 — semantic stall path. Synthesize a halt aggregate
+                // that names the frozen phase so the user sees the actionable
+                // diagnostic instead of a mtime-quiescence message.
+                let on_disk = if file_exists {
+                    read_result_with_retry(&result_path).await.ok()
+                } else {
+                    None
+                };
+                let synthetic = build_halt_aggregate(
+                    &run_id,
+                    &body,
+                    &result_path_str,
+                    timeout_secs,
+                    on_disk.as_ref(),
+                    HaltCause::PhaseStall {
+                        frozen_phase: frozen_phase.as_deref(),
+                        frozen_for_secs: frozen_for.as_secs(),
+                    },
+                );
+                if let Ok(serialized) = serde_json::to_string_pretty(&synthetic) {
+                    let _ = std::fs::write(&result_path, serialized);
+                }
+                emit(common, "ai.run", &synthetic, true)?;
+                std::io::stdout().flush().ok();
+                std::io::stderr().flush().ok();
+                std::process::exit(1);
             }
             PollDecision::Stalled { .. } | PollDecision::DeadlineWithoutFile => {
                 // Phase 132 — synthesize a halt aggregate that carries the on-disk
@@ -302,6 +370,7 @@ async fn run_with_orchestrator(
                     &result_path_str,
                     timeout_secs,
                     on_disk.as_ref(),
+                    HaltCause::Timeout,
                 );
                 if let Ok(serialized) = serde_json::to_string_pretty(&synthetic) {
                     let _ = std::fs::write(&result_path, serialized);
@@ -359,19 +428,49 @@ async fn read_result_with_retry(path: &Path) -> Result<serde_json::Value> {
 
 /// Phase 132 (post-incident, report_stop.md §6.2 R2-1) — Outcome of one tick of
 /// the heartbeat-aware polling loop in `run_with_orchestrator`.
+///
+/// Phase 134 (post-incident-2) — Added `PhaseStalled` so the watchdog can fire
+/// on **semantic** quiescence (`current_phase` frozen) even while the mtime
+/// heartbeat is still alive. See AI_PRJ_DESIGN.md §1.
 #[derive(Debug, PartialEq)]
 pub(crate) enum PollDecision {
     KeepPolling,
     Done,
+    /// File mtime quiescent past `heartbeat`.
     Stalled { quiescent_for: Duration },
+    /// File mtime still advancing, but `current_phase` / `phases_completed`
+    /// have been frozen past `phase_stall`. Catches "alive but not
+    /// progressing" hangs that mtime heartbeat alone would tolerate.
+    PhaseStalled {
+        frozen_phase: Option<String>,
+        frozen_for: Duration,
+    },
     DeadlineWithoutFile,
+}
+
+/// Phase 134 — Distinguishes the two synthesis paths in `build_halt_aggregate`.
+/// `Timeout` covers both mtime-quiescence stalls and deadline-without-file;
+/// `PhaseStall` covers the semantic-progress detector.
+#[derive(Debug)]
+pub(crate) enum HaltCause<'a> {
+    Timeout,
+    PhaseStall {
+        frozen_phase: Option<&'a str>,
+        frozen_for_secs: u64,
+    },
 }
 
 /// Phase 132 (post-incident) — Classify a single poll tick.
 ///
 /// Pure function (no I/O); the caller is responsible for stat()'ing the file
-/// and tracking mtime advancement to compute `quiescent_for`. Truth table is
-/// AI_PRJ_DESIGN.md §3.2.
+/// and tracking mtime / phase advancement to compute the quiescence durations.
+/// Truth table is AI_PRJ_DESIGN.md §3.2.
+///
+/// Phase 134 — Added `phase_progress_quiescent_for`, `phase_stall`, and
+/// `on_disk_phase`. When status is still `in_progress` (or unparseable) and
+/// the phase-progress window is exceeded, returns `PhaseStalled` in preference
+/// to `Stalled` — the semantic detector identifies a more specific cause.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn classify_poll(
     now: Instant,
     deadline: Instant,
@@ -379,6 +478,9 @@ pub(crate) fn classify_poll(
     quiescent_for: Duration,
     heartbeat: Duration,
     on_disk_status: Option<&str>,
+    on_disk_phase: Option<&str>,
+    phase_progress_quiescent_for: Duration,
+    phase_stall: Duration,
 ) -> PollDecision {
     if !file_exists {
         return if now >= deadline {
@@ -389,6 +491,14 @@ pub(crate) fn classify_poll(
     }
     if matches!(on_disk_status, Some(s) if s != "in_progress") {
         return PollDecision::Done;
+    }
+    // Phase 134 — Semantic stall takes precedence over mtime stall: a frozen
+    // `current_phase` is a more actionable diagnostic than "mtime stopped".
+    if phase_progress_quiescent_for > phase_stall {
+        return PollDecision::PhaseStalled {
+            frozen_phase: on_disk_phase.map(str::to_string),
+            frozen_for: phase_progress_quiescent_for,
+        };
     }
     if quiescent_for > heartbeat {
         return PollDecision::Stalled { quiescent_for };
@@ -406,6 +516,22 @@ pub(crate) fn compute_heartbeat(timeout_secs: u64, override_secs: Option<u64>) -
     Duration::from_secs(secs)
 }
 
+/// Phase 134 — Resolve the phase-stall window. Default = `heartbeat × 2`
+/// clamped to `[120, 7200]`; an explicit override is honored without an upper
+/// bound. Zero override clamps to 1 s (same fail-safe as `compute_heartbeat`).
+pub(crate) fn compute_phase_stall(
+    _timeout_secs: u64,
+    heartbeat: Duration,
+    override_secs: Option<u64>,
+) -> Duration {
+    let default_secs = heartbeat
+        .as_secs()
+        .saturating_mul(2)
+        .clamp(120, 7200);
+    let secs = override_secs.unwrap_or(default_secs).max(1);
+    Duration::from_secs(secs)
+}
+
 /// Phase 132 (post-incident, report_stop.md §6.2 R2-3) — Build the halt-aggregate
 /// JSON emitted when the watchdog fires. When `on_disk` is `Some`, carry
 /// through the in-flight evidence (`current_phase`, `updated_at`, `task_status`,
@@ -413,6 +539,11 @@ pub(crate) fn compute_heartbeat(timeout_secs: u64, override_secs: Option<u64>) -
 /// those facts — replacing the old speculative blame about agent-cli's
 /// iteration budget, which the incident logs in report_stop.md showed to be
 /// demonstrably wrong for the run that motivated this fix.
+///
+/// Phase 134 — Now also accepts a `HaltCause` so the semantic-progress detector
+/// (`PollDecision::PhaseStalled`) can emit a different `halted_reason` and
+/// carry top-level `frozen_phase` / `frozen_for_secs` fields. `aborted_reason`
+/// stays `"timeout"` for downstream-parser backward compat in both cases.
 ///
 /// Preserves `synthesized_by`, `halted_reason`, and `aborted_reason` (legacy
 /// alias) for downstream parsers.
@@ -422,6 +553,7 @@ pub(crate) fn build_halt_aggregate(
     result_path: &str,
     timeout_secs: u64,
     on_disk: Option<&serde_json::Value>,
+    cause: HaltCause<'_>,
 ) -> serde_json::Value {
     use serde_json::Value;
     let mut obj = serde_json::Map::new();
@@ -431,15 +563,37 @@ pub(crate) fn build_halt_aggregate(
         "instruction".to_string(),
         Value::String(instruction.to_string()),
     );
-    obj.insert("halted_reason".to_string(), Value::String("timeout".into()));
+    let halted_reason = match cause {
+        HaltCause::Timeout => "timeout",
+        HaltCause::PhaseStall { .. } => "phase_stall",
+    };
+    obj.insert(
+        "halted_reason".to_string(),
+        Value::String(halted_reason.into()),
+    );
+    // Backward-compat alias retained for parsers written before Phase 50.
     obj.insert("aborted_reason".to_string(), Value::String("timeout".into()));
     obj.insert(
         "synthesized_by".to_string(),
         Value::String("hestia-ai-cli".into()),
     );
 
-    let halt_message = match on_disk {
-        Some(v) => {
+    let halt_message = match (&cause, on_disk) {
+        (HaltCause::PhaseStall { frozen_phase, frozen_for_secs }, _) => {
+            let phase = frozen_phase.unwrap_or("(none recorded)");
+            let updated_at = on_disk
+                .and_then(|v| v.get("updated_at").and_then(|s| s.as_str()))
+                .unwrap_or("(no updated_at)");
+            format!(
+                "Conductor sat on `current_phase = {phase}` for {frozen_for_secs}s without \
+                 advancing while still writing status:in_progress to {result_path} \
+                 (last updated_at={updated_at}). The mtime heartbeat was alive but no \
+                 semantic progress was recorded. Inspect `agent-cli list` and \
+                 `hestia tail ai`; the conductor may need to be restarted with \
+                 `halted_reason: \"phase_stall\"` written explicitly."
+            )
+        }
+        (HaltCause::Timeout, Some(v)) => {
             let status = v.get("status").and_then(|s| s.as_str()).unwrap_or("unknown");
             let phase = v
                 .get("current_phase")
@@ -456,7 +610,7 @@ pub(crate) fn build_halt_aggregate(
                  `agent-cli list` and `hestia tail ai` before declaring failure."
             )
         }
-        None => format!(
+        (HaltCause::Timeout, None) => format!(
             "AI conductor did not write {result_path} within {timeout_secs}s; \
              the file does not exist. Run `hestia tail ai` to inspect orchestrator activity."
         ),
@@ -468,6 +622,20 @@ pub(crate) fn build_halt_aggregate(
             "AI conductor watchdog fired after {timeout_secs}s for {result_path}."
         )),
     );
+
+    if let HaltCause::PhaseStall { frozen_phase, frozen_for_secs } = cause {
+        obj.insert(
+            "frozen_phase".to_string(),
+            match frozen_phase {
+                Some(p) => Value::String(p.to_string()),
+                None => Value::Null,
+            },
+        );
+        obj.insert(
+            "frozen_for_secs".to_string(),
+            Value::Number(serde_json::Number::from(frozen_for_secs)),
+        );
+    }
 
     if let Some(v) = on_disk {
         for key in [
@@ -529,6 +697,7 @@ async fn main() -> Result<()> {
             file,
             timeout_secs,
             heartbeat_secs,
+            phase_stall_secs,
             poll_interval_ms,
         } => {
             run_with_orchestrator(
@@ -536,6 +705,7 @@ async fn main() -> Result<()> {
                 file,
                 *timeout_secs,
                 *heartbeat_secs,
+                *phase_stall_secs,
                 *poll_interval_ms,
             )
             .await
@@ -618,10 +788,37 @@ mod tests {
         Instant::now()
     }
 
+    /// Phase 134 — helper that calls `classify_poll` with phase-stall defaults
+    /// inert (long window, fresh quiescence). Lets Phase-133 tests keep their
+    /// original intent without each test repeating the no-op args.
+    #[allow(clippy::too_many_arguments)]
+    fn classify_poll_no_phase_stall(
+        now: Instant,
+        deadline: Instant,
+        file_exists: bool,
+        quiescent_for: Duration,
+        heartbeat: Duration,
+        on_disk_status: Option<&str>,
+    ) -> PollDecision {
+        classify_poll(
+            now,
+            deadline,
+            file_exists,
+            quiescent_for,
+            heartbeat,
+            on_disk_status,
+            None,
+            Duration::from_secs(0),
+            Duration::from_secs(3600),
+        )
+    }
+
+    // ---- Phase 132 / 133 — mtime heartbeat behavior (preserved) ----------
+
     #[test]
     fn classify_poll_keeps_polling_when_file_absent_within_deadline() {
         let now = t0();
-        let d = classify_poll(
+        let d = classify_poll_no_phase_stall(
             now,
             now + Duration::from_secs(60),
             false,
@@ -635,7 +832,7 @@ mod tests {
     #[test]
     fn classify_poll_deadline_without_file_when_past_deadline() {
         let now = t0();
-        let d = classify_poll(
+        let d = classify_poll_no_phase_stall(
             now + Duration::from_secs(120),
             now + Duration::from_secs(60),
             false,
@@ -649,7 +846,7 @@ mod tests {
     #[test]
     fn classify_poll_done_on_terminal_status() {
         let now = t0();
-        let d = classify_poll(
+        let d = classify_poll_no_phase_stall(
             now,
             now + Duration::from_secs(60),
             true,
@@ -663,7 +860,7 @@ mod tests {
     #[test]
     fn classify_poll_done_treats_error_as_terminal() {
         let now = t0();
-        let d = classify_poll(
+        let d = classify_poll_no_phase_stall(
             now,
             now + Duration::from_secs(60),
             true,
@@ -677,7 +874,7 @@ mod tests {
     #[test]
     fn classify_poll_keeps_polling_on_in_progress_within_heartbeat() {
         let now = t0();
-        let d = classify_poll(
+        let d = classify_poll_no_phase_stall(
             now,
             now + Duration::from_secs(60),
             true,
@@ -691,7 +888,7 @@ mod tests {
     #[test]
     fn classify_poll_stalls_when_in_progress_quiescent_past_heartbeat() {
         let now = t0();
-        let d = classify_poll(
+        let d = classify_poll_no_phase_stall(
             now,
             now + Duration::from_secs(60),
             true,
@@ -707,7 +904,7 @@ mod tests {
         // File exists but parse failed (transient or malformed): treat like
         // in_progress (not Done) so the watchdog can still notice a true stall.
         let now = t0();
-        let d = classify_poll(
+        let d = classify_poll_no_phase_stall(
             now,
             now + Duration::from_secs(60),
             true,
@@ -723,7 +920,7 @@ mod tests {
         // Past the overall deadline, but file exists and recent mtime + terminal
         // status — caller should see Done, not DeadlineWithoutFile.
         let now = t0();
-        let d = classify_poll(
+        let d = classify_poll_no_phase_stall(
             now + Duration::from_secs(120),
             now + Duration::from_secs(60),
             true,
@@ -772,7 +969,14 @@ mod tests {
             "conductors_spawned": ["pcb", "rtl", "fpga"],
             "phases_completed": ["1", "2"],
         });
-        let v = build_halt_aggregate("run-1", "inst", "/tmp/x.json", 1200, Some(&on_disk));
+        let v = build_halt_aggregate(
+            "run-1",
+            "inst",
+            "/tmp/x.json",
+            1200,
+            Some(&on_disk),
+            HaltCause::Timeout,
+        );
         assert_eq!(v["status"], "error");
         assert_eq!(v["halted_reason"], "timeout");
         assert_eq!(v["aborted_reason"], "timeout");
@@ -794,7 +998,14 @@ mod tests {
 
     #[test]
     fn build_halt_aggregate_without_on_disk_degrades_gracefully() {
-        let v = build_halt_aggregate("run-2", "inst", "/tmp/x.json", 7200, None);
+        let v = build_halt_aggregate(
+            "run-2",
+            "inst",
+            "/tmp/x.json",
+            7200,
+            None,
+            HaltCause::Timeout,
+        );
         let msg = v["halt_message"].as_str().unwrap();
         assert!(msg.contains("does not exist"), "halt_message={msg}");
         assert!(
@@ -813,10 +1024,229 @@ mod tests {
         // Conductor wrote partial JSON missing current_phase / updated_at —
         // halt_message should still be well-formed.
         let on_disk = serde_json::json!({ "status": "in_progress" });
-        let v = build_halt_aggregate("run-3", "inst", "/tmp/x.json", 1200, Some(&on_disk));
+        let v = build_halt_aggregate(
+            "run-3",
+            "inst",
+            "/tmp/x.json",
+            1200,
+            Some(&on_disk),
+            HaltCause::Timeout,
+        );
         let msg = v["halt_message"].as_str().unwrap();
         assert!(msg.contains("status:in_progress"));
         assert!(msg.contains("(none recorded)"));
         assert!(msg.contains("(no updated_at)"));
+    }
+
+    // ---- Phase 134 — semantic phase-stall behavior ------------------------
+
+    #[test]
+    fn classify_poll_keeps_polling_when_phase_fresh() {
+        // Phase fresh (quiescent_for = 0) while mtime also fresh: pure
+        // KeepPolling, no stall variant.
+        let now = t0();
+        let d = classify_poll(
+            now,
+            now + Duration::from_secs(7200),
+            true,
+            Duration::from_secs(0),
+            Duration::from_secs(1800),
+            Some("in_progress"),
+            Some("4_reviewer_validation_iter1"),
+            Duration::from_secs(0),
+            Duration::from_secs(3600),
+        );
+        assert_eq!(d, PollDecision::KeepPolling);
+    }
+
+    #[test]
+    fn classify_poll_phase_stall_overrides_alive_mtime_heartbeat() {
+        // The motivating user-visible regression: mtime heartbeat is alive
+        // (quiescent_for < heartbeat) but current_phase has been frozen past
+        // the phase-stall window. Must return PhaseStalled, not KeepPolling.
+        let now = t0();
+        let d = classify_poll(
+            now,
+            now + Duration::from_secs(7200),
+            true,
+            Duration::from_secs(60),    // mtime moved 60s ago → heartbeat ALIVE
+            Duration::from_secs(1800),
+            Some("in_progress"),
+            Some("9_phase2_dispatch"),
+            Duration::from_secs(3700),  // phase frozen 3700s
+            Duration::from_secs(3600),  // phase stall threshold
+        );
+        match d {
+            PollDecision::PhaseStalled { frozen_phase, frozen_for } => {
+                assert_eq!(frozen_phase.as_deref(), Some("9_phase2_dispatch"));
+                assert_eq!(frozen_for, Duration::from_secs(3700));
+            }
+            other => panic!("expected PhaseStalled, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_poll_phase_stall_wins_over_mtime_stall() {
+        // Both detectors would fire — phase-stall takes precedence (more
+        // specific diagnostic).
+        let now = t0();
+        let d = classify_poll(
+            now,
+            now + Duration::from_secs(7200),
+            true,
+            Duration::from_secs(3600),  // mtime also quiescent past heartbeat
+            Duration::from_secs(1800),
+            Some("in_progress"),
+            Some("frozen_phase"),
+            Duration::from_secs(3700),
+            Duration::from_secs(3600),
+        );
+        assert!(matches!(d, PollDecision::PhaseStalled { .. }));
+    }
+
+    #[test]
+    fn classify_poll_phase_stall_carries_none_when_phase_absent() {
+        let now = t0();
+        let d = classify_poll(
+            now,
+            now + Duration::from_secs(7200),
+            true,
+            Duration::from_secs(60),
+            Duration::from_secs(1800),
+            Some("in_progress"),
+            None,
+            Duration::from_secs(3700),
+            Duration::from_secs(3600),
+        );
+        match d {
+            PollDecision::PhaseStalled { frozen_phase, .. } => {
+                assert!(frozen_phase.is_none());
+            }
+            other => panic!("expected PhaseStalled, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_poll_terminal_status_skips_phase_stall_check() {
+        // Even if phase has been frozen, a terminal status short-circuits to
+        // Done. The conductor "finished" — there's no stall to report.
+        let now = t0();
+        let d = classify_poll(
+            now,
+            now + Duration::from_secs(7200),
+            true,
+            Duration::from_secs(0),
+            Duration::from_secs(1800),
+            Some("completed"),
+            Some("any_phase"),
+            Duration::from_secs(99_999),
+            Duration::from_secs(3600),
+        );
+        assert_eq!(d, PollDecision::Done);
+    }
+
+    #[test]
+    fn compute_phase_stall_default_is_double_heartbeat() {
+        let hb = Duration::from_secs(1800);
+        // 1800 × 2 = 3600, within [120, 7200]
+        assert_eq!(
+            compute_phase_stall(7200, hb, None),
+            Duration::from_secs(3600)
+        );
+    }
+
+    #[test]
+    fn compute_phase_stall_clamps_low() {
+        // hb 30 × 2 = 60, below 120 → clamped to 120
+        assert_eq!(
+            compute_phase_stall(0, Duration::from_secs(30), None),
+            Duration::from_secs(120)
+        );
+    }
+
+    #[test]
+    fn compute_phase_stall_clamps_high() {
+        // hb 5000 × 2 = 10000, above 7200 → clamped to 7200
+        assert_eq!(
+            compute_phase_stall(0, Duration::from_secs(5000), None),
+            Duration::from_secs(7200)
+        );
+    }
+
+    #[test]
+    fn compute_phase_stall_honors_override_without_upper_bound() {
+        // Override skips the upper clamp so users can extend for genuinely
+        // long single-phase runs.
+        assert_eq!(
+            compute_phase_stall(0, Duration::from_secs(1800), Some(43_200)),
+            Duration::from_secs(43_200)
+        );
+    }
+
+    #[test]
+    fn compute_phase_stall_minimum_is_one_second() {
+        // Override = 0 would yield zero-duration window; clamp to 1 s.
+        assert_eq!(
+            compute_phase_stall(0, Duration::from_secs(1800), Some(0)),
+            Duration::from_secs(1)
+        );
+    }
+
+    #[test]
+    fn build_halt_aggregate_phase_stall_carries_frozen_fields() {
+        let on_disk = serde_json::json!({
+            "status": "in_progress",
+            "current_phase": "9_phase2_dispatch",
+            "updated_at": "2026-05-14T05:10:00Z",
+            "phases_completed": ["1", "2", "3", "4", "5", "6", "7", "8"],
+        });
+        let v = build_halt_aggregate(
+            "run-phasestall",
+            "inst",
+            "/tmp/x.json",
+            7200,
+            Some(&on_disk),
+            HaltCause::PhaseStall {
+                frozen_phase: Some("9_phase2_dispatch"),
+                frozen_for_secs: 4200,
+            },
+        );
+        assert_eq!(v["status"], "error");
+        assert_eq!(v["halted_reason"], "phase_stall");
+        // Backward-compat alias intentionally stays "timeout".
+        assert_eq!(v["aborted_reason"], "timeout");
+        assert_eq!(v["synthesized_by"], "hestia-ai-cli");
+        assert_eq!(v["frozen_phase"], "9_phase2_dispatch");
+        assert_eq!(v["frozen_for_secs"], 4200);
+        assert!(v["phases_completed"].is_array());
+
+        let msg = v["halt_message"].as_str().unwrap();
+        assert!(msg.contains("9_phase2_dispatch"), "halt_message={msg}");
+        assert!(msg.contains("4200"), "halt_message={msg}");
+        assert!(msg.contains("phase_stall"), "halt_message={msg}");
+        assert!(
+            !msg.contains("max_iterations"),
+            "halt_message must not blame max_iterations: {msg}"
+        );
+    }
+
+    #[test]
+    fn build_halt_aggregate_phase_stall_with_no_frozen_phase_name() {
+        let v = build_halt_aggregate(
+            "run-nophase",
+            "inst",
+            "/tmp/x.json",
+            7200,
+            None,
+            HaltCause::PhaseStall {
+                frozen_phase: None,
+                frozen_for_secs: 3600,
+            },
+        );
+        assert_eq!(v["halted_reason"], "phase_stall");
+        assert_eq!(v["frozen_phase"], serde_json::Value::Null);
+        assert_eq!(v["frozen_for_secs"], 3600);
+        let msg = v["halt_message"].as_str().unwrap();
+        assert!(msg.contains("(none recorded)"));
     }
 }

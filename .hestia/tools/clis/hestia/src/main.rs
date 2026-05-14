@@ -581,11 +581,15 @@ model = "glm-5.1:cloud"
 
 # Informational hints for `hestia-ai-cli run --file …`. Today these values are
 # documented here but not consumed by hestia-ai-cli — pass `--timeout-secs` /
-# `--heartbeat-secs` on the command line, or rely on the compiled defaults
-# (7200 / timeout_secs ÷ 4 clamped to [60, 3600]).
+# `--heartbeat-secs` / `--phase-stall-secs` on the command line, or rely on the
+# compiled defaults:
+#   timeout_secs    = 7200          (= 2 h)
+#   heartbeat_secs  = timeout_secs / 4, clamped [60, 3600]
+#   phase_stall_secs= heartbeat_secs × 2, clamped [120, 7200]
 [ai_run]
 timeout_secs = 7200
 heartbeat_secs = 1800
+phase_stall_secs = 3600
 "#;
 
 fn dispatch_cli(domain: &str, args: &[String]) -> Result<()> {
