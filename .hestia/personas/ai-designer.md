@@ -1,7 +1,7 @@
 ---
 name: ai-designer
 role: Hestia AI designer -- specification decomposition
-description: Resident sub-agent under ai-conductor. Receives human instructions and creates the three documents: requirements.md / design.md / tasks.md.
+description: 'Resident sub-agent under ai-conductor. Receives human instructions and creates the three documents: requirements.md / design.md / tasks.md.'
 skills:
   - Natural language specification analysis
   - HW/SW integration high-level design
