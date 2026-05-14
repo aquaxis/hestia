@@ -10,7 +10,7 @@
 //!
 //! See `.aiprj/AI_PRJ_DESIGN.md` §3 / §4 for design details.
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -58,12 +58,6 @@ pub(crate) struct TaskStatusEntry {
     pub state: String,
 }
 
-impl TaskStatusEntry {
-    pub fn is_pending(&self) -> bool {
-        matches!(self.state.as_str(), "Not started" | "In progress" | "Blocked")
-    }
-}
-
 /// Monitored peer names. `ai` itself is excluded (no self-monitoring).
 const SUBAGENT_PEERS: &[&str] = &["ai-designer", "ai-reviewer"];
 const DOMAIN_CONDUCTOR_PEERS: &[&str] =
@@ -80,15 +74,6 @@ pub(crate) fn monitor_interval_secs() -> u64 {
         .unwrap_or(1)
 }
 
-/// Cooldown in seconds after resume instruction. Overridden by `HESTIA_MONITOR_COOLDOWN_SECS`, clamped to 0..=600.
-pub(crate) fn monitor_cooldown_secs() -> u64 {
-    std::env::var("HESTIA_MONITOR_COOLDOWN_SECS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(clamp_monitor_cooldown)
-        .unwrap_or(60)
-}
-
 /// Set `HESTIA_MONITOR_DISABLED=1` to completely disable the monitoring loop.
 pub(crate) fn monitor_disabled() -> bool {
     matches!(
@@ -99,10 +84,6 @@ pub(crate) fn monitor_disabled() -> bool {
 
 pub(crate) fn clamp_monitor_interval(s: u64) -> u64 {
     s.clamp(1, 600)
-}
-
-pub(crate) fn clamp_monitor_cooldown(s: u64) -> u64 {
-    s.clamp(0, 600)
 }
 
 /// Clamp the refresh interval in seconds for `hestia monitor`. 1..=60.
@@ -195,31 +176,6 @@ pub(crate) fn resolve_monitor_targets(stdout: &str) -> Vec<MonitorTarget> {
     out
 }
 
-/// Pure function for all-stopped detection. Empty targets = no monitor targets = `false`
-/// (not treated as stopped).
-///
-/// Phase 110: `Think` (thinking) is treated as active, same as `Busy` / `Waiting` / `Starting`.
-pub(crate) fn is_all_stopped(
-    targets: &[MonitorTarget],
-    statuses: &HashMap<String, AgentStatus>,
-) -> bool {
-    if targets.is_empty() {
-        return false;
-    }
-    targets.iter().all(|t| match statuses.get(&t.agent_id) {
-        // Process absent (None) = treated as stopped.
-        None => true,
-        Some(AgentStatus::Idle) => true,
-        Some(AgentStatus::Error) => true,
-        Some(AgentStatus::Unknown) => true,
-        // BUSY / THINKING / WAIT = processing; STARTING = just launched (prevent false resume).
-        Some(AgentStatus::Busy) => false,
-        Some(AgentStatus::Think) => false,
-        Some(AgentStatus::Waiting) => false,
-        Some(AgentStatus::Starting) => false,
-    })
-}
-
 /// Pure function that parses the Markdown table in `task_status.md` and returns
 /// entries for pending-task detection.
 ///
@@ -263,19 +219,6 @@ pub(crate) fn parse_task_status(content: &str) -> Vec<TaskStatusEntry> {
         out.push(TaskStatusEntry { task_id, state });
     }
     out
-}
-
-/// Reads `<workspace>/<peer>/task_status.md` for each peer and returns `true`
-/// if any has at least one pending task. Missing files are treated as no pending tasks
-/// (prefer false negatives over false suppression, NFR-4).
-pub(crate) fn has_pending_tasks(workspace_root: &Path, peers: &[String]) -> bool {
-    peers.iter().any(|peer| {
-        let path = workspace_root.join(peer).join("task_status.md");
-        match std::fs::read_to_string(&path) {
-            Ok(content) => parse_task_status(&content).iter().any(|e| e.is_pending()),
-            Err(_) => false,
-        }
-    })
 }
 
 /// Phase 109 — Pure function that returns `true` when **all** tasks on
@@ -404,112 +347,13 @@ pub(crate) fn clamp_terminate_grace(s: u64) -> u64 {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Phase 110 — Rescue path (resume timeout -> kill -> re-spawn -> update_project.md read instruction)
+// Phase 110 — SIGKILL + re-spawn rescue path (now invoked only by the
+// Phase 136 STARTING-stall detector; the Phase 108 batch-resume and
+// idle-rescue paths were removed in the 2026-05-14 process-termination
+// fix). See AI_PRJ_DESIGN.md §1.1 for the reasoning.
 // ─────────────────────────────────────────────────────────────────────
 
-/// Phase 110 — Per-peer resume instruction send history.
-#[derive(Debug, Clone)]
-pub(crate) struct ResumeAttempt {
-    /// Timestamp of the most recent `agent-cli send <peer>` dispatch.
-    pub last_sent_at: Instant,
-    /// Cumulative send count (reset after rescue).
-    #[allow(dead_code)]
-    pub attempts: u32,
-    /// `AgentStatus` at the time of dispatch.
-    #[allow(dead_code)]
-    pub status_at_send: AgentStatus,
-    /// Number of pending tasks (from task_status.md) at the time of dispatch.
-    pub pending_tasks_at_send: usize,
-}
-
-/// Phase 110 — Per-peer rescue attempt history.
-#[derive(Debug, Clone)]
-pub(crate) struct RescueAttempt {
-    pub last_attempt_at: Instant,
-    pub count: u32,
-}
-
-/// Phase 110 — Pure function that returns the number of pending tasks on the given
-/// peer's `task_status.md`. Missing file is treated as 0.
-pub(crate) fn count_pending_tasks(workspace_root: &Path, peer: &str) -> usize {
-    let path = workspace_root.join(peer).join("task_status.md");
-    let Ok(content) = std::fs::read_to_string(&path) else {
-        return 0;
-    };
-    parse_task_status(&content)
-        .iter()
-        .filter(|e| e.is_pending())
-        .count()
-}
-
-/// Phase 110 — Update history for each peer when issuing a Phase 108 batch-resume instruction.
-pub(crate) fn record_resume(
-    history: &mut HashMap<String, ResumeAttempt>,
-    peer: &str,
-    status: AgentStatus,
-    pending: usize,
-) {
-    let entry = history
-        .entry(peer.to_string())
-        .or_insert_with(|| ResumeAttempt {
-            last_sent_at: Instant::now(),
-            attempts: 0,
-            status_at_send: status,
-            pending_tasks_at_send: pending,
-        });
-    entry.last_sent_at = Instant::now();
-    entry.attempts = entry.attempts.saturating_add(1);
-    entry.status_at_send = status;
-    entry.pending_tasks_at_send = pending;
-}
-
-/// Phase 110 — Pure function that determines whether a peer is a rescue target
-/// ("no response" state).
-///
-/// Conditions (all must be true):
-/// 1. `rescue_timeout` or more has elapsed since the last dispatch.
-/// 2. Current status is `IDLE` / `ERROR` / `UNKNOWN` (i.e., has not transitioned to active).
-/// 3. Current pending count == pending count at dispatch time (i.e., no task progress).
-pub(crate) fn needs_rescue(
-    attempt: &ResumeAttempt,
-    current_status: AgentStatus,
-    current_pending: usize,
-    rescue_timeout: Duration,
-) -> bool {
-    if attempt.last_sent_at.elapsed() < rescue_timeout {
-        return false;
-    }
-    if !matches!(
-        current_status,
-        AgentStatus::Idle | AgentStatus::Error | AgentStatus::Unknown
-    ) {
-        return false;
-    }
-    if current_pending != attempt.pending_tasks_at_send {
-        return false;
-    }
-    true
-}
-
-/// Phase 110 — Pure function that determines whether a rescue may proceed (cooldown + attempt cap).
-pub(crate) fn rescue_allowed(
-    history: Option<&RescueAttempt>,
-    cooldown: Duration,
-    max_attempts: u32,
-) -> bool {
-    let Some(h) = history else {
-        return true;
-    };
-    if h.count >= max_attempts {
-        return false;
-    }
-    if h.last_attempt_at.elapsed() < cooldown {
-        return false;
-    }
-    true
-}
-
-/// Phase 110 — Pure function that resolves the persona file name (without extension) from a peer name.
+/// Resolve the persona file name (without extension) from a peer name.
 ///
 /// - `asic-signoff` -> `asic-signoff-checker` (known exception, HD-033)
 /// - `<domain>-coder-<module>` -> `<domain>-coder`
@@ -544,56 +388,7 @@ pub(crate) fn build_rescue_message(peer: &str) -> String {
     )
 }
 
-/// Phase 110 — Rescue timeout in seconds for regular peers (default 120, clamped 30..=600).
-pub(crate) fn rescue_timeout_secs() -> u64 {
-    std::env::var("HESTIA_MONITOR_RESCUE_TIMEOUT_SECS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(clamp_rescue_timeout)
-        .unwrap_or(120)
-}
-
-/// Phase 110 — Rescue timeout in seconds for ai-conductor (default 180, clamped 60..=600).
-pub(crate) fn ai_rescue_timeout_secs() -> u64 {
-    std::env::var("HESTIA_MONITOR_AI_RESCUE_TIMEOUT_SECS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(clamp_ai_rescue_timeout)
-        .unwrap_or(180)
-}
-
-/// Phase 110 — Cooldown in seconds after rescue (default 300, clamped 60..=3600).
-pub(crate) fn rescue_cooldown_secs() -> u64 {
-    std::env::var("HESTIA_MONITOR_RESCUE_COOLDOWN_SECS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(clamp_rescue_cooldown)
-        .unwrap_or(300)
-}
-
-/// Phase 110 — Maximum rescue attempts per peer (default 3, clamped 1..=10).
-pub(crate) fn rescue_max_attempts() -> u32 {
-    std::env::var("HESTIA_MONITOR_RESCUE_MAX_ATTEMPTS")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .map(clamp_rescue_max_attempts)
-        .unwrap_or(3)
-}
-
-pub(crate) fn clamp_rescue_timeout(s: u64) -> u64 {
-    s.clamp(30, 600)
-}
-pub(crate) fn clamp_ai_rescue_timeout(s: u64) -> u64 {
-    s.clamp(60, 600)
-}
-pub(crate) fn clamp_rescue_cooldown(s: u64) -> u64 {
-    s.clamp(60, 3600)
-}
-pub(crate) fn clamp_rescue_max_attempts(s: u32) -> u32 {
-    s.clamp(1, 10)
-}
-
-/// Phase 110 — Async helper that sends an immediate SIGKILL to the peer's agent-cli process.
+/// Async helper that sends an immediate SIGKILL to the peer's agent-cli process.
 /// Unlike `terminate_peer` (SIGTERM -> grace -> SIGKILL), this only sends SIGKILL immediately.
 async fn kill_peer_now(peer: &str) -> Vec<u32> {
     let pids = pgrep_agent_cli_pids(peer).await;
@@ -813,35 +608,6 @@ async fn run_agent_cli_list() -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-fn build_resume_message(peer: &str) -> String {
-    format!(
-        "[hestia monitor] Read your <workspace>/{p}/task_status.md and \
-         <workspace>/{p}/tasks.md via fs_read, and resume work from \
-         pending tasks (Not started / In progress / Blocked). \
-         Follow the \"Resume Work\" section of your persona for the resumption procedure.",
-        p = peer
-    )
-}
-
-async fn send_resume_instruction(peer: &str) -> Result<()> {
-    let msg = build_resume_message(peer);
-    let cfg = super::load_hestia_config();
-    let engine_bin = cfg.engine.binary_name();
-    let status = Command::new(engine_bin)
-        .arg("send")
-        .arg(peer)
-        .arg(&msg)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await
-        .map_err(|e| anyhow::anyhow!("{engine_bin} send {peer} failed: {e}"))?;
-    if !status.success() {
-        bail!("{engine_bin} send {peer} exited with {status}");
-    }
-    Ok(())
-}
-
 fn install_signal_handler() -> Arc<AtomicBool> {
     let stop = Arc::new(AtomicBool::new(false));
     let s_int = stop.clone();
@@ -956,30 +722,15 @@ pub(crate) async fn run_monitor_daemon() -> Result<()> {
     }
 
     let interval = Duration::from_secs(monitor_interval_secs());
-    let cooldown = Duration::from_secs(monitor_cooldown_secs());
-    let rescue_cooldown = Duration::from_secs(rescue_cooldown_secs());
-    let rescue_max = rescue_max_attempts();
-    let normal_rescue_timeout = Duration::from_secs(rescue_timeout_secs());
-    let ai_rescue_timeout_dur = Duration::from_secs(ai_rescue_timeout_secs());
     let stop = install_signal_handler();
-    let mut last_resume_at: Option<Instant> = None;
-    // Phase 110 — Per-peer history.
-    let mut resume_history: HashMap<String, ResumeAttempt> = HashMap::new();
-    let mut rescue_history: HashMap<String, RescueAttempt> = HashMap::new();
     // STARTING-stall detector — per-peer first-observation timestamp.
     let mut starting_observed_at: HashMap<String, Instant> = HashMap::new();
     let starting_stall = starting_stall_duration();
     let starting_stall_secs_val = starting_stall.as_secs();
 
     eprintln!(
-        "[monitor] daemon started (interval={}s, cooldown={}s, rescue_timeout={}s, \
-         ai_rescue_timeout={}s, rescue_cooldown={}s, rescue_max={}, starting_stall={}s)",
+        "[monitor] daemon started (interval={}s, starting_stall={}s)",
         interval.as_secs(),
-        cooldown.as_secs(),
-        normal_rescue_timeout.as_secs(),
-        ai_rescue_timeout_dur.as_secs(),
-        rescue_cooldown.as_secs(),
-        rescue_max,
         starting_stall_secs_val,
     );
 
@@ -1078,130 +829,13 @@ pub(crate) async fn run_monitor_daemon() -> Result<()> {
             }
         }
 
-        // ── Phase 110 (3) Rescue unresponsive peers (kill + re-spawn + update_project.md read instruction) ──
-        // History cleanup: remove peers that have transitioned to active (treat as resume success).
-        let registered_now = crate::registered_peer_names(&stdout);
-        resume_history.retain(|peer, _| {
-            // 1) Already deregistered -> remove entry
-            if !registered_now.contains(peer) {
-                return false;
-            }
-            // 2) Status is active (BUSY/THINKING/WAIT/STARTING) -> remove entry
-            // Note: Reverse-lookups the status from MonitorTarget's agent_id via the peer name
-            let status = targets
-                .iter()
-                .find(|t| t.peer == *peer)
-                .and_then(|t| statuses.get(&t.agent_id).copied())
-                .unwrap_or(AgentStatus::Unknown);
-            !matches!(
-                status,
-                AgentStatus::Busy
-                    | AgentStatus::Think
-                    | AgentStatus::Waiting
-                    | AgentStatus::Starting
-            )
-        });
-
-        // Determine rescue for each target. Use ai_rescue_timeout only for peer == "ai".
-        let mut to_rescue: Vec<String> = Vec::new();
-        for t in &targets {
-            let Some(attempt) = resume_history.get(&t.peer) else {
-                continue;
-            };
-            let Some(status) = statuses.get(&t.agent_id).copied() else {
-                continue;
-            };
-            let pending = count_pending_tasks(&workspace_root, &t.peer);
-            let timeout = if matches!(t.kind, MonitorKind::AiConductor) {
-                ai_rescue_timeout_dur
-            } else {
-                normal_rescue_timeout
-            };
-            if !needs_rescue(attempt, status, pending, timeout) {
-                continue;
-            }
-            if !rescue_allowed(rescue_history.get(&t.peer), rescue_cooldown, rescue_max) {
-                if let Some(h) = rescue_history.get(&t.peer) {
-                    if h.count >= rescue_max {
-                        eprintln!(
-                            "[monitor/rescue] '{}' has reached the rescue attempt cap ({}); \
-                             leaving for human intervention",
-                            t.peer, rescue_max
-                        );
-                    }
-                }
-                continue;
-            }
-            to_rescue.push(t.peer.clone());
-        }
-
-        for peer in &to_rescue {
-            match rescue_peer(peer).await {
-                Ok(()) => {
-                    let entry = rescue_history
-                        .entry(peer.clone())
-                        .or_insert(RescueAttempt {
-                            last_attempt_at: Instant::now(),
-                            count: 0,
-                        });
-                    entry.last_attempt_at = Instant::now();
-                    entry.count = entry.count.saturating_add(1);
-                    resume_history.remove(peer);
-                }
-                Err(e) => {
-                    eprintln!("[monitor/rescue] '{peer}' failed: {e}");
-                    // Count failures too (to suppress infinite retries)
-                    let entry = rescue_history
-                        .entry(peer.clone())
-                        .or_insert(RescueAttempt {
-                            last_attempt_at: Instant::now(),
-                            count: 0,
-                        });
-                    entry.last_attempt_at = Instant::now();
-                    entry.count = entry.count.saturating_add(1);
-                }
-            }
-        }
-
-        // ── Phase 108 (4) All stopped + pending tasks -> send resume instructions ──
-        if !is_all_stopped(&targets, &statuses) {
-            continue;
-        }
-
-        if let Some(t) = last_resume_at {
-            if t.elapsed() < cooldown {
-                continue;
-            }
-        }
-
-        let peers: Vec<String> = targets.iter().map(|t| t.peer.clone()).collect();
-
-        if !has_pending_tasks(&workspace_root, &peers) {
-            eprintln!("[monitor] all tasks complete; exiting monitor loop");
-            break;
-        }
-
-        eprintln!(
-            "[monitor] all {} agents stopped with pending tasks — sending resume instructions",
-            targets.len()
-        );
-        for peer in &peers {
-            match send_resume_instruction(peer).await {
-                Ok(()) => {
-                    eprintln!("[monitor] resume sent to {peer}");
-                    // Phase 110 — Record history
-                    let status = targets
-                        .iter()
-                        .find(|t| t.peer == *peer)
-                        .and_then(|t| statuses.get(&t.agent_id).copied())
-                        .unwrap_or(AgentStatus::Unknown);
-                    let pending = count_pending_tasks(&workspace_root, peer);
-                    record_resume(&mut resume_history, peer, status, pending);
-                }
-                Err(e) => eprintln!("[monitor] resume to {peer} failed: {e}"),
-            }
-        }
-        last_resume_at = Some(Instant::now());
+        // Phase 108 batch-resume and Phase 110 SIGKILL-on-idle rescue paths
+        // were removed in the 2026-05-14 process-termination fix. The only
+        // automatic actions on the loop body are now: STARTING-stall (above)
+        // and Phase 109 graceful terminate-on-completed (above). Idle peers
+        // are intentionally left alone — the user drives resumption via
+        // `hestia ai run` / `hestia ai qa`, or aborts via `hestia stop` /
+        // `hestia kill`. See report_stop.md §9 for context.
     }
 
     eprintln!("[monitor] daemon stopping");
@@ -1276,23 +910,6 @@ fn atty_stdout() -> bool {
 mod tests {
     use super::*;
 
-    fn target(id: &str, peer: &str, kind: MonitorKind) -> MonitorTarget {
-        // Test helper: parent_conductor is auto-inferred from kind
-        // (Subagent -> "ai" as placeholder, DomainConductor / AiConductor -> None).
-        // Use target_with_parent to specify a different parent conductor for dynamic sub-agents.
-        let parent = match kind {
-            MonitorKind::Subagent => Some("ai".to_string()),
-            MonitorKind::DomainConductor => None,
-            MonitorKind::AiConductor => None,
-        };
-        MonitorTarget {
-            agent_id: id.to_string(),
-            peer: peer.to_string(),
-            kind,
-            parent_conductor: parent,
-        }
-    }
-
     fn target_with_parent(
         id: &str,
         peer: &str,
@@ -1324,14 +941,6 @@ mod tests {
         assert_eq!(clamp_monitor_interval(600), 600);
         assert_eq!(clamp_monitor_interval(601), 600);
         assert_eq!(clamp_monitor_interval(1_000_000), 600);
-    }
-
-    #[test]
-    fn clamp_monitor_cooldown_bounds() {
-        assert_eq!(clamp_monitor_cooldown(0), 0);
-        assert_eq!(clamp_monitor_cooldown(60), 60);
-        assert_eq!(clamp_monitor_cooldown(600), 600);
-        assert_eq!(clamp_monitor_cooldown(601), 600);
     }
 
     #[test]
@@ -1458,84 +1067,6 @@ mod tests {
         assert_eq!(names, vec!["ai", "ai-designer"]);
     }
 
-    // ─── is_all_stopped ──────────────────────────────────────────────────
-    #[test]
-    fn all_stopped_empty_targets_returns_false() {
-        let map: HashMap<String, AgentStatus> = HashMap::new();
-        assert!(!is_all_stopped(&[], &map));
-    }
-
-    #[test]
-    fn all_stopped_when_every_target_idle() {
-        let t = vec![
-            target("agent-A", "ai-designer", MonitorKind::Subagent),
-            target("agent-B", "ai-reviewer", MonitorKind::Subagent),
-        ];
-        let s = statuses(&[
-            ("agent-A", AgentStatus::Idle),
-            ("agent-B", AgentStatus::Idle),
-        ]);
-        assert!(is_all_stopped(&t, &s));
-    }
-
-    #[test]
-    fn all_stopped_when_one_busy_returns_false() {
-        let t = vec![
-            target("agent-A", "ai-designer", MonitorKind::Subagent),
-            target("agent-B", "ai-reviewer", MonitorKind::Subagent),
-        ];
-        let s = statuses(&[
-            ("agent-A", AgentStatus::Idle),
-            ("agent-B", AgentStatus::Busy),
-        ]);
-        assert!(!is_all_stopped(&t, &s));
-    }
-
-    #[test]
-    fn all_stopped_when_starting_returns_false() {
-        // STARTING is treated as active (prevents false resume).
-        let t = vec![target("agent-A", "ai-designer", MonitorKind::Subagent)];
-        let s = statuses(&[("agent-A", AgentStatus::Starting)]);
-        assert!(!is_all_stopped(&t, &s));
-    }
-
-    #[test]
-    fn all_stopped_when_waiting_returns_false() {
-        let t = vec![target("agent-A", "ai-designer", MonitorKind::Subagent)];
-        let s = statuses(&[("agent-A", AgentStatus::Waiting)]);
-        assert!(!is_all_stopped(&t, &s));
-    }
-
-    #[test]
-    fn all_stopped_when_error_or_unknown_or_missing() {
-        let t = vec![
-            target("agent-A", "ai-designer", MonitorKind::Subagent),
-            target("agent-B", "ai-reviewer", MonitorKind::Subagent),
-            target("agent-C", "rtl", MonitorKind::DomainConductor),
-        ];
-        let s = statuses(&[
-            ("agent-A", AgentStatus::Error),
-            ("agent-B", AgentStatus::Unknown),
-            // agent-C absent
-        ]);
-        assert!(is_all_stopped(&t, &s));
-    }
-
-    #[test]
-    fn all_stopped_mixed_idle_and_busy_false() {
-        let t = vec![
-            target("agent-A", "ai-designer", MonitorKind::Subagent),
-            target("agent-B", "rtl", MonitorKind::DomainConductor),
-            target("agent-C", "fpga", MonitorKind::DomainConductor),
-        ];
-        let s = statuses(&[
-            ("agent-A", AgentStatus::Idle),
-            ("agent-B", AgentStatus::Busy),
-            ("agent-C", AgentStatus::Error),
-        ]);
-        assert!(!is_all_stopped(&t, &s));
-    }
-
     // ─── parse_task_status ───────────────────────────────────────────────
     #[test]
     fn parse_task_status_header_only_returns_empty() {
@@ -1555,10 +1086,10 @@ mod tests {
 ";
         let entries = parse_task_status(md);
         assert_eq!(entries.len(), 4);
-        assert!(entries[0].is_pending() == false);
-        assert!(entries[1].is_pending());
-        assert!(entries[2].is_pending());
-        assert!(entries[3].is_pending());
+        assert_eq!(entries[0].state, "Complete");
+        assert_eq!(entries[1].state, "In progress");
+        assert_eq!(entries[2].state, "Not started");
+        assert_eq!(entries[3].state, "Blocked");
     }
 
     #[test]
@@ -1571,7 +1102,7 @@ mod tests {
 ";
         let entries = parse_task_status(md);
         assert_eq!(entries.len(), 2);
-        assert!(entries.iter().all(|e| !e.is_pending()));
+        assert!(entries.iter().all(|e| e.state == "Complete"));
     }
 
     #[test]
@@ -1591,52 +1122,6 @@ mod tests {
         let entries = parse_task_status(md);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].task_id, "T-002");
-    }
-
-    // ─── has_pending_tasks ───────────────────────────────────────────────
-    #[test]
-    fn has_pending_tasks_returns_true_when_any_peer_has_pending() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let p1 = root.join("ai-designer");
-        let p2 = root.join("rtl");
-        std::fs::create_dir_all(&p1).unwrap();
-        std::fs::create_dir_all(&p2).unwrap();
-        std::fs::write(
-            p1.join("task_status.md"),
-            "| Task ID | Status |\n|----|----|\n| T-001 | Complete |\n",
-        )
-        .unwrap();
-        std::fs::write(
-            p2.join("task_status.md"),
-            "| Task ID | Status |\n|----|----|\n| T-002 | In progress |\n",
-        )
-        .unwrap();
-        let peers = vec!["ai-designer".to_string(), "rtl".to_string()];
-        assert!(has_pending_tasks(root, &peers));
-    }
-
-    #[test]
-    fn has_pending_tasks_false_when_all_complete() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let p = root.join("ai-designer");
-        std::fs::create_dir_all(&p).unwrap();
-        std::fs::write(
-            p.join("task_status.md"),
-            "| Task ID | Status |\n|----|----|\n| T-001 | Complete |\n",
-        )
-        .unwrap();
-        let peers = vec!["ai-designer".to_string()];
-        assert!(!has_pending_tasks(root, &peers));
-    }
-
-    #[test]
-    fn has_pending_tasks_missing_file_treated_as_no_pending() {
-        let dir = tempfile::tempdir().unwrap();
-        let peers = vec!["ai-designer".to_string()];
-        // Missing file -> treated as no pending tasks (NFR-4: prefer false negatives over false suppression).
-        assert!(!has_pending_tasks(dir.path(), &peers));
     }
 
     // ─── summarize_statuses & build_monitor_header ───────────────────────
@@ -1693,19 +1178,6 @@ mod tests {
         assert!(h.contains("THINKING: 0"));
         assert!(h.contains("IDLE: 1"));
         assert!(h.contains("STARTING: 1"));
-    }
-
-    // ─── build_resume_message ────────────────────────────────────────────
-    #[test]
-    fn resume_message_includes_peer_and_paths() {
-        let m = build_resume_message("rtl");
-        assert!(m.contains("rtl"));
-        assert!(m.contains("task_status.md"));
-        assert!(m.contains("tasks.md"));
-        assert!(m.contains("resume work"));
-        assert!(m.contains("Not started"));
-        assert!(m.contains("In progress"));
-        assert!(m.contains("Blocked"));
     }
 
     // ─── ymd_from_days_since_epoch ───────────────────────────────────────
@@ -1942,121 +1414,6 @@ mod tests {
         assert_eq!(p, Some("rtl".to_string()));
     }
 
-    // ─── Phase 110 — needs_rescue ─────────────────────────────────────
-    fn make_resume(secs_ago: u64, status: AgentStatus, pending: usize) -> ResumeAttempt {
-        ResumeAttempt {
-            last_sent_at: Instant::now() - Duration::from_secs(secs_ago),
-            attempts: 1,
-            status_at_send: status,
-            pending_tasks_at_send: pending,
-        }
-    }
-
-    #[test]
-    fn needs_rescue_false_when_within_timeout() {
-        let r = make_resume(60, AgentStatus::Idle, 2);
-        // timeout 120s, elapsed 60s -> false
-        assert!(!needs_rescue(&r, AgentStatus::Idle, 2, Duration::from_secs(120)));
-    }
-
-    #[test]
-    fn needs_rescue_false_when_status_busy_or_think() {
-        let r = make_resume(200, AgentStatus::Idle, 2);
-        // timeout 120s elapsed but status is Busy / Think -> false
-        assert!(!needs_rescue(&r, AgentStatus::Busy, 2, Duration::from_secs(120)));
-        assert!(!needs_rescue(&r, AgentStatus::Think, 2, Duration::from_secs(120)));
-        assert!(!needs_rescue(&r, AgentStatus::Waiting, 2, Duration::from_secs(120)));
-    }
-
-    #[test]
-    fn needs_rescue_false_when_pending_decreased() {
-        let r = make_resume(200, AgentStatus::Idle, 5);
-        // timeout elapsed + Idle but pending changed -> false (progress made)
-        assert!(!needs_rescue(&r, AgentStatus::Idle, 3, Duration::from_secs(120)));
-    }
-
-    #[test]
-    fn needs_rescue_true_when_all_conditions_met() {
-        let r = make_resume(200, AgentStatus::Idle, 3);
-        assert!(needs_rescue(&r, AgentStatus::Idle, 3, Duration::from_secs(120)));
-        assert!(needs_rescue(&r, AgentStatus::Error, 3, Duration::from_secs(120)));
-        assert!(needs_rescue(&r, AgentStatus::Unknown, 3, Duration::from_secs(120)));
-    }
-
-    #[test]
-    fn needs_rescue_respects_ai_timeout() {
-        // elapsed 130s, ai_timeout=180s -> false, normal_timeout=120s -> true
-        let r = make_resume(130, AgentStatus::Idle, 2);
-        assert!(!needs_rescue(&r, AgentStatus::Idle, 2, Duration::from_secs(180)));
-        assert!(needs_rescue(&r, AgentStatus::Idle, 2, Duration::from_secs(120)));
-    }
-
-    // ─── Phase 110 — rescue_allowed ───────────────────────────────────
-    #[test]
-    fn rescue_allowed_when_no_history() {
-        assert!(rescue_allowed(None, Duration::from_secs(300), 3));
-    }
-
-    #[test]
-    fn rescue_allowed_false_within_cooldown() {
-        let h = RescueAttempt {
-            last_attempt_at: Instant::now() - Duration::from_secs(60),
-            count: 1,
-        };
-        assert!(!rescue_allowed(Some(&h), Duration::from_secs(300), 3));
-    }
-
-    #[test]
-    fn rescue_allowed_false_at_attempt_cap() {
-        let h = RescueAttempt {
-            last_attempt_at: Instant::now() - Duration::from_secs(1000),
-            count: 3,
-        };
-        assert!(!rescue_allowed(Some(&h), Duration::from_secs(300), 3));
-    }
-
-    #[test]
-    fn rescue_allowed_true_after_cooldown_under_cap() {
-        let h = RescueAttempt {
-            last_attempt_at: Instant::now() - Duration::from_secs(1000),
-            count: 1,
-        };
-        assert!(rescue_allowed(Some(&h), Duration::from_secs(300), 3));
-    }
-
-    // ─── Phase 110 — clamp ────────────────────────────────────────────
-    #[test]
-    fn clamp_rescue_timeout_bounds() {
-        assert_eq!(clamp_rescue_timeout(0), 30);
-        assert_eq!(clamp_rescue_timeout(120), 120);
-        assert_eq!(clamp_rescue_timeout(600), 600);
-        assert_eq!(clamp_rescue_timeout(10_000), 600);
-    }
-
-    #[test]
-    fn clamp_ai_rescue_timeout_bounds() {
-        assert_eq!(clamp_ai_rescue_timeout(0), 60);
-        assert_eq!(clamp_ai_rescue_timeout(180), 180);
-        assert_eq!(clamp_ai_rescue_timeout(600), 600);
-        assert_eq!(clamp_ai_rescue_timeout(10_000), 600);
-    }
-
-    #[test]
-    fn clamp_rescue_cooldown_bounds() {
-        assert_eq!(clamp_rescue_cooldown(0), 60);
-        assert_eq!(clamp_rescue_cooldown(300), 300);
-        assert_eq!(clamp_rescue_cooldown(3600), 3600);
-        assert_eq!(clamp_rescue_cooldown(10_000), 3600);
-    }
-
-    #[test]
-    fn clamp_rescue_max_attempts_bounds() {
-        assert_eq!(clamp_rescue_max_attempts(0), 1);
-        assert_eq!(clamp_rescue_max_attempts(3), 3);
-        assert_eq!(clamp_rescue_max_attempts(10), 10);
-        assert_eq!(clamp_rescue_max_attempts(100), 10);
-    }
-
     // ─── Phase 110 — resolve_persona_for_peer ─────────────────────────
     #[test]
     fn resolve_persona_known_static_peers() {
@@ -2106,44 +1463,7 @@ mod tests {
         assert_eq!(resolve_persona_for_peer(""), None);
     }
 
-    // ─── Phase 110 — count_pending_tasks ──────────────────────────────
-    #[test]
-    fn count_pending_tasks_returns_pending_count() {
-        let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("rtl");
-        std::fs::create_dir_all(&p).unwrap();
-        std::fs::write(
-            p.join("task_status.md"),
-            "| Task ID | Status |\n|----|----|\n\
-             | T-001 | Complete |\n\
-             | T-002 | In progress |\n\
-             | T-003 | Not started |\n\
-             | T-004 | Blocked |\n",
-        )
-        .unwrap();
-        assert_eq!(count_pending_tasks(dir.path(), "rtl"), 3);
-    }
-
-    #[test]
-    fn count_pending_tasks_zero_when_all_complete() {
-        let dir = tempfile::tempdir().unwrap();
-        let p = dir.path().join("rtl");
-        std::fs::create_dir_all(&p).unwrap();
-        std::fs::write(
-            p.join("task_status.md"),
-            "| Task ID | Status |\n|----|----|\n| T-001 | Complete |\n",
-        )
-        .unwrap();
-        assert_eq!(count_pending_tasks(dir.path(), "rtl"), 0);
-    }
-
-    #[test]
-    fn count_pending_tasks_zero_when_file_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        assert_eq!(count_pending_tasks(dir.path(), "rtl"), 0);
-    }
-
-    // ─── Phase 110 — build_rescue_message ─────────────────────────────
+    // ─── Phase 110 — build_rescue_message (still used by starting_stall_rescue) ──
     #[test]
     fn rescue_message_includes_peer_paths_and_update_project() {
         let m = build_rescue_message("ai-designer");
@@ -2154,15 +1474,6 @@ mod tests {
         assert!(m.contains("SIGKILL"));
         assert!(m.contains("restarted"));
         assert!(m.contains("pending"));
-    }
-
-    // ─── Phase 110 — is_all_stopped Think support ────────────────────────
-    #[test]
-    fn is_all_stopped_with_think_returns_false() {
-        // Phase 110: Think is treated as active, not as stopped.
-        let t = vec![target("agent-A", "ai-designer", MonitorKind::Subagent)];
-        let s = statuses(&[("agent-A", AgentStatus::Think)]);
-        assert!(!is_all_stopped(&t, &s));
     }
 
     // ─── Phase 110 — is_terminable_status Think support ──────────────────

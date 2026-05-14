@@ -52,6 +52,19 @@ enum Commands {
         #[arg(long)]
         no_wait: bool,
     },
+    /// Send an inline prompt to the AI conductor and print its reply.
+    /// Same orchestration path as `run`: posts the prompt via `<engine> send ai`
+    /// with a generated RUN_ID / RESULT_PATH envelope, then polls the run-log
+    /// JSON until the conductor writes a terminal status. The reply's primary
+    /// text payload (`answer` / `halt_message` / `summary` / `text`, with a
+    /// pretty-printed JSON fallback) is printed to stdout in plain form.
+    Qa {
+        /// The prompt text. Positional; quote if it contains spaces.
+        prompt: String,
+        /// Polling interval in milliseconds (default: 500)
+        #[arg(long, default_value_t = 500)]
+        poll_interval_ms: u64,
+    },
     /// Initialize a specification session
     SpecInit {
         /// Specification text (natural language or structured)
@@ -179,8 +192,44 @@ fn read_engine_from_config() -> Option<String> {
     })
 }
 
-/// `run --file` route: posts to AI conductor LLM via <engine> send and polls
-/// the run-log JSON until the conductor writes a terminal status.
+/// Output shape for the shared polling loop.
+///
+/// `Run`: emit the full terminal JSON via `emit()` (preserves the `[ai.run]`
+/// label decoration when `--output human`, raw JSON when `--output json`).
+/// `Qa`: extract the response's primary text via `extract_qa_answer` and print
+/// it to stdout as plain text — Q&A presentation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RunMode {
+    Run,
+    Qa,
+}
+
+/// Pull the primary text payload out of a terminal-status run-log JSON.
+///
+/// Field-name preference order:
+///   1. `answer`       — preferred plain-text reply field
+///   2. `halt_message` — error / aborted case
+///   3. `summary`      — some conductor variants use this
+///   4. `text`         — generic fallback
+///   5. Pretty-printed full JSON — last resort so the user sees *something*.
+///
+/// Empty-string values are skipped so the caller falls through to the next
+/// candidate field.
+pub(crate) fn extract_qa_answer(v: &serde_json::Value) -> String {
+    for key in ["answer", "halt_message", "summary", "text"] {
+        if let Some(s) = v.get(key).and_then(|x| x.as_str()) {
+            if !s.trim().is_empty() {
+                return s.to_string();
+            }
+        }
+    }
+    serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string())
+}
+
+/// Shared `run --file` / `qa <prompt>` route: posts the prompt body to the AI
+/// conductor LLM via `<engine> send ai`, polls the run-log JSON until the
+/// conductor writes a terminal status, then surfaces the result in the
+/// caller's preferred shape (`RunMode`).
 ///
 /// The watchdog stack (timeout / heartbeat / phase-stall) was deleted per the
 /// 2026-05-14 instruction; the loop now polls indefinitely until status leaves
@@ -189,12 +238,15 @@ fn read_engine_from_config() -> Option<String> {
 /// abort paths.
 async fn run_with_orchestrator(
     common: &CommonOpts,
-    file_path: &str,
+    body: String,
     poll_interval_ms: u64,
     no_wait: bool,
+    mode: RunMode,
 ) -> Result<()> {
-    let body = std::fs::read_to_string(file_path)
-        .map_err(|e| anyhow!("failed to read instruction file '{}': {e}", file_path))?;
+    let label = match mode {
+        RunMode::Run => "ai.run",
+        RunMode::Qa => "ai.qa",
+    };
 
     let run_id = generate_run_id();
     let log_dir = run_log_dir();
@@ -208,8 +260,8 @@ async fn run_with_orchestrator(
     );
 
     if common.verbose {
-        eprintln!("[ai.run] sending prompt to ai conductor (run_id={run_id})");
-        eprintln!("[ai.run] result_path={result_path_str}");
+        eprintln!("[{label}] sending prompt to ai conductor (run_id={run_id})");
+        eprintln!("[{label}] result_path={result_path_str}");
     }
 
     let engine_bin = engine_binary();
@@ -224,7 +276,7 @@ async fn run_with_orchestrator(
         ));
     }
 
-    // Phase 135 — fire-and-forget exit.
+    // Phase 135 — fire-and-forget exit (Run only; Qa never sets no_wait).
     if no_wait {
         let envelope = serde_json::json!({
             "status": "submitted",
@@ -233,7 +285,7 @@ async fn run_with_orchestrator(
             "synthesized_by": "hestia-ai-cli",
             "note": "Prompt sent; not waiting for result. Inspect via `hestia tail ai` or read result_path later.",
         });
-        emit(common, "ai.run", &envelope, false)?;
+        emit(common, label, &envelope, false)?;
         std::io::stdout().flush().ok();
         std::io::stderr().flush().ok();
         return Ok(());
@@ -259,14 +311,52 @@ async fn run_with_orchestrator(
             .get("status")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-        emit(common, "ai.run", &value, status_field == "error")?;
+        let is_error = status_field == "error";
+        match mode {
+            RunMode::Run => {
+                emit(common, label, &value, is_error)?;
+            }
+            RunMode::Qa => {
+                let text = extract_qa_answer(&value);
+                if is_error {
+                    eprintln!("{text}");
+                } else {
+                    println!("{text}");
+                }
+            }
+        }
         std::io::stdout().flush().ok();
         std::io::stderr().flush().ok();
-        if status_field == "error" {
+        if is_error {
             std::process::exit(1);
         }
         return Ok(());
     }
+}
+
+/// `hestia ai run --file …` thin wrapper: read the instruction body from the
+/// file then dispatch into the shared polling loop in `RunMode::Run`.
+async fn run_run(
+    common: &CommonOpts,
+    file_path: &str,
+    poll_interval_ms: u64,
+    no_wait: bool,
+) -> Result<()> {
+    let body = std::fs::read_to_string(file_path)
+        .map_err(|e| anyhow!("failed to read instruction file '{}': {e}", file_path))?;
+    run_with_orchestrator(common, body, poll_interval_ms, no_wait, RunMode::Run).await
+}
+
+/// `hestia ai qa <prompt>` thin wrapper: pass the prompt straight through as
+/// the body and dispatch into the shared polling loop in `RunMode::Qa`.
+/// `no_wait` is hard-coded false — fire-and-forget makes no sense for an
+/// interactive Q&A.
+async fn run_qa(
+    common: &CommonOpts,
+    prompt: &str,
+    poll_interval_ms: u64,
+) -> Result<()> {
+    run_with_orchestrator(common, prompt.to_string(), poll_interval_ms, false, RunMode::Qa).await
 }
 
 /// To avoid JSON parse failures caused by reading a file while fs_write is
@@ -335,11 +425,22 @@ async fn main() -> Result<()> {
             poll_interval_ms,
             no_wait,
         } => {
-            run_with_orchestrator(
+            run_run(
                 &cli.common,
                 file,
                 *poll_interval_ms,
                 *no_wait,
+            )
+            .await
+        }
+        Commands::Qa {
+            prompt,
+            poll_interval_ms,
+        } => {
+            run_qa(
+                &cli.common,
+                prompt,
+                *poll_interval_ms,
             )
             .await
         }
@@ -415,9 +516,62 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    // The watchdog stack (timeout / heartbeat / phase-stall) was deleted per the
-    // 2026-05-14 instruction; the tests that exercised that surface went with it.
-    // Surviving behavior is exercised end-to-end (`hestia ai run`) rather than
-    // unit-tested here. Future per-function tests should be added as new
-    // surface accumulates.
+    use super::extract_qa_answer;
+
+    #[test]
+    fn extract_qa_answer_prefers_answer_field() {
+        let v = serde_json::json!({
+            "status": "ok",
+            "answer": "the answer is 42",
+            "halt_message": "ignored",
+        });
+        assert_eq!(extract_qa_answer(&v), "the answer is 42");
+    }
+
+    #[test]
+    fn extract_qa_answer_falls_back_to_halt_message_on_error() {
+        let v = serde_json::json!({
+            "status": "error",
+            "halt_message": "ai-conductor refused to answer",
+        });
+        assert_eq!(extract_qa_answer(&v), "ai-conductor refused to answer");
+    }
+
+    #[test]
+    fn extract_qa_answer_uses_summary_then_text() {
+        let v = serde_json::json!({
+            "status": "ok",
+            "summary": "S",
+        });
+        assert_eq!(extract_qa_answer(&v), "S");
+
+        let v = serde_json::json!({
+            "status": "ok",
+            "text": "T",
+        });
+        assert_eq!(extract_qa_answer(&v), "T");
+    }
+
+    #[test]
+    fn extract_qa_answer_skips_empty_strings_and_falls_through() {
+        // `answer` is present but empty → should fall through to `halt_message`.
+        let v = serde_json::json!({
+            "status": "error",
+            "answer": "   ",
+            "halt_message": "real message here",
+        });
+        assert_eq!(extract_qa_answer(&v), "real message here");
+    }
+
+    #[test]
+    fn extract_qa_answer_fallback_pretty_prints_full_json() {
+        // None of the preferred fields are present → pretty-printed full JSON.
+        let v = serde_json::json!({
+            "status": "ok",
+            "data": { "foo": 1 },
+        });
+        let out = extract_qa_answer(&v);
+        assert!(out.starts_with("{"), "fallback must look like JSON: {out}");
+        assert!(out.contains("\"data\""), "fallback must include the data key: {out}");
+    }
 }

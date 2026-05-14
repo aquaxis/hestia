@@ -481,8 +481,8 @@ enum Commands {
     /// every `--interval` seconds; pass `--once` for a single snapshot
     /// (equivalent to `hestia status`).
     Monitor {
-        /// Refresh interval in seconds (clamped to 1..=60).
-        #[arg(long, default_value_t = 2)]
+        /// Refresh interval in seconds (default 1, clamped to 1..=60).
+        #[arg(long, default_value_t = 1)]
         interval: u64,
         /// Print one frame and exit (alias for `hestia status`).
         #[arg(long, default_value_t = false)]

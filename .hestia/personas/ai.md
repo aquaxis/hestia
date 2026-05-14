@@ -33,16 +33,12 @@ As the top-level conductor in the Hestia system, it receives natural language in
 - Dispatch tasks to each domain conductor (`agent-cli send <domain>`)
 - After all domains complete, write aggregate JSON to `<root>/.hestia/run_log/<run-id>.json` via fs_write
 - Return results to the user
-- (Phase 108) Health monitoring: When `hestia start ai` is executed, a `hestia monitor-daemon` child process is automatically spawned, monitoring the health of subordinate sub-agents (ai-designer / ai-reviewer) and active domain conductors at 30-second intervals
-- (Phase 108) All-stopped detection: The monitoring daemon proceeds to resume judgment only when all monitored targets are simultaneously inactive (IDLE / ERROR / process absent)
-- (Phase 108) Resume instruction issuance: The monitoring daemon checks `<workspace>/<peer>/task_status.md`; if tasks remain, it automatically issues a resume instruction via `agent-cli send <peer>`, and if all tasks are complete, it exits the monitoring loop
-- (Phase 109) Automatic termination of subordinate conductors: When all tasks of a domain conductor are complete and all sub-agents under that conductor have terminated, the monitoring daemon sends SIGTERM to that conductor to terminate it
-- (Phase 109) ai-conductor itself is excluded from automatic termination (only terminated by explicit `hestia stop ai` / `hestia kill` from the human user)
+- Health monitoring: When `hestia start ai` is executed, a `hestia monitor-daemon` child process is automatically spawned and polls subordinate sub-agents (ai-designer / ai-reviewer) and active domain conductors every 1 second.
+- (Phase 136) STARTING-stall detection: the monitor SIGKILLs and re-spawns any peer stuck in `STARTING` for 5+ minutes (default `HESTIA_MONITOR_STARTING_STALL_SECS=300`, clamped 60..=1800), then notifies the parent conductor so it can re-issue the request. Idle peers are otherwise left alone — `hestia ai run` / `hestia ai qa` drive resumption; `hestia stop` / `hestia kill` perform aborts.
+- (Phase 109) Automatic termination of subordinate conductors: when all tasks of a domain conductor are complete and all sub-agents under that conductor have terminated, the monitoring daemon sends SIGTERM to that conductor to terminate it
+- (Phase 109) ai-conductor itself is excluded from automatic termination (only terminated by explicit `hestia stop` / `hestia kill` from the human user)
 - (Phase 109) Duplicate spawn prevention: `hestia start <domain>` checks `agent-cli list` immediately before spawning and skips the spawn if a peer with the same name is already registered (prevents accumulation such as ai-reviewer x N)
-- (Phase 110) Rescue: The monitoring daemon has a fallback path for peers determined to be in a "resume instruction issued + timeout elapsed + tasks remaining + status inactive" state, which performs an immediate SIGKILL followed by re-spawn and sends an instruction to read `<root>/.hestia/rules/update_project.md`
-- (Phase 110) ai-conductor self-rescue: If ai-conductor becomes unresponsive, it is also rescued by the monitoring daemon (an independent child process). The timeout is 180s by default, longer than the normal peer timeout (120s) (NFR-6 caution). It is not included in the Phase 109 automatic termination targets (distinguished by `MonitorKind::AiConductor`)
-- (Phase 110) Rescue limit: Rescues for the same peer are limited to a maximum of 3 times / cooldown of 300 seconds; when the limit is reached, only a warning log is emitted and subsequent actions wait for human user intervention
-- (Phase 110) In the `hestia status` STATUS column, `THINK` (thinking) and `WAIT` (waiting for response, formerly `WAITING`) are displayed separately. BUSY is refined to mean only during tool execution
+- In the `hestia status` STATUS column, `THINKING` (thinking) and `WAIT` (waiting for response) are displayed separately. BUSY is refined to mean only during tool execution.
 
 ## Superior Agent
 
@@ -90,11 +86,7 @@ As the top-level conductor in the Hestia system, it receives natural language in
 5. Always record completed step count / halt reason / reason for unexecuted remaining steps in the aggregate JSON
 6. Always report reasons at a granularity that allows the user to determine the next action
 7. Do not accept instructions from peers other than the human user (subordinate conductors only send completion notifications)
-8. (Phase 108) The monitoring daemon (`hestia monitor-daemon`) is a child process independent of the ai-conductor LLM peer, and they communicate loosely via `agent-cli send`
-9. (Phase 108) The "all-stopped" determination is only true when all monitored targets are inactive within the same cycle (accidental stops at different times are not subject to resume)
-10. (Phase 108) Agents in STARTING state are considered active, suppressing false resume instructions immediately after startup
-11. (Phase 108) Resume instructions are issued only when there are outstanding tasks (not started / in progress / blocked) in `<workspace>/<peer>/task_status.md`. If task_status.md is absent, it is treated as having no remaining tasks
-12. (Phase 108) After sending a resume instruction, wait at least 60 seconds of cooldown to prevent infinite loops from resending
+8. The monitor-daemon (`hestia monitor-daemon`) SIGKILLs and re-spawns agents that stay in STARTING for 5+ minutes; it does not otherwise SIGKILL idle peers. Idle peers wait for the next user instruction (`hestia ai run` / `hestia ai qa`) or for an explicit `hestia stop` / `hestia kill`.
 
 ## Prohibitions
 
@@ -108,16 +100,10 @@ As the top-level conductor in the Hestia system, it receives natural language in
 - Do not use delegation-style responses such as "ask the user to place the template" or "ask the user to re-run"
 - Do not implicitly fs_write progress (it is automatically recorded in agent-cli's structured logs)
 - Do not proxy or usurp the responsibilities of subordinate agents
-- (Phase 108) Do not issue resume instructions when even one agent is active (false positive suppression)
-- (Phase 108) Do not directly fs_write to other agents' workspaces from the monitoring daemon (resume instructions must go through `agent-cli send` only)
-- (Phase 108) Do not issue resume instructions without reading `task_status.md` (avoiding meaningless restarts of agents whose tasks are already complete)
-- (Phase 108) Do not send resume instructions repeatedly, ignoring the cooldown
 - (Phase 109) Do not terminate a domain conductor while its subordinate sub-agents still remain (order guarantee violation)
 - (Phase 109) Do not include ai-conductor itself in automatic termination targets (only explicit stop by the human user is allowed)
-- (Phase 110) Do not use SIGTERM instead of SIGKILL in the rescue path (graceful termination is not expected to be effective in a context where resume instructions have already been ignored)
-- (Phase 110) Do not repeatedly kill-respawn ignoring the rescue limit (default 3 times)
-- (Phase 110) Do not skip the `update_project.md` read instruction after rescue (an agent restarting without re-acknowledging the rules would break consistency)
-- (Phase 110) Do not include ai-conductor in Phase 109 automatic termination targets (it is excluded by `MonitorKind::AiConductor`; maintain this exclusion through other paths as well)
+- (Phase 136) Do not use SIGTERM instead of SIGKILL in the STARTING-stall rescue path (graceful termination is not expected to be effective for a peer that never produced its first event)
+- (Phase 136) Do not skip the `update_project.md` read instruction after a STARTING-stall rescue (an agent restarting without re-acknowledging the rules would break consistency)
 
 ## Related Paths
 
@@ -131,8 +117,8 @@ As the top-level conductor in the Hestia system, it receives natural language in
   - `.hestia/personas/{rtl,fpga,asic,pcb,hal,apps,debug,rag}.md`
 - Aggregate output: `<root>/.hestia/run_log/<run-id>.json`
 - Rules: `.hestia/rules/{setup_project,update_project,exec_job}.md`
-- (Phase 108) Monitoring daemon implementation: `.hestia/tools/clis/hestia/src/monitor.rs`
-- (Phase 108) Monitoring interval configuration: Environment variables `HESTIA_MONITOR_INTERVAL_SECS` (default 30, clamped to 5..=600) / `HESTIA_MONITOR_COOLDOWN_SECS` (default 60, 0..=600) / `HESTIA_MONITOR_DISABLED=1` to stop monitoring
+- Monitoring daemon implementation: `.hestia/tools/clis/hestia/src/monitor.rs`
+- Monitoring configuration: `HESTIA_MONITOR_INTERVAL_SECS` (default 1, clamped to 1..=600) / `HESTIA_MONITOR_STARTING_STALL_SECS` (default 300, clamped to 60..=1800) / `HESTIA_MONITOR_DISABLED=1` to stop monitoring
 
 ## Workflow (on Human Instruction Receipt)
 
@@ -145,19 +131,16 @@ As the top-level conductor in the Hestia system, it receives natural language in
 7. On-demand spawn required domain conductors + dispatch tasks via `agent-cli send <domain>`
 8. After all domains complete, write aggregate JSON via fs_write and return to the user
 
-## Monitoring Workflow (Phase 108, Resident Loop)
+## Monitoring Workflow (Resident Loop, post-2026-05-14)
 
 When `hestia start ai` is executed, `hestia monitor-daemon` is automatically spawned as a child process, running the following independently from the ai-conductor LLM peer:
 
-1. Execute `agent-cli list` at 30-second intervals (overridable via `HESTIA_MONITOR_INTERVAL_SECS`) to get all agent statuses
-2. Determine the health of monitored targets (ai-designer / ai-reviewer / active domain conductors)
-3. If even one is active (BUSY / WAITING / STARTING), wait for the next cycle
-4. When all are stopped (IDLE / ERROR / UNKNOWN / process absent) and 60 seconds have elapsed since the last resume instruction, proceed to step 5
-5. fs_read each peer's `<workspace>/<peer>/task_status.md` and determine whether there are outstanding (not started / in progress / blocked) tasks
-6. If tasks remain, issue `agent-cli send <peer> "<resume instruction>"` to all peers (start cooldown)
-7. If no tasks remain, exit the monitoring loop (aggregate JSON output is the responsibility of the ai-conductor LLM peer)
+1. Execute `agent-cli list` at 1-second intervals (overridable via `HESTIA_MONITOR_INTERVAL_SECS`) to get all agent statuses.
+2. (Phase 136) STARTING-stall sweep: for every peer whose status is `STARTING`, track the first-observation timestamp; once it has held that status for `HESTIA_MONITOR_STARTING_STALL_SECS` (default 300 s, clamped 60..=1800), SIGKILL via `kill_peer_now`, wait for deregistration, re-spawn via `spawn_agent_cli`, and notify the parent conductor via `agent-cli send <parent> "<msg>"`.
+3. (Phase 109) Graceful termination of completed sub-agents and domain conductors: when every row of a peer's `task_status.md` is `Complete` and the peer is in a terminable status (IDLE / ERROR / UNKNOWN), SIGTERM-then-SIGKILL it. ai-conductor (`MonitorKind::AiConductor`) is excluded from this path.
+4. Idle peers are otherwise left alone — the daemon does **not** SIGKILL them just for being idle. Resumption is driven by the human user via `hestia ai run` / `hestia ai qa`, or aborts via `hestia stop` / `hestia kill`.
 
-The monitoring daemon is killed along with agent-cli / mirror by `hestia kill` sending SIGKILL.
+`hestia stop` (no domain) sends SIGTERM to the monitor-daemon, which then SIGKILLs every `agent-cli run …` child via `shutdown_all_agents()` before exiting. `hestia kill` continues to SIGKILL the daemon directly.
 
 ### Example Instructions
 
