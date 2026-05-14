@@ -186,17 +186,7 @@ hestia ai review start --project ./my-project --target artix7
 
 ### 3.12 Sub-agent Concurrency Control (Phase 126)
 
-Configure sub-agent spawn limits in the `[concurrency]` section of `.hestia/config.toml`. A 3-tier hierarchical Semaphore + acquire timeout prevents deadlocks while avoiding PC / LLM overload.
-
-```toml
-[concurrency]
-global_max = 8                       # Total agents tracked by ai-conductor
-ai_conductor_dispatch_max = 2        # Number of domain conductors ai-conductor dispatches concurrently
-per_conductor_max = 4                # Maximum sub-agents each conductor can spawn concurrently
-acquire_timeout_secs = 600           # Slot wait timeout in seconds (deadlock detection)
-```
-
-Each setting can be individually overridden via corresponding environment variables (for temporarily lowering values during testing / CI):
+Configure sub-agent spawn limits via the `HESTIA_*` environment variables listed below. A 3-tier hierarchical Semaphore + acquire timeout prevents deadlocks while avoiding PC / LLM overload.
 
 | Environment variable | Default | Role |
 |---------|------|------|
@@ -205,13 +195,7 @@ Each setting can be individually overridden via corresponding environment variab
 | `HESTIA_PER_CONDUCTOR_MAX` | 4 | Per-conductor `dispatch_coders.v1` parallelism limit |
 | `HESTIA_ACQUIRE_TIMEOUT_SECS` | 600 | Common acquire timeout for all limiters |
 
-**Configuration priority (wiring added in Phase 128):**
-
-1. **Environment variables** of the parent process that ran `hestia start` (highest priority)
-2. **`[concurrency]` section** of `.hestia/config.toml` (exported by `hestia start`)
-3. Library defaults (`ConductorLimiter::from_env` / `AgentManager::with_default_cap` fallback)
-
-If you modify `config.toml`, you must **restart with `hestia kill && hestia start`** (existing conductor processes continue running with old env values).
+Set these in the environment of the parent process before running `hestia start`. Conductor processes inherit them at spawn time and read them via `ConductorLimiter::from_env` / `AgentManager::with_default_cap`. When unset, library defaults (above) apply.
 
 > **Phase 131 alive cap semantics (enforced across all spawn paths)**:
 > `per_conductor_max` is enforced as the "absolute upper limit on the number of currently alive target sub-agents"

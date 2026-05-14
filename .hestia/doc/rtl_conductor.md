@@ -137,9 +137,8 @@ rtl-conductor has 4 types of sub-agents: **planner / designer / coder (multiple)
 4. Request tester to verify (after module completion / full integration)
 5. Aggregate all deliverables → notify ai-conductor of completion + handoff to downstream conductors
 
-> **Phase 126 / 128 / 129 concurrency control**: The legacy hardcoded 16-way parallelism was
+> **Phase 126 / 129 concurrency control**: The legacy hardcoded 16-way parallelism was
 > replaced in Phase 126 with `conductor_sdk::concurrency::ConductorLimiter` (env-driven),
-> Phase 128 wired propagation from `.hestia/config.toml` `[concurrency]` via env,
 > and **Phase 129 switched `per_conductor_max` semantics to "alive cap"**.
 >
 > When calling dispatch_coders.v1, `count_alive_peers_with_prefix("rtl-coder-")`

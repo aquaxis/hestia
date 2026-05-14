@@ -135,7 +135,7 @@ Each conductor follows the same architecture pattern:
 - agent-cli native IPC communication (Phase 113+ allows selecting `agent_cli` / `claude_cli_shim` via `[engine] type`)
 - CLI client binary (`hestia-{conductor}-cli`)
 - Shared crates: conductor-sdk / adapter-core etc.
-- **Sub-agent concurrency control** (Phase 126): 3-tier hierarchical Semaphore (global / ai-dispatch / per-conductor) + acquire timeout via `conductor_sdk::concurrency::ConductorLimiter` to unify spawn caps. Fixed acquisition order + timeout + reviewer reserved slot breaks hold-and-wait and circular wait from Coffman's 4 conditions. Adjustable via `.hestia/config.toml` `[concurrency]`
+- **Sub-agent concurrency control** (Phase 126): 3-tier hierarchical Semaphore (global / ai-dispatch / per-conductor) + acquire timeout via `conductor_sdk::concurrency::ConductorLimiter` to unify spawn caps. Fixed acquisition order + timeout + reviewer reserved slot breaks hold-and-wait and circular wait from Coffman's 4 conditions. Adjustable via `HESTIA_GLOBAL_MAX_AGENTS` / `HESTIA_AI_DISPATCH_MAX` / `HESTIA_PER_CONDUCTOR_MAX` environment variables
 - **version-TAG synchronization** (Phase 127): `clis/hestia/build.rs` injects `git describe` output as an env variable at build time. `hestia --version` auto-syncs with GitHub TAG, falling back to `[workspace.package] version` when git is unavailable
 
 ---
