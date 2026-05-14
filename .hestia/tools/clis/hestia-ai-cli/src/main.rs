@@ -15,7 +15,7 @@ use hestia_ai_conductor::handler::AiHandler;
 use rand::Rng;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 #[derive(Parser)]
 #[command(name = "hestia-ai-cli", version, about = "AI conductor CLI")]
@@ -39,9 +39,17 @@ enum Commands {
         /// Path to instruction file
         #[arg(long, short)]
         file: String,
-        /// Polling timeout in seconds (default: 1200; bump for execute-mode runs)
-        #[arg(long, default_value_t = 1200)]
+        /// Polling timeout in seconds (default: 7200 = 2 h). Most callers should
+        /// rely on `--heartbeat-secs` for the live-but-slow detector rather than
+        /// tightening this knob. See report_stop.md §6.1 R1-1.
+        #[arg(long, default_value_t = 7200)]
         timeout_secs: u64,
+        /// Maximum on-disk quiescence (seconds) tolerated before declaring a
+        /// stall. Default: timeout_secs / 4, clamped to [60, 3600]. While the
+        /// conductor keeps writing status:in_progress JSON to the run-log, the
+        /// watchdog does not fire even if elapsed time exceeds `timeout_secs`.
+        #[arg(long)]
+        heartbeat_secs: Option<u64>,
         /// Polling interval in milliseconds (default: 500)
         #[arg(long, default_value_t = 500)]
         poll_interval_ms: u64,
@@ -178,6 +186,7 @@ async fn run_with_orchestrator(
     common: &CommonOpts,
     file_path: &str,
     timeout_secs: u64,
+    heartbeat_secs: Option<u64>,
     poll_interval_ms: u64,
 ) -> Result<()> {
     let body = std::fs::read_to_string(file_path)
@@ -215,33 +224,94 @@ async fn run_with_orchestrator(
         ));
     }
 
+    // Phase 132 (post-incident, report_stop.md §6) — heartbeat-aware polling.
+    // The old `while !result_path.exists()` loop conflated two distinct
+    // contracts: it assumed the conductor would write the run-log JSON only at
+    // terminal completion, and treated absence as silence. In practice the
+    // conductor writes status:in_progress checkpoints throughout the run, so
+    // the loop now:
+    //   - waits for the file to appear within `deadline`,
+    //   - once it appears, returns Done only when status != "in_progress",
+    //   - treats mtime advancement as a heartbeat (no overall deadline while
+    //     the conductor keeps making progress),
+    //   - declares a stall only when on-disk content stops advancing for
+    //     longer than `heartbeat`.
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     let interval = Duration::from_millis(poll_interval_ms);
-    while !result_path.exists() {
-        if Instant::now() >= deadline {
-            // Phase 28: synthesize a diagnostic aggregate JSON instead of just
-            // erroring out. This usually fires when the AI conductor LLM hit
-            // its tool-use iteration cap (agent-cli `max_iterations = 8`)
-            // before reaching the final `fs_write`. Surfacing a structured
-            // result lets callers (CI, scripts, the user) see *what was being
-            // done* rather than just "timeout".
-            let synthetic = synthesize_timeout_aggregate(
-                &run_id,
-                &body,
-                &result_path_str,
-                timeout_secs,
-            );
-            // Best-effort write so the run_log/ artifact still exists for
-            // post-mortem inspection.
-            if let Ok(serialized) = serde_json::to_string_pretty(&synthetic) {
-                let _ = std::fs::write(&result_path, serialized);
-            }
-            emit(common, "ai.run", &synthetic, true)?;
-            std::io::stdout().flush().ok();
-            std::io::stderr().flush().ok();
-            std::process::exit(1);
+    let heartbeat = compute_heartbeat(timeout_secs, heartbeat_secs);
+
+    let mut last_progress_at = Instant::now();
+    let mut last_seen_mtime: Option<SystemTime> = None;
+    let mut cached_status: Option<String> = None;
+
+    loop {
+        let file_exists = result_path.exists();
+        let file_mtime = std::fs::metadata(&result_path)
+            .ok()
+            .and_then(|m| m.modified().ok());
+
+        let advanced = match (file_mtime, last_seen_mtime) {
+            (Some(cur), Some(prev)) => cur > prev,
+            (Some(_), None) => true,
+            _ => false,
+        };
+        if advanced {
+            last_progress_at = Instant::now();
+            last_seen_mtime = file_mtime;
+            // Re-parse on-disk status only when mtime moved, to avoid burning
+            // CPU re-reading a quiescent file thousands of times.
+            cached_status = std::fs::read_to_string(&result_path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .and_then(|v| {
+                    v.get("status")
+                        .and_then(|s| s.as_str())
+                        .map(|s| s.to_string())
+                });
         }
-        tokio::time::sleep(interval).await;
+
+        let now = Instant::now();
+        let quiescent_for = now.saturating_duration_since(last_progress_at);
+
+        match classify_poll(
+            now,
+            deadline,
+            file_exists,
+            quiescent_for,
+            heartbeat,
+            cached_status.as_deref(),
+        ) {
+            PollDecision::Done => break,
+            PollDecision::KeepPolling => {
+                tokio::time::sleep(interval).await;
+                continue;
+            }
+            PollDecision::Stalled { .. } | PollDecision::DeadlineWithoutFile => {
+                // Phase 132 — synthesize a halt aggregate that carries the on-disk
+                // evidence (current_phase, updated_at, task_status, …) rather than
+                // speculating about agent-cli's iteration budget. See
+                // report_stop.md §6.2 R2-3.
+                let on_disk = if file_exists {
+                    read_result_with_retry(&result_path).await.ok()
+                } else {
+                    None
+                };
+                let synthetic = build_halt_aggregate(
+                    &run_id,
+                    &body,
+                    &result_path_str,
+                    timeout_secs,
+                    on_disk.as_ref(),
+                );
+                if let Ok(serialized) = serde_json::to_string_pretty(&synthetic) {
+                    let _ = std::fs::write(&result_path, serialized);
+                }
+                emit(common, "ai.run", &synthetic, true)?;
+                std::io::stdout().flush().ok();
+                std::io::stderr().flush().ok();
+                std::process::exit(1);
+            }
+        }
     }
 
     // Avoid file write race condition: retry until stable content is available.
@@ -287,48 +357,135 @@ async fn read_result_with_retry(path: &Path) -> Result<serde_json::Value> {
     ))
 }
 
-/// Phase 28: build a synthetic aggregate JSON when the AI conductor never
-/// produced the expected `result_path` file within the polling deadline.
+/// Phase 132 (post-incident, report_stop.md §6.2 R2-1) — Outcome of one tick of
+/// the heartbeat-aware polling loop in `run_with_orchestrator`.
+#[derive(Debug, PartialEq)]
+pub(crate) enum PollDecision {
+    KeepPolling,
+    Done,
+    Stalled { quiescent_for: Duration },
+    DeadlineWithoutFile,
+}
+
+/// Phase 132 (post-incident) — Classify a single poll tick.
 ///
-/// The most common cause is the AI conductor LLM hitting agent-cli's hardcoded
-/// `max_iterations = 8` cap before reaching its final `fs_write` call. Rather
-/// than just printing a bare timeout message, we mimic the schema the LLM
-/// would have written (so downstream tooling can parse it uniformly).
+/// Pure function (no I/O); the caller is responsible for stat()'ing the file
+/// and tracking mtime advancement to compute `quiescent_for`. Truth table is
+/// AI_PRJ_DESIGN.md §3.2.
+pub(crate) fn classify_poll(
+    now: Instant,
+    deadline: Instant,
+    file_exists: bool,
+    quiescent_for: Duration,
+    heartbeat: Duration,
+    on_disk_status: Option<&str>,
+) -> PollDecision {
+    if !file_exists {
+        return if now >= deadline {
+            PollDecision::DeadlineWithoutFile
+        } else {
+            PollDecision::KeepPolling
+        };
+    }
+    if matches!(on_disk_status, Some(s) if s != "in_progress") {
+        return PollDecision::Done;
+    }
+    if quiescent_for > heartbeat {
+        return PollDecision::Stalled { quiescent_for };
+    }
+    PollDecision::KeepPolling
+}
+
+/// Phase 132 (post-incident) — Resolve the heartbeat window. When the user
+/// doesn't pass `--heartbeat-secs`, default to `timeout_secs / 4` clamped to
+/// `[60, 3600]`. See AI_PRJ_DESIGN.md §3.1.
+pub(crate) fn compute_heartbeat(timeout_secs: u64, override_secs: Option<u64>) -> Duration {
+    let secs = override_secs
+        .unwrap_or_else(|| (timeout_secs / 4).clamp(60, 3600))
+        .max(1);
+    Duration::from_secs(secs)
+}
+
+/// Phase 132 (post-incident, report_stop.md §6.2 R2-3) — Build the halt-aggregate
+/// JSON emitted when the watchdog fires. When `on_disk` is `Some`, carry
+/// through the in-flight evidence (`current_phase`, `updated_at`, `task_status`,
+/// `conductors_spawned`, `phases_completed`) and word the halt message around
+/// those facts — replacing the old speculative blame about agent-cli's
+/// iteration budget, which the incident logs in report_stop.md showed to be
+/// demonstrably wrong for the run that motivated this fix.
 ///
-/// Phase 50: add canonical `halted_reason` field (replacing the older
-/// `aborted_reason`, which is kept for backward compatibility with downstream
-/// parsers) and an `agent_log_path` hint so the user can inspect the
-/// orchestrator activity that timed out.
-fn synthesize_timeout_aggregate(
+/// Preserves `synthesized_by`, `halted_reason`, and `aborted_reason` (legacy
+/// alias) for downstream parsers.
+pub(crate) fn build_halt_aggregate(
     run_id: &str,
     instruction: &str,
     result_path: &str,
     timeout_secs: u64,
+    on_disk: Option<&serde_json::Value>,
 ) -> serde_json::Value {
-    let agent_log_hint =
-        "~/.hestia/workspaces/ai/agent.log (or `hestia tail ai` for live JSONL).";
-    serde_json::json!({
-        "run_id": run_id,
-        "status": "error",
-        "instruction": instruction,
-        // Phase 50 canonical field -- see persona step 6.
-        "halted_reason": "timeout",
-        // Backward-compat alias retained for parsers written before Phase 50.
-        "aborted_reason": "timeout",
-        "halt_message": format!(
-            "AI conductor LLM did not write {result_path} within {timeout_secs}s. \
-             Common causes: the LLM exhausted its tool-use iteration budget \
-             (agent-cli max_iterations = 8) before reaching its final fs_write, \
-             or the underlying provider stalled in a long thinking loop \
-             (Phase 48-50). Inspect {agent_log_hint}"
+    use serde_json::Value;
+    let mut obj = serde_json::Map::new();
+    obj.insert("run_id".to_string(), Value::String(run_id.to_string()));
+    obj.insert("status".to_string(), Value::String("error".into()));
+    obj.insert(
+        "instruction".to_string(),
+        Value::String(instruction.to_string()),
+    );
+    obj.insert("halted_reason".to_string(), Value::String("timeout".into()));
+    obj.insert("aborted_reason".to_string(), Value::String("timeout".into()));
+    obj.insert(
+        "synthesized_by".to_string(),
+        Value::String("hestia-ai-cli".into()),
+    );
+
+    let halt_message = match on_disk {
+        Some(v) => {
+            let status = v.get("status").and_then(|s| s.as_str()).unwrap_or("unknown");
+            let phase = v
+                .get("current_phase")
+                .and_then(|s| s.as_str())
+                .unwrap_or("(none recorded)");
+            let updated_at = v
+                .get("updated_at")
+                .and_then(|s| s.as_str())
+                .unwrap_or("(no updated_at)");
+            format!(
+                "Watchdog fired after {timeout_secs}s while {result_path} was still \
+                 status:{status} at phase {phase} (last updated_at={updated_at}). \
+                 The conductor and sub-agents may still be running; inspect \
+                 `agent-cli list` and `hestia tail ai` before declaring failure."
+            )
+        }
+        None => format!(
+            "AI conductor did not write {result_path} within {timeout_secs}s; \
+             the file does not exist. Run `hestia tail ai` to inspect orchestrator activity."
         ),
-        "aborted_message": format!(
-            "AI conductor LLM did not write {result_path} within {timeout_secs}s."
-        ),
-        "workflow_steps": [],
-        "results": [],
-        "synthesized_by": "hestia-ai-cli",
-    })
+    };
+    obj.insert("halt_message".to_string(), Value::String(halt_message));
+    obj.insert(
+        "aborted_message".to_string(),
+        Value::String(format!(
+            "AI conductor watchdog fired after {timeout_secs}s for {result_path}."
+        )),
+    );
+
+    if let Some(v) = on_disk {
+        for key in [
+            "current_phase",
+            "updated_at",
+            "task_status",
+            "conductors_spawned",
+            "phases_completed",
+        ] {
+            if let Some(val) = v.get(key) {
+                obj.insert(key.to_string(), val.clone());
+            }
+        }
+    }
+
+    obj.insert("workflow_steps".to_string(), Value::Array(vec![]));
+    obj.insert("results".to_string(), Value::Array(vec![]));
+    Value::Object(obj)
 }
 
 /// In-process route: calls AiHandler directly and returns immediately
@@ -371,9 +528,17 @@ async fn main() -> Result<()> {
         Commands::Run {
             file,
             timeout_secs,
+            heartbeat_secs,
             poll_interval_ms,
         } => {
-            run_with_orchestrator(&cli.common, file, *timeout_secs, *poll_interval_ms).await
+            run_with_orchestrator(
+                &cli.common,
+                file,
+                *timeout_secs,
+                *heartbeat_secs,
+                *poll_interval_ms,
+            )
+            .await
         }
         Commands::Exec { instruction } => {
             run_in_process(
@@ -442,5 +607,216 @@ async fn main() -> Result<()> {
         Commands::Status => {
             run_in_process(&cli.common, "system.health.v1", serde_json::json!({})).await
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn t0() -> Instant {
+        Instant::now()
+    }
+
+    #[test]
+    fn classify_poll_keeps_polling_when_file_absent_within_deadline() {
+        let now = t0();
+        let d = classify_poll(
+            now,
+            now + Duration::from_secs(60),
+            false,
+            Duration::from_secs(0),
+            Duration::from_secs(10),
+            None,
+        );
+        assert_eq!(d, PollDecision::KeepPolling);
+    }
+
+    #[test]
+    fn classify_poll_deadline_without_file_when_past_deadline() {
+        let now = t0();
+        let d = classify_poll(
+            now + Duration::from_secs(120),
+            now + Duration::from_secs(60),
+            false,
+            Duration::from_secs(0),
+            Duration::from_secs(10),
+            None,
+        );
+        assert_eq!(d, PollDecision::DeadlineWithoutFile);
+    }
+
+    #[test]
+    fn classify_poll_done_on_terminal_status() {
+        let now = t0();
+        let d = classify_poll(
+            now,
+            now + Duration::from_secs(60),
+            true,
+            Duration::from_secs(0),
+            Duration::from_secs(10),
+            Some("completed"),
+        );
+        assert_eq!(d, PollDecision::Done);
+    }
+
+    #[test]
+    fn classify_poll_done_treats_error_as_terminal() {
+        let now = t0();
+        let d = classify_poll(
+            now,
+            now + Duration::from_secs(60),
+            true,
+            Duration::from_secs(0),
+            Duration::from_secs(10),
+            Some("error"),
+        );
+        assert_eq!(d, PollDecision::Done);
+    }
+
+    #[test]
+    fn classify_poll_keeps_polling_on_in_progress_within_heartbeat() {
+        let now = t0();
+        let d = classify_poll(
+            now,
+            now + Duration::from_secs(60),
+            true,
+            Duration::from_secs(5),
+            Duration::from_secs(10),
+            Some("in_progress"),
+        );
+        assert_eq!(d, PollDecision::KeepPolling);
+    }
+
+    #[test]
+    fn classify_poll_stalls_when_in_progress_quiescent_past_heartbeat() {
+        let now = t0();
+        let d = classify_poll(
+            now,
+            now + Duration::from_secs(60),
+            true,
+            Duration::from_secs(30),
+            Duration::from_secs(10),
+            Some("in_progress"),
+        );
+        assert!(matches!(d, PollDecision::Stalled { .. }));
+    }
+
+    #[test]
+    fn classify_poll_stalls_when_parse_failed_and_quiescent() {
+        // File exists but parse failed (transient or malformed): treat like
+        // in_progress (not Done) so the watchdog can still notice a true stall.
+        let now = t0();
+        let d = classify_poll(
+            now,
+            now + Duration::from_secs(60),
+            true,
+            Duration::from_secs(30),
+            Duration::from_secs(10),
+            None,
+        );
+        assert!(matches!(d, PollDecision::Stalled { .. }));
+    }
+
+    #[test]
+    fn classify_poll_ignores_deadline_while_heartbeat_alive() {
+        // Past the overall deadline, but file exists and recent mtime + terminal
+        // status — caller should see Done, not DeadlineWithoutFile.
+        let now = t0();
+        let d = classify_poll(
+            now + Duration::from_secs(120),
+            now + Duration::from_secs(60),
+            true,
+            Duration::from_secs(2),
+            Duration::from_secs(10),
+            Some("completed"),
+        );
+        assert_eq!(d, PollDecision::Done);
+    }
+
+    #[test]
+    fn compute_heartbeat_uses_quarter_of_timeout() {
+        assert_eq!(compute_heartbeat(7200, None), Duration::from_secs(1800));
+    }
+
+    #[test]
+    fn compute_heartbeat_clamps_low() {
+        assert_eq!(compute_heartbeat(100, None), Duration::from_secs(60));
+    }
+
+    #[test]
+    fn compute_heartbeat_clamps_high() {
+        // 86400 / 4 = 21600 > 3600 → clamped to 3600
+        assert_eq!(compute_heartbeat(86_400, None), Duration::from_secs(3600));
+    }
+
+    #[test]
+    fn compute_heartbeat_honors_override() {
+        assert_eq!(compute_heartbeat(7200, Some(120)), Duration::from_secs(120));
+    }
+
+    #[test]
+    fn compute_heartbeat_minimum_is_one_second() {
+        // override = 0 would yield a zero-duration window; clamp to 1s so the
+        // loop still terminates rather than panicking on `Duration::ZERO`.
+        assert_eq!(compute_heartbeat(7200, Some(0)), Duration::from_secs(1));
+    }
+
+    #[test]
+    fn build_halt_aggregate_with_on_disk_carries_evidence() {
+        let on_disk = serde_json::json!({
+            "status": "in_progress",
+            "current_phase": "9_phase2_dispatch",
+            "updated_at": "2026-05-14T04:25:00Z",
+            "task_status": { "T-P0": "COMPLETED" },
+            "conductors_spawned": ["pcb", "rtl", "fpga"],
+            "phases_completed": ["1", "2"],
+        });
+        let v = build_halt_aggregate("run-1", "inst", "/tmp/x.json", 1200, Some(&on_disk));
+        assert_eq!(v["status"], "error");
+        assert_eq!(v["halted_reason"], "timeout");
+        assert_eq!(v["aborted_reason"], "timeout");
+        assert_eq!(v["synthesized_by"], "hestia-ai-cli");
+        assert_eq!(v["current_phase"], "9_phase2_dispatch");
+        assert_eq!(v["updated_at"], "2026-05-14T04:25:00Z");
+        assert!(v["task_status"].is_object());
+        assert!(v["conductors_spawned"].is_array());
+        assert!(v["phases_completed"].is_array());
+
+        let msg = v["halt_message"].as_str().unwrap();
+        assert!(msg.contains("status:in_progress"), "halt_message={msg}");
+        assert!(msg.contains("9_phase2_dispatch"), "halt_message={msg}");
+        assert!(
+            !msg.contains("max_iterations"),
+            "halt_message must not blame max_iterations: {msg}"
+        );
+    }
+
+    #[test]
+    fn build_halt_aggregate_without_on_disk_degrades_gracefully() {
+        let v = build_halt_aggregate("run-2", "inst", "/tmp/x.json", 7200, None);
+        let msg = v["halt_message"].as_str().unwrap();
+        assert!(msg.contains("does not exist"), "halt_message={msg}");
+        assert!(
+            !msg.contains("max_iterations"),
+            "halt_message must not blame max_iterations: {msg}"
+        );
+        assert!(v.get("current_phase").is_none());
+        assert!(v.get("updated_at").is_none());
+        assert!(v.get("task_status").is_none());
+        assert_eq!(v["status"], "error");
+        assert_eq!(v["synthesized_by"], "hestia-ai-cli");
+    }
+
+    #[test]
+    fn build_halt_aggregate_missing_fields_in_on_disk() {
+        // Conductor wrote partial JSON missing current_phase / updated_at —
+        // halt_message should still be well-formed.
+        let on_disk = serde_json::json!({ "status": "in_progress" });
+        let v = build_halt_aggregate("run-3", "inst", "/tmp/x.json", 1200, Some(&on_disk));
+        let msg = v["halt_message"].as_str().unwrap();
+        assert!(msg.contains("status:in_progress"));
+        assert!(msg.contains("(none recorded)"));
+        assert!(msg.contains("(no updated_at)"));
     }
 }

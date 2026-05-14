@@ -578,6 +578,14 @@ stagger_ms = 500
 # LLM backend: claude / codex / ollama / llama_cpp
 backend = "ollama"
 model = "glm-5.1:cloud"
+
+# Informational hints for `hestia-ai-cli run --file …`. Today these values are
+# documented here but not consumed by hestia-ai-cli — pass `--timeout-secs` /
+# `--heartbeat-secs` on the command line, or rely on the compiled defaults
+# (7200 / timeout_secs ÷ 4 clamped to [60, 3600]).
+[ai_run]
+timeout_secs = 7200
+heartbeat_secs = 1800
 "#;
 
 fn dispatch_cli(domain: &str, args: &[String]) -> Result<()> {
