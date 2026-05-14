@@ -69,13 +69,15 @@ const SUBAGENT_PEERS: &[&str] = &["ai-designer", "ai-reviewer"];
 const DOMAIN_CONDUCTOR_PEERS: &[&str] =
     &["rtl", "fpga", "asic", "pcb", "hal", "apps", "debug", "rag"];
 
-/// Monitor interval in seconds. Overridden by `HESTIA_MONITOR_INTERVAL_SECS`, clamped to 5..=600.
+/// Monitor interval in seconds. Overridden by `HESTIA_MONITOR_INTERVAL_SECS`, clamped to 1..=600.
+/// The instruction requires 1 Hz cadence so the STARTING-stall detector can observe
+/// at least 300 ticks before firing at the 5-minute threshold.
 pub(crate) fn monitor_interval_secs() -> u64 {
     std::env::var("HESTIA_MONITOR_INTERVAL_SECS")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
         .map(clamp_monitor_interval)
-        .unwrap_or(30)
+        .unwrap_or(1)
 }
 
 /// Cooldown in seconds after resume instruction. Overridden by `HESTIA_MONITOR_COOLDOWN_SECS`, clamped to 0..=600.
@@ -96,7 +98,7 @@ pub(crate) fn monitor_disabled() -> bool {
 }
 
 pub(crate) fn clamp_monitor_interval(s: u64) -> u64 {
-    s.clamp(5, 600)
+    s.clamp(1, 600)
 }
 
 pub(crate) fn clamp_monitor_cooldown(s: u64) -> u64 {
@@ -106,6 +108,28 @@ pub(crate) fn clamp_monitor_cooldown(s: u64) -> u64 {
 /// Clamp the refresh interval in seconds for `hestia monitor`. 1..=60.
 pub(crate) fn clamp_view_interval(s: u64) -> u64 {
     s.clamp(1, 60)
+}
+
+/// Default seconds before a peer stuck in STARTING is treated as a startup
+/// failure. The user instruction is "STARTING for 5 minutes".
+pub(crate) const STARTING_STALL_SECS_DEFAULT: u64 = 300;
+
+/// STARTING-stall threshold in seconds. Overridden by
+/// `HESTIA_MONITOR_STARTING_STALL_SECS`, clamped to 60..=1800.
+pub(crate) fn starting_stall_secs() -> u64 {
+    std::env::var("HESTIA_MONITOR_STARTING_STALL_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(clamp_starting_stall)
+        .unwrap_or(STARTING_STALL_SECS_DEFAULT)
+}
+
+pub(crate) fn clamp_starting_stall(s: u64) -> u64 {
+    s.clamp(60, 1800)
+}
+
+pub(crate) fn starting_stall_duration() -> Duration {
+    Duration::from_secs(starting_stall_secs())
 }
 
 /// Returns `.hestia/workspaces/` under the project root.
@@ -188,7 +212,7 @@ pub(crate) fn is_all_stopped(
         Some(AgentStatus::Idle) => true,
         Some(AgentStatus::Error) => true,
         Some(AgentStatus::Unknown) => true,
-        // BUSY / THINK / WAIT = processing; STARTING = just launched (prevent false resume).
+        // BUSY / THINKING / WAIT = processing; STARTING = just launched (prevent false resume).
         Some(AgentStatus::Busy) => false,
         Some(AgentStatus::Think) => false,
         Some(AgentStatus::Waiting) => false,
@@ -655,6 +679,74 @@ pub(crate) async fn rescue_peer(peer: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Pure decision helper: should we trigger a STARTING-stall rescue for a peer
+/// whose first STARTING observation happened at `first_seen`?
+/// Returns `true` when `now - first_seen >= threshold`.
+pub(crate) fn should_starting_stall_rescue(
+    first_seen: Instant,
+    now: Instant,
+    threshold: Duration,
+) -> bool {
+    now.saturating_duration_since(first_seen) >= threshold
+}
+
+/// Pure message builder: the text the monitor sends to the parent conductor
+/// after killing + re-spawning an agent that was stuck in STARTING.
+pub(crate) fn build_starting_failure_message(peer: &str, threshold_secs: u64) -> String {
+    format!(
+        "[hestia monitor] Agent '{peer}' was killed because it stayed in \
+         STARTING for more than {secs}s without producing any activity log. \
+         The agent has been re-spawned. Please re-issue your last instruction \
+         to '{peer}' so it can resume from a fresh state.",
+        secs = threshold_secs,
+    )
+}
+
+/// Send the STARTING-failure notification to the parent conductor via
+/// `<engine> send <parent_conductor>`. Errors are returned (not silently swallowed)
+/// so the caller can log them.
+async fn notify_conductor_of_starting_failure(
+    peer: &str,
+    parent: &str,
+    threshold_secs: u64,
+) -> anyhow::Result<()> {
+    let msg = build_starting_failure_message(peer, threshold_secs);
+    let cfg = super::load_hestia_config();
+    let engine_bin = cfg.engine.binary_name();
+    let status = Command::new(engine_bin)
+        .arg("send")
+        .arg(parent)
+        .arg(&msg)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .map_err(|e| anyhow::anyhow!("{engine_bin} send {parent}: {e}"))?;
+    if !status.success() {
+        anyhow::bail!("{engine_bin} send {parent} exited with {status}");
+    }
+    Ok(())
+}
+
+/// STARTING-stall rescue: SIGKILL + re-spawn the agent (via the existing Phase 110
+/// rescue path), then notify the parent conductor so it can re-issue the request.
+pub(crate) async fn starting_stall_rescue(
+    peer: &str,
+    parent_conductor: Option<&str>,
+    threshold_secs: u64,
+) -> anyhow::Result<()> {
+    rescue_peer(peer).await?;
+    if let Some(parent) = parent_conductor {
+        notify_conductor_of_starting_failure(peer, parent, threshold_secs).await?;
+    } else {
+        eprintln!(
+            "[monitor/starting-stall] '{peer}' has no parent conductor — \
+             skipping notification (peer is 'ai' or unknown)"
+        );
+    }
+    Ok(())
+}
+
 /// Status summary for `hestia monitor` header display.
 ///
 /// Phase 110: Added `think` field.
@@ -694,7 +786,7 @@ pub(crate) fn build_monitor_header(
 ) -> String {
     format!(
         "[Hestia Monitor]  refreshed: {ts}  (every {iv}s, Ctrl+C to exit)\n\
-         Conductors: {run} running   BUSY: {b}   THINK: {th}   IDLE: {i}   WAIT: {w}   ERROR: {e}   STARTING: {st}   UNKNOWN: {u}\n\n",
+         Conductors: {run} running   BUSY: {b}   THINKING: {th}   IDLE: {i}   WAIT: {w}   ERROR: {e}   STARTING: {st}   UNKNOWN: {u}\n\n",
         ts = timestamp,
         iv = interval,
         run = summary.running,
@@ -752,13 +844,60 @@ async fn send_resume_instruction(peer: &str) -> Result<()> {
 
 fn install_signal_handler() -> Arc<AtomicBool> {
     let stop = Arc::new(AtomicBool::new(false));
-    let s = stop.clone();
+    let s_int = stop.clone();
+    let s_term = stop.clone();
     tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_ok() {
-            s.store(true, Ordering::SeqCst);
+            s_int.store(true, Ordering::SeqCst);
+        }
+    });
+    tokio::spawn(async move {
+        use tokio::signal::unix::{signal, SignalKind};
+        if let Ok(mut sig) = signal(SignalKind::terminate()) {
+            sig.recv().await;
+            s_term.store(true, Ordering::SeqCst);
         }
     });
     stop
+}
+
+/// SIGKILL every `agent-cli run …` (or shim equivalent) child process the
+/// daemon was monitoring. Called by `run_monitor_daemon` after a SIGINT/SIGTERM
+/// breaks the main loop. We intentionally leave `hestia mirror` helpers and the
+/// daemon's own PID alone — mirrors die naturally with their parent agent-cli,
+/// and the daemon exits by itself once this function returns.
+async fn shutdown_all_agents() {
+    eprintln!("[monitor] shutdown requested — SIGKILLing agent-cli children");
+    let cfg = super::load_hestia_config();
+    let patterns = super::engine_kill_patterns(&cfg);
+    let self_pid = std::process::id();
+    let mut killed: usize = 0;
+    for pat in patterns
+        .iter()
+        .filter(|p| !p.contains("monitor-daemon") && !p.contains("hestia mirror"))
+    {
+        let Ok(out) = Command::new("pgrep")
+            .arg("-f")
+            .arg(pat)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .await
+        else {
+            continue;
+        };
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            let Ok(pid) = line.trim().parse::<u32>() else { continue };
+            if pid == self_pid {
+                continue;
+            }
+            unsafe {
+                libc::kill(pid as i32, libc::SIGKILL);
+            }
+            killed += 1;
+        }
+    }
+    eprintln!("[monitor] shutdown_all_agents complete — SIGKILLed {killed} process(es)");
 }
 
 fn now_iso8601() -> String {
@@ -827,16 +966,21 @@ pub(crate) async fn run_monitor_daemon() -> Result<()> {
     // Phase 110 — Per-peer history.
     let mut resume_history: HashMap<String, ResumeAttempt> = HashMap::new();
     let mut rescue_history: HashMap<String, RescueAttempt> = HashMap::new();
+    // STARTING-stall detector — per-peer first-observation timestamp.
+    let mut starting_observed_at: HashMap<String, Instant> = HashMap::new();
+    let starting_stall = starting_stall_duration();
+    let starting_stall_secs_val = starting_stall.as_secs();
 
     eprintln!(
         "[monitor] daemon started (interval={}s, cooldown={}s, rescue_timeout={}s, \
-         ai_rescue_timeout={}s, rescue_cooldown={}s, rescue_max={})",
+         ai_rescue_timeout={}s, rescue_cooldown={}s, rescue_max={}, starting_stall={}s)",
         interval.as_secs(),
         cooldown.as_secs(),
         normal_rescue_timeout.as_secs(),
         ai_rescue_timeout_dur.as_secs(),
         rescue_cooldown.as_secs(),
         rescue_max,
+        starting_stall_secs_val,
     );
 
     while !stop.load(Ordering::SeqCst) {
@@ -859,6 +1003,50 @@ pub(crate) async fn run_monitor_daemon() -> Result<()> {
         let statuses = collect_agent_statuses(&stdout, SystemTime::now());
         let targets = resolve_monitor_targets(&stdout);
         let workspace_root = workspaces_root();
+
+        // ── STARTING-stall detector ─────────────────────────────────────
+        // Update the per-peer first-STARTING-observation map, then fire
+        // `starting_stall_rescue` for any peer past the threshold.
+        let now_observed = Instant::now();
+        for t in &targets {
+            let status = statuses.get(&t.agent_id).copied().unwrap_or(AgentStatus::Unknown);
+            if matches!(status, AgentStatus::Starting) {
+                starting_observed_at.entry(t.peer.clone()).or_insert(now_observed);
+            } else {
+                starting_observed_at.remove(&t.peer);
+            }
+        }
+        // Drop entries for peers that have disappeared from `agent-cli list`.
+        let registered_peers = crate::registered_peer_names(&stdout);
+        starting_observed_at.retain(|peer, _| registered_peers.contains(peer));
+
+        let to_starting_rescue: Vec<(String, Option<String>)> = starting_observed_at
+            .iter()
+            .filter(|(_, first_seen)| {
+                should_starting_stall_rescue(**first_seen, now_observed, starting_stall)
+            })
+            .filter_map(|(peer, _)| {
+                let parent = targets
+                    .iter()
+                    .find(|t| t.peer == *peer)
+                    .and_then(|t| t.parent_conductor.clone());
+                Some((peer.clone(), parent))
+            })
+            .collect();
+
+        for (peer, parent) in to_starting_rescue {
+            eprintln!(
+                "[monitor/starting-stall] '{peer}' has been STARTING for ≥{starting_stall_secs_val}s — \
+                 SIGKILL + re-spawn + notify parent={:?}",
+                parent
+            );
+            if let Err(e) =
+                starting_stall_rescue(&peer, parent.as_deref(), starting_stall_secs_val).await
+            {
+                eprintln!("[monitor/starting-stall] '{peer}' rescue failed: {e}");
+            }
+            starting_observed_at.remove(&peer);
+        }
 
         // ── Phase 109 (1) Gracefully terminate completed sub-agents ──
         for t in &targets {
@@ -898,7 +1086,7 @@ pub(crate) async fn run_monitor_daemon() -> Result<()> {
             if !registered_now.contains(peer) {
                 return false;
             }
-            // 2) Status is active (BUSY/THINK/WAIT/STARTING) -> remove entry
+            // 2) Status is active (BUSY/THINKING/WAIT/STARTING) -> remove entry
             // Note: Reverse-lookups the status from MonitorTarget's agent_id via the peer name
             let status = targets
                 .iter()
@@ -1017,6 +1205,7 @@ pub(crate) async fn run_monitor_daemon() -> Result<()> {
     }
 
     eprintln!("[monitor] daemon stopping");
+    shutdown_all_agents().await;
     Ok(())
 }
 
@@ -1125,8 +1314,11 @@ mod tests {
     // ─── clamp helpers ────────────────────────────────────────────────────
     #[test]
     fn clamp_monitor_interval_bounds() {
-        assert_eq!(clamp_monitor_interval(0), 5);
-        assert_eq!(clamp_monitor_interval(4), 5);
+        // Lower bound dropped from 5 → 1 (instruction requires 1 Hz cadence
+        // so the STARTING-stall detector ticks at least 300 times before firing
+        // at the 5-minute threshold).
+        assert_eq!(clamp_monitor_interval(0), 1);
+        assert_eq!(clamp_monitor_interval(1), 1);
         assert_eq!(clamp_monitor_interval(5), 5);
         assert_eq!(clamp_monitor_interval(30), 30);
         assert_eq!(clamp_monitor_interval(600), 600);
@@ -1150,6 +1342,56 @@ mod tests {
         assert_eq!(clamp_view_interval(60), 60);
         assert_eq!(clamp_view_interval(61), 60);
         assert_eq!(clamp_view_interval(10_000), 60);
+    }
+
+    // ─── STARTING-stall detector ──────────────────────────────────────────
+
+    #[test]
+    fn clamp_starting_stall_bounds() {
+        assert_eq!(clamp_starting_stall(0), 60);
+        assert_eq!(clamp_starting_stall(59), 60);
+        assert_eq!(clamp_starting_stall(60), 60);
+        assert_eq!(clamp_starting_stall(300), 300);
+        assert_eq!(clamp_starting_stall(1800), 1800);
+        assert_eq!(clamp_starting_stall(1801), 1800);
+        assert_eq!(clamp_starting_stall(86_400), 1800);
+    }
+
+    #[test]
+    fn should_starting_stall_rescue_at_or_past_threshold() {
+        let first_seen = Instant::now();
+        let threshold = Duration::from_secs(300);
+
+        // Just before threshold → false.
+        let now_before = first_seen + Duration::from_secs(299);
+        assert!(!should_starting_stall_rescue(first_seen, now_before, threshold));
+
+        // Exactly at threshold → true (>=).
+        let now_at = first_seen + Duration::from_secs(300);
+        assert!(should_starting_stall_rescue(first_seen, now_at, threshold));
+
+        // Past threshold → true.
+        let now_past = first_seen + Duration::from_secs(450);
+        assert!(should_starting_stall_rescue(first_seen, now_past, threshold));
+    }
+
+    #[test]
+    fn should_starting_stall_rescue_saturating() {
+        // Argument order inversion (now < first_seen) → 0 elapsed → false.
+        let first_seen = Instant::now() + Duration::from_secs(60);
+        let now = Instant::now();
+        let threshold = Duration::from_secs(10);
+        assert!(!should_starting_stall_rescue(first_seen, now, threshold));
+    }
+
+    #[test]
+    fn build_starting_failure_message_contains_required_substrings() {
+        let m = build_starting_failure_message("rtl-coder-uart", 300);
+        assert!(m.contains("rtl-coder-uart"), "missing peer name: {m}");
+        assert!(m.contains("STARTING"), "missing STARTING token: {m}");
+        assert!(m.contains("killed"), "missing 'killed': {m}");
+        assert!(m.contains("re-spawned"), "missing 'restart' phrase: {m}");
+        assert!(m.contains("300s"), "missing threshold: {m}");
     }
 
     // ─── resolve_monitor_targets ─────────────────────────────────────────
@@ -1448,7 +1690,7 @@ mod tests {
         assert!(h.contains("every 2s"));
         assert!(h.contains("3 running"));
         assert!(h.contains("BUSY: 1"));
-        assert!(h.contains("THINK: 0"));
+        assert!(h.contains("THINKING: 0"));
         assert!(h.contains("IDLE: 1"));
         assert!(h.contains("STARTING: 1"));
     }
@@ -1961,7 +2203,7 @@ mod tests {
             unknown: 0,
         };
         let h = build_monitor_header(&summary, 2, "2026-05-08T12:00:00Z");
-        assert!(h.contains("THINK: 1"));
+        assert!(h.contains("THINKING: 1"));
         assert!(h.contains("WAIT: 1"));
         assert!(h.contains("BUSY: 1"));
         assert!(h.contains("IDLE: 1"));

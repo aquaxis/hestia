@@ -578,18 +578,6 @@ stagger_ms = 500
 # LLM backend: claude / codex / ollama / llama_cpp
 backend = "ollama"
 model = "glm-5.1:cloud"
-
-# Informational hints for `hestia-ai-cli run --file …`. Today these values are
-# documented here but not consumed by hestia-ai-cli — pass `--timeout-secs` /
-# `--heartbeat-secs` / `--phase-stall-secs` on the command line, or rely on the
-# compiled defaults:
-#   timeout_secs    = 7200          (= 2 h)
-#   heartbeat_secs  = timeout_secs / 4, clamped [60, 3600]
-#   phase_stall_secs= heartbeat_secs × 2, clamped [120, 7200]
-[ai_run]
-timeout_secs = 7200
-heartbeat_secs = 1800
-phase_stall_secs = 3600
 "#;
 
 fn dispatch_cli(domain: &str, args: &[String]) -> Result<()> {
@@ -1180,10 +1168,50 @@ async fn stop_conductor(domain: &str) -> Result<()> {
     Ok(())
 }
 
+/// Locate PIDs matching `pgrep -f <pattern>`. Empty vector on pgrep failure.
+async fn pgrep_pids(pattern: &str) -> Vec<u32> {
+    let Ok(out) = Command::new("pgrep")
+        .arg("-f")
+        .arg(pattern)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await
+    else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.trim().parse::<u32>().ok())
+        .collect()
+}
+
+/// `hestia stop` (no domain) — send SIGTERM to the running monitor-daemon and let
+/// it handle the agent-shutdown step before exiting. Falls back to the legacy
+/// per-conductor SIGTERM loop when no daemon is running.
 async fn stop_all_conductors() -> Result<()> {
-    for domain in DOMAINS {
-        stop_conductor(domain).await?;
+    let self_pid = std::process::id();
+    let pids: Vec<u32> = pgrep_pids("hestia monitor-daemon")
+        .await
+        .into_iter()
+        .filter(|p| *p != self_pid)
+        .collect();
+    if pids.is_empty() {
+        println!("(no monitor-daemon running — falling back to per-conductor stop)");
+        for domain in DOMAINS {
+            stop_conductor(domain).await?;
+        }
+        return Ok(());
     }
+    for pid in &pids {
+        unsafe {
+            libc::kill(*pid as i32, libc::SIGTERM);
+        }
+        println!("Sent SIGTERM to monitor-daemon (pid {pid})");
+    }
+    // The daemon will SIGKILL agent-cli children via shutdown_all_agents()
+    // and exit by itself. `hestia kill` remains the path for ungraceful
+    // immediate termination of the daemon and any orphaned children.
     Ok(())
 }
 
@@ -1453,7 +1481,7 @@ impl AgentStatus {
         match self {
             Self::Idle => "IDLE",
             Self::Busy => "BUSY",
-            Self::Think => "THINK",
+            Self::Think => "THINKING",
             Self::Waiting => "WAIT",
             Self::Error => "ERROR",
             Self::Starting => "STARTING",
@@ -2560,10 +2588,10 @@ mod tests {
 
     #[test]
     fn agent_status_as_str_uses_wait_and_think_phase110() {
-        // Phase 110: Waiting displays as WAIT, Think as THINK, others unchanged.
+        // Waiting displays as WAIT, Think as THINKING, others unchanged.
         assert_eq!(AgentStatus::Idle.as_str(), "IDLE");
         assert_eq!(AgentStatus::Busy.as_str(), "BUSY");
-        assert_eq!(AgentStatus::Think.as_str(), "THINK");
+        assert_eq!(AgentStatus::Think.as_str(), "THINKING");
         assert_eq!(AgentStatus::Waiting.as_str(), "WAIT");
         assert_eq!(AgentStatus::Error.as_str(), "ERROR");
         assert_eq!(AgentStatus::Starting.as_str(), "STARTING");

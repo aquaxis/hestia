@@ -95,8 +95,6 @@ As the top-level conductor in the Hestia system, it receives natural language in
 10. (Phase 108) Agents in STARTING state are considered active, suppressing false resume instructions immediately after startup
 11. (Phase 108) Resume instructions are issued only when there are outstanding tasks (not started / in progress / blocked) in `<workspace>/<peer>/task_status.md`. If task_status.md is absent, it is treated as having no remaining tasks
 12. (Phase 108) After sending a resume instruction, wait at least 60 seconds of cooldown to prevent infinite loops from resending
-13. (Phase 134) Within 60 seconds of each Workflow Phase transition (see Workflow §1–§8), write a fresh `<root>/.hestia/run_log/<run-id>.json` via fs_write with `status: "in_progress"`, the new `current_phase` value (e.g. `"3_designer_completion"` → `"4_reviewer_validation_iter1"`), and a fresh `updated_at` UTC timestamp. The `phases_completed` array must list every phase finished so far. This is what `hestia-ai-cli`'s phase-stall watchdog reads to confirm semantic progress; do not let `current_phase` hold the same value for more than 5 minutes without entering a sub-task or recording new evidence
-14. (Phase 134) If you genuinely cannot advance (e.g. an external dependency is unavailable, a sub-agent persistently refuses to respond), emit a final `status: "error"`, `halted_reason: "phase_stall"`, and a human-readable `halt_message` explaining the blocker. This is preferable to silently writing the same `current_phase` indefinitely — the watchdog will eventually terminate the run regardless and the human user is better served by an explicit reason than by a synthesized phase-stall message
 
 ## Prohibitions
 
