@@ -60,6 +60,12 @@ enum Commands {
         /// Polling interval in milliseconds (default: 500)
         #[arg(long, default_value_t = 500)]
         poll_interval_ms: u64,
+        /// Fire-and-forget: after the prompt is sent to ai-conductor, emit the
+        /// submission envelope ({status:"submitted", run_id, result_path}) and
+        /// exit 0 without waiting for the result file. Inspect later via
+        /// `hestia tail ai` or by reading `result_path`.
+        #[arg(long)]
+        no_wait: bool,
     },
     /// Initialize a specification session
     SpecInit {
@@ -189,6 +195,7 @@ fn read_engine_from_config() -> Option<String> {
 }
 
 /// `run --file` route: posts to AI conductor LLM via <engine> send -> polls for result file
+#[allow(clippy::too_many_arguments)]
 async fn run_with_orchestrator(
     common: &CommonOpts,
     file_path: &str,
@@ -196,6 +203,7 @@ async fn run_with_orchestrator(
     heartbeat_secs: Option<u64>,
     phase_stall_secs: Option<u64>,
     poll_interval_ms: u64,
+    no_wait: bool,
 ) -> Result<()> {
     let body = std::fs::read_to_string(file_path)
         .map_err(|e| anyhow!("failed to read instruction file '{}': {e}", file_path))?;
@@ -230,6 +238,24 @@ async fn run_with_orchestrator(
         return Err(anyhow!(
             "{engine_bin} send exited with non-zero status: {status}"
         ));
+    }
+
+    // Phase 135 — Fire-and-forget exit. The prompt has been delivered to
+    // ai-conductor; the caller does not want to block on the result file.
+    // Emit a structured "submitted" envelope so scripts can parse run_id /
+    // result_path without grepping stdout for the polling banner.
+    if no_wait {
+        let envelope = serde_json::json!({
+            "status": "submitted",
+            "run_id": run_id,
+            "result_path": result_path_str,
+            "synthesized_by": "hestia-ai-cli",
+            "note": "Prompt sent; not waiting for result. Inspect via `hestia tail ai` or read result_path later.",
+        });
+        emit(common, "ai.run", &envelope, false)?;
+        std::io::stdout().flush().ok();
+        std::io::stderr().flush().ok();
+        return Ok(());
     }
 
     // Phase 132 (post-incident, report_stop.md §6) — heartbeat-aware polling.
@@ -699,6 +725,7 @@ async fn main() -> Result<()> {
             heartbeat_secs,
             phase_stall_secs,
             poll_interval_ms,
+            no_wait,
         } => {
             run_with_orchestrator(
                 &cli.common,
@@ -707,6 +734,7 @@ async fn main() -> Result<()> {
                 *heartbeat_secs,
                 *phase_stall_secs,
                 *poll_interval_ms,
+                *no_wait,
             )
             .await
         }
