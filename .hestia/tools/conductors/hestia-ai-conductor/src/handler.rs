@@ -523,14 +523,27 @@ impl AiHandler {
     ///
     /// Unlike `ai.exec` (which returns as soon as `dispatch_to_conductor`
     /// captures the agent-cli delivery ack), this method generates a result
-    /// file path, sends a `KIND: qa` envelope to the peer, and polls the
-    /// result file until the LLM writes a terminal status. The persona side
-    /// of the contract is in `.hestia/personas/ai.md` §Workflow step 1.5
-    /// (write `RESULT_PATH` once and stop — no DAG, no domain dispatch).
+    /// file path, sends a `KIND: qa` envelope to the peer, and waits for the
+    /// peer's actual answer using two parallel signals:
+    ///
+    /// 1. **Primary (`RESULT_PATH` polling)**: when the persona contract is
+    ///    followed, the LLM fs_writes `.hestia/run_log/<run-id>.json` with
+    ///    `{"status":"ok","answer":…,"kind":"qa"}`. See `.hestia/personas/ai.md`
+    ///    §Workflow step 1.5.
+    /// 2. **Fallback (agent-cli JSONL log tailing)**: LLM instruction-following
+    ///    on fs_write isn't 100% reliable. The agent-cli structured log under
+    ///    `~/.local/share/agent-cli/logs/<agent-id>/*.jsonl` records every
+    ///    `assistant` event with the LLM's actual text. We tail it from the
+    ///    position captured just before sending the envelope; the first new
+    ///    `{"kind":"assistant","text":...}` we see (after the send) becomes
+    ///    the answer.
+    ///
+    /// Whichever channel produces a terminal signal first wins. This makes
+    /// `hestia ai qa` work even if the persona instruction isn't followed.
     ///
     /// Params:
     ///   - `instruction` (string, required): the Q&A prompt text.
-    ///   - `poll_interval_ms` (u64, optional, default 500): result-file poll interval.
+    ///   - `poll_interval_ms` (u64, optional, default 500): poll interval for both channels.
     async fn handle_qa(&self, params: serde_json::Value) -> Result<serde_json::Value, String> {
         let _permit = self.dispatch_limiter.acquire().await
             .map_err(|e| format!("dispatch_limiter acquire failed: {e}"))?;
@@ -565,6 +578,14 @@ impl AiHandler {
 
         tracing::info!(run_id = %run_id, result_path = %result_path_str, "ai.qa: dispatching to ai peer");
 
+        // Capture the ai peer's JSONL log position *before* sending so we can
+        // tell which `assistant` events are responses to *this* prompt.
+        let jsonl_log = resolve_ai_peer_jsonl_log().await;
+        let mut jsonl_pos: u64 = jsonl_log.as_ref()
+            .and_then(|p| std::fs::metadata(p).ok())
+            .map(|m| m.len())
+            .unwrap_or(0);
+
         if let Err(e) = conductor_sdk::workspace::spawn_conductor_on_demand("ai") {
             tracing::warn!(error = %e, "ai.qa: spawn_conductor_on_demand(ai) failed");
             return Err(format!("spawn ai peer: {e}"));
@@ -573,29 +594,81 @@ impl AiHandler {
             return Err(format!("agent-cli send ai: {e}"));
         }
 
+        // If we couldn't locate the JSONL log before sending (peer hadn't
+        // registered yet), try again now that spawn_conductor_on_demand has
+        // ensured the peer exists.
+        let jsonl_log = match jsonl_log {
+            Some(p) => Some(p),
+            None => resolve_ai_peer_jsonl_log().await,
+        };
+
         let poll = std::time::Duration::from_millis(poll_interval_ms);
         loop {
             tokio::time::sleep(poll).await;
-            if !result_path.exists() {
-                continue;
+
+            // Channel 1 — RESULT_PATH file written by the persona's fs_write.
+            if result_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&result_path) {
+                    if !content.trim().is_empty() {
+                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
+                            let status_field = value
+                                .get("status")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if status_field != "in_progress" {
+                                tracing::info!(
+                                    run_id = %run_id,
+                                    status = %status_field,
+                                    source = "result_path",
+                                    "ai.qa: terminal status from RESULT_PATH"
+                                );
+                                return Ok(value);
+                            }
+                        }
+                    }
+                }
             }
-            let content = match std::fs::read_to_string(&result_path) {
-                Ok(s) if !s.trim().is_empty() => s,
-                _ => continue,
-            };
-            let value: serde_json::Value = match serde_json::from_str(&content) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-            let status_field = value
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if status_field == "in_progress" {
-                continue;
+
+            // Channel 2 — agent-cli JSONL log assistant event for this prompt.
+            if let Some(ref log_path) = jsonl_log {
+                if let Ok(meta) = std::fs::metadata(log_path) {
+                    if meta.len() > jsonl_pos {
+                        if let Ok(mut file) = std::fs::File::open(log_path) {
+                            use std::io::{Read, Seek, SeekFrom};
+                            if file.seek(SeekFrom::Start(jsonl_pos)).is_ok() {
+                                let mut buf = String::new();
+                                if file.read_to_string(&mut buf).is_ok() {
+                                    jsonl_pos = meta.len();
+                                    for line in buf.lines() {
+                                        let Ok(ev) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+                                        let kind = ev.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                                        if kind != "assistant" {
+                                            continue;
+                                        }
+                                        let text = ev.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                                        if text.trim().is_empty() {
+                                            continue;
+                                        }
+                                        tracing::info!(
+                                            run_id = %run_id,
+                                            text_len = text.len(),
+                                            source = "agent_jsonl",
+                                            "ai.qa: assistant event from agent-cli JSONL log"
+                                        );
+                                        return Ok(serde_json::json!({
+                                            "status": "ok",
+                                            "answer": text,
+                                            "run_id": run_id,
+                                            "kind": "qa",
+                                            "source": "agent.log",
+                                        }));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            tracing::info!(run_id = %run_id, status = %status_field, "ai.qa: terminal status");
-            return Ok(value);
         }
     }
 
@@ -861,4 +934,61 @@ impl AiHandler {
             "message": "ai-conductor shutting down",
         }))
     }
+}
+
+/// Locate the agent-cli structured JSONL log for the live ai peer.
+///
+/// Mirrors `hestia/src/main.rs::resolve_agent_log_path` but is private to this
+/// crate and specific to the "ai" peer. Returns `None` if `agent-cli list`
+/// can't be invoked, no peer named "ai" is registered, the log dir doesn't
+/// exist, or the dir is empty. The latest `*.jsonl` (most recent mtime) wins
+/// because agent-cli rotates session logs per spawn.
+async fn resolve_ai_peer_jsonl_log() -> Option<std::path::PathBuf> {
+    let engine_bin = std::env::var("HESTIA_ENGINE_BINARY")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "agent-cli".to_string());
+    let output = std::process::Command::new(&engine_bin)
+        .arg("list")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut agent_id: Option<String> = None;
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("ID") || trimmed.starts_with('-') {
+            continue;
+        }
+        let fields: Vec<&str> = trimmed.split_whitespace().collect();
+        if fields.len() >= 2 && fields[1] == "ai" {
+            agent_id = Some(fields[0].to_string());
+            break;
+        }
+    }
+    let agent_id = agent_id?;
+
+    let home = dirs::home_dir()?;
+    let log_dir = if agent_id.starts_with("shim-") {
+        home.join(".local/share/claude-cli-shim/logs").join(&agent_id)
+    } else {
+        home.join(".local/share/agent-cli/logs").join(&agent_id)
+    };
+    if !log_dir.exists() {
+        return None;
+    }
+
+    let mut entries: Vec<(std::time::SystemTime, std::path::PathBuf)> = std::fs::read_dir(&log_dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".jsonl"))
+        .filter_map(|e| {
+            let mtime = e.metadata().ok()?.modified().ok()?;
+            Some((mtime, e.path()))
+        })
+        .collect();
+    entries.sort_by_key(|(t, _)| *t);
+    entries.into_iter().next_back().map(|(_, p)| p)
 }

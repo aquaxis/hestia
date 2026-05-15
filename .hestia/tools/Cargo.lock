@@ -1015,6 +1015,7 @@ dependencies = [
  "conductor-client",
  "conductor-sdk",
  "container-manager",
+ "dirs",
  "multi-agent",
  "serde",
  "serde_json",
