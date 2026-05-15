@@ -295,6 +295,7 @@ impl MessageHandler for AiHandler {
             "ai.spec.review" => Self::handle_spec_review(params).await,
             // Execution
             "ai.exec" => self.handle_exec(params).await,
+            "ai.qa" => self.handle_qa(params).await,
             // Agent management
             "agent_spawn" => self.handle_agent_spawn(params).await,
             "agent_list" => self.handle_agent_list().await,
@@ -515,6 +516,87 @@ impl AiHandler {
             "auto_review_dispatched": auto_review_dispatched,
             "results": results,
         }))
+    }
+
+    /// ai.qa — Send a Q&A prompt to the ai-conductor LLM peer and wait for its
+    /// substantive reply.
+    ///
+    /// Unlike `ai.exec` (which returns as soon as `dispatch_to_conductor`
+    /// captures the agent-cli delivery ack), this method generates a result
+    /// file path, sends a `KIND: qa` envelope to the peer, and polls the
+    /// result file until the LLM writes a terminal status. The persona side
+    /// of the contract is in `.hestia/personas/ai.md` §Workflow step 1.5
+    /// (write `RESULT_PATH` once and stop — no DAG, no domain dispatch).
+    ///
+    /// Params:
+    ///   - `instruction` (string, required): the Q&A prompt text.
+    ///   - `poll_interval_ms` (u64, optional, default 500): result-file poll interval.
+    async fn handle_qa(&self, params: serde_json::Value) -> Result<serde_json::Value, String> {
+        let _permit = self.dispatch_limiter.acquire().await
+            .map_err(|e| format!("dispatch_limiter acquire failed: {e}"))?;
+
+        let instruction = params.get("instruction")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if instruction.is_empty() {
+            return Err("instruction is empty".to_string());
+        }
+        let poll_interval_ms = params.get("poll_interval_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(500);
+
+        let run_id = format!(
+            "qa-{}-{}",
+            chrono::Utc::now().format("%Y%m%dT%H%M%SZ"),
+            &uuid::Uuid::new_v4().simple().to_string()[..8],
+        );
+        let log_dir = std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .join(".hestia/run_log");
+        std::fs::create_dir_all(&log_dir)
+            .map_err(|e| format!("failed to create run_log dir {}: {e}", log_dir.display()))?;
+        let result_path = log_dir.join(format!("{run_id}.json"));
+        let result_path_str = result_path.to_string_lossy().to_string();
+
+        let envelope = format!(
+            "RUN_ID: {run_id}\nRESULT_PATH: {result_path_str}\nKIND: qa\nINSTRUCTION:\n{instruction}"
+        );
+
+        tracing::info!(run_id = %run_id, result_path = %result_path_str, "ai.qa: dispatching to ai peer");
+
+        if let Err(e) = conductor_sdk::workspace::spawn_conductor_on_demand("ai") {
+            tracing::warn!(error = %e, "ai.qa: spawn_conductor_on_demand(ai) failed");
+            return Err(format!("spawn ai peer: {e}"));
+        }
+        if let Err(e) = conductor_sdk::workspace::agent_cli_send("ai", &envelope) {
+            return Err(format!("agent-cli send ai: {e}"));
+        }
+
+        let poll = std::time::Duration::from_millis(poll_interval_ms);
+        loop {
+            tokio::time::sleep(poll).await;
+            if !result_path.exists() {
+                continue;
+            }
+            let content = match std::fs::read_to_string(&result_path) {
+                Ok(s) if !s.trim().is_empty() => s,
+                _ => continue,
+            };
+            let value: serde_json::Value = match serde_json::from_str(&content) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let status_field = value
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if status_field == "in_progress" {
+                continue;
+            }
+            tracing::info!(run_id = %run_id, status = %status_field, "ai.qa: terminal status");
+            return Ok(value);
+        }
     }
 
     /// ai.spec.init — Parse specification text using SpecParser

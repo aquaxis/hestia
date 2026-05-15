@@ -71,6 +71,9 @@ As the top-level conductor in the Hestia system, it receives natural language in
 
 ## Message Handling
 
+0. Inspect the peer prompt for a `KIND:` header line.
+   - `KIND: qa` → take the Q&A short-circuit branch in §Workflow step 1.5 (write `RESULT_PATH` once and stop). The steps below do **not** apply.
+   - No `KIND:` header → proceed with the historical instruction path below.
 1. Parse the peer prompt (natural language instruction or completion notification from a subordinate conductor)
 2. Verify the sender (from)
 3. If it is a natural language instruction, start a new workflow; if it is a completion notification, add it to the aggregation
@@ -123,6 +126,10 @@ As the top-level conductor in the Hestia system, it receives natural language in
 ## Workflow (on Human Instruction Receipt)
 
 1. Receive human instruction (peer prompt)
+1.5 **[KIND: qa short-circuit]** — if the peer prompt contains the header line `KIND: qa`:
+    a. Form a natural-language answer to `INSTRUCTION` using your own LLM capabilities. Do **not** delegate to ai-designer or ai-reviewer. Do **not** consult `<workspace>/ai-designer/tasks.md`. Do **not** spawn or signal any domain conductor.
+    b. fs_write `RESULT_PATH` (the absolute path supplied in the envelope) with a single JSON object of shape `{"status":"ok","answer":"<reply text>","run_id":"<run_id>","kind":"qa"}`. If you cannot or will not answer, fs_write `{"status":"error","halt_message":"<reason>","run_id":"<run_id>","kind":"qa"}` instead.
+    c. Stop. Do **not** proceed to step 2. The qa branch is exactly one fs_write per prompt — no iteration, no aggregate-JSON, no further peer communication.
 2. Delegate specification decomposition via `agent-cli send ai-designer "<original instruction>"`
 3. Wait for ai-designer's response (3-document fs_write completion notification)
 4. Delegate validation via `agent-cli send ai-reviewer "{ request to review ai-designer output }"`

@@ -360,7 +360,7 @@ async fn main() -> Result<()> {
         Commands::Qa { prompt } => {
             run_in_process(
                 &cli.common,
-                "ai.exec",
+                "ai.qa",
                 serde_json::json!({ "instruction": prompt }),
             )
             .await
