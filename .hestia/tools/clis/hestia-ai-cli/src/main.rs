@@ -114,6 +114,28 @@ fn build_request(method: &str, params: serde_json::Value) -> Request {
     }
 }
 
+/// Human-readable rendering of a success `Value`. Returns `Some` only when the
+/// payload carries a string `answer` (today: `ai.qa`). The returned string is
+/// the answer verbatim -- it already contains real newline characters; serde
+/// decoded the wire `\n` when the conductor's JSON was parsed into this Value.
+/// A concise trailing status line (after a blank line, no literal `\n`) keeps
+/// `run_id`/`status` discoverable without corrupting the Markdown body.
+/// `None` => caller keeps the existing `[label] {json}` line (back-compat for
+/// every other subcommand whose result has no string `answer`).
+fn human_render(value: &serde_json::Value) -> Option<String> {
+    let answer = value.get("answer")?.as_str()?;
+    let run_id = value.get("run_id").and_then(|v| v.as_str());
+    let status = value.get("status").and_then(|v| v.as_str());
+    let mut out = String::from(answer);
+    match (status, run_id) {
+        (Some(s), Some(r)) => out.push_str(&format!("\n\n[ai.qa] status={s} run_id={r}")),
+        (Some(s), None) => out.push_str(&format!("\n\n[ai.qa] status={s}")),
+        (None, Some(r)) => out.push_str(&format!("\n\n[ai.qa] run_id={r}")),
+        (None, None) => {}
+    }
+    Some(out)
+}
+
 fn emit(common: &CommonOpts, label: &str, value: &serde_json::Value, is_error: bool) -> Result<()> {
     let json = serde_json::to_string(value)?;
     if common.output == "json" {
@@ -124,6 +146,8 @@ fn emit(common: &CommonOpts, label: &str, value: &serde_json::Value, is_error: b
         }
     } else if is_error {
         eprintln!("[{label}] error: {json}");
+    } else if let Some(text) = human_render(value) {
+        println!("{text}");
     } else {
         println!("[{label}] {json}");
     }
@@ -432,6 +456,57 @@ async fn main() -> Result<()> {
         Commands::Status => {
             run_in_process(&cli.common, "system.health.v1", serde_json::json!({})).await
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::human_render;
+    use serde_json::json;
+
+    // AC4 case (a): a value with an `answer` containing `\n` renders to
+    // multi-line text -- real line breaks, no `{`/`}` wrapping the body,
+    // no two-character `\n` sequence in the report body.
+    #[test]
+    fn answer_renders_as_multiline_text() {
+        let v = json!({
+            "status": "ok",
+            "answer": "# Title\nline A\n\n## Sub\nline B",
+            "run_id": "qa-x",
+            "kind": "qa"
+        });
+        let out = human_render(&v).expect("answer present => Some");
+        let (body, _footer) = out.split_once("\n\n[ai.qa] ").expect("status footer appended");
+        assert_eq!(body, "# Title\nline A\n\n## Sub\nline B");
+        assert!(body.contains('\n'), "real newline characters present");
+        assert!(!body.contains("\\n"), "no literal backslash-n in the body");
+        assert!(!body.starts_with('{') && !body.ends_with('}'), "not JSON-wrapped");
+        assert_eq!(out.lines().next().unwrap(), "# Title");
+        // run_id/status remain discoverable on the trailing line (D5).
+        assert!(out.ends_with("[ai.qa] status=ok run_id=qa-x"));
+    }
+
+    // AC4 case (b): a value WITHOUT a string `answer` => None, so the caller
+    // keeps the existing `[label] {json}` line (no collateral change to
+    // non-ai.qa subcommands -- D4).
+    #[test]
+    fn no_answer_field_returns_none() {
+        assert!(human_render(&json!({"status": "ok", "result": 42})).is_none());
+        assert!(human_render(&json!({"answer": 123})).is_none(), "non-string answer => None");
+        assert!(human_render(&json!("plain string")).is_none());
+        assert!(human_render(&json!([1, 2, 3])).is_none());
+    }
+
+    // AC4 case (c): the `--output json` machine path is byte-unchanged --
+    // serde_json::to_string of the value (what emit's json branch prints)
+    // is exactly the original compact JSON, independent of human_render.
+    #[test]
+    fn json_mode_serialization_unchanged() {
+        let v = json!({"status":"ok","answer":"a\nb","run_id":"qa-x","kind":"qa"});
+        assert_eq!(
+            serde_json::to_string(&v).unwrap(),
+            r#"{"answer":"a\nb","kind":"qa","run_id":"qa-x","status":"ok"}"#
+        );
     }
 }
 
